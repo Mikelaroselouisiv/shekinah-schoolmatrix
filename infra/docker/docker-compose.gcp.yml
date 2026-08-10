@@ -5,7 +5,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: schoolmatrix_postgres_cloud
+    container_name: shekinah_postgres_cloud
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-schoolmatrix}
@@ -22,8 +22,8 @@ services:
       retries: 10
 
   backend:
-    image: northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend/backend:latest
-    container_name: schoolmatrix_api_cloud
+    image: northamerica-northeast1-docker.pkg.dev/shekinah-schoolmatrix/schoolmatrix-backend/backend:latest
+    container_name: shekinah_api_cloud
     restart: unless-stopped
     env_file:
       - .env.prod

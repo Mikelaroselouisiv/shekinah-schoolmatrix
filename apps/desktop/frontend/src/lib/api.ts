@@ -26,7 +26,7 @@ function resolveApiBase(): string {
 const API_BASE = resolveApiBase();
 
 const GCS_PUBLIC_UPLOADS =
-  "https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads";
+  "https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads";
 
 function extractUploadFilename(stored: string): string | null {
   const s = stored.trim();

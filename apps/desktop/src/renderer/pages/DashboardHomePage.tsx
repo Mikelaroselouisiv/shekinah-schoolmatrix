@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
@@ -274,7 +274,7 @@ export function DashboardHomePage() {
             )}
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 uppercase tracking-tight">
-            {school?.name ?? "Parallele SchoolMatrix"}
+            {school?.name ?? "Shekinah SchoolMatrix"}
           </h1>
           {school?.slogan && (
             <p className="font-script text-slate-700 text-xl sm:text-2xl md:text-3xl">

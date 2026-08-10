@@ -4,7 +4,7 @@ Contenu **obsolète** (ère AWS ECR / prod-locale Windows / Electron assistant /
 
 Le produit vivant est :
 
-- `parallele-schoolmatrix-backend`
+- `shekinah-schoolmatrix-backend`
 - `apps/desktop` (+ `server-stack` pour l’école)
 - `apps/sync-agent`
 - `infra/` (GCP + ship)

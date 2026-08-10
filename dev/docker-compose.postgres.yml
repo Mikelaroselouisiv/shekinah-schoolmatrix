@@ -4,23 +4,23 @@
 #   - infra/docker/docker-compose.gcp.yml           (cloud GCP)
 #
 # Port hôte 5435 : évite les collisions avec d'autres Postgres locaux (5432–5434).
-# Aligné avec parallele-schoolmatrix-backend/.env.dev
+# Aligné avec shekinah-schoolmatrix-backend/.env.dev
 
 name: schoolmatrix-dev
 
 services:
   postgres:
     image: postgres:16
-    container_name: schoolmatrix-db-dev
+    container_name: shekinah-db-dev
     restart: unless-stopped
     ports:
-      - "5435:5432"
+      - "5436:5432"
     environment:
       POSTGRES_USER: schooluser
       POSTGRES_PASSWORD: schoolpass
       POSTGRES_DB: schoolmatrix
     volumes:
-      - schoolmatrix_pgdata_dev:/var/lib/postgresql/data
+      - shekinah_pgdata_dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U schooluser -d schoolmatrix"]
       interval: 5s
@@ -28,7 +28,7 @@ services:
       retries: 10
 
 volumes:
-  schoolmatrix_pgdata_dev:
-    # Si un volume legacy existe déjà (parallele-schoolmatrix-backend_pgdata_dev),
-    # le conteneur schoolmatrix-db-dev existant est réutilisé via `docker start`.
-    name: schoolmatrix_pgdata_dev
+  shekinah_pgdata_dev:
+    # Si un volume legacy existe déjà (shekinah-schoolmatrix-backend_pgdata_dev),
+    # le conteneur shekinah-db-dev existant est réutilisé via `docker start`.
+    name: shekinah_pgdata_dev

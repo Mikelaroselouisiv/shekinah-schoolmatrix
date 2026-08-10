@@ -1,8 +1,8 @@
 {
-  "appId": "com.parallele.schoolmatrix.desktop.remote",
-  "productName": "Parallele SchoolMatrix Remote",
-  "artifactName": "Parallele-SchoolMatrix-Remote-${version}.${ext}",
-  "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
+  "appId": "com.shekinah.schoolmatrix.desktop.remote",
+  "productName": "Shekinah SchoolMatrix Remote",
+  "artifactName": "Shekinah-SchoolMatrix-Remote-${version}.${ext}",
+  "copyright": "Copyright Â© 2026 Shekinah SchoolMatrix",
   "directories": {
     "output": "release-remote",
     "buildResources": "build"
@@ -24,7 +24,7 @@
   ],
   "publish": {
     "provider": "generic",
-    "url": "https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote"
+    "url": "https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/remote"
   },
   "win": {
     "icon": "build/icon.ico",

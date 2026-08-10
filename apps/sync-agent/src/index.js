@@ -2,7 +2,7 @@ import http from 'http';
 import { createApiClient, replicateDirection } from './replicate.js';
 
 const LOCAL_API_URL = process.env.LOCAL_API_URL || 'http://127.0.0.1:3000';
-const REMOTE_API_URL = process.env.REMOTE_API_URL || 'http://34.95.43.132';
+const REMOTE_API_URL = process.env.REMOTE_API_URL || 'http://34.118.138.96';
 const SYNC_API_KEY = process.env.SYNC_API_KEY || '';
 const SYNC_INTERVAL_MS = Number(process.env.SYNC_INTERVAL_MS || 5_000);
 const NODE_ID = process.env.SYNC_NODE_ID || 'local-mother';

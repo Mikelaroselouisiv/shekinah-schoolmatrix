@@ -2,9 +2,9 @@
 # Ajoute les variables GCS à /opt/schoolmatrix/.env.prod
 set -euo pipefail
 ENV=/opt/schoolmatrix/.env.prod
-BUCKET="${1:-parallele-schoolmatrix-assets}"
+BUCKET="${1:-shekinah-schoolmatrix-assets}"
 PREFIX="${2:-schoolmatrix}"
-PROJECT="${3:-parallele-schoolmatrix}"
+PROJECT="${3:-shekinah-schoolmatrix}"
 
 sudo test -f "$ENV" || { echo "MISSING $ENV"; exit 1; }
 sudo sed -i '/^GCS_BUCKET=/d;/^GCS_PREFIX=/d;/^GCS_PROJECT_ID=/d' "$ENV"

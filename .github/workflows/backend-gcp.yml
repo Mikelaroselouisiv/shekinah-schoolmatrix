@@ -10,7 +10,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - "parallele-schoolmatrix-backend/**"
+      - "shekinah-schoolmatrix-backend/**"
       - "infra/docker/docker-compose.gcp.yml"
       - "infra/scripts/gcp-deploy-remote.sh"
       - ".github/workflows/backend-gcp.yml"
@@ -58,10 +58,10 @@ jobs:
           REGISTRY="${GCP_REGION}-docker.pkg.dev"
           FULL_IMAGE="${REGISTRY}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPO}/backend"
           docker build \
-            -f parallele-schoolmatrix-backend/Dockerfile \
+            -f shekinah-schoolmatrix-backend/Dockerfile \
             -t "${FULL_IMAGE}:${IMAGE_TAG}" \
             -t "${FULL_IMAGE}:latest" \
-            parallele-schoolmatrix-backend
+            shekinah-schoolmatrix-backend
           docker push "${FULL_IMAGE}:${IMAGE_TAG}"
           docker push "${FULL_IMAGE}:latest"
 

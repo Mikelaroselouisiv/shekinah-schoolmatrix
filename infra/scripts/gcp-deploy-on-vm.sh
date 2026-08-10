@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REMOTE_DIR="${REMOTE_DIR:-/opt/schoolmatrix}"
-IMAGE="northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend/backend:latest"
+IMAGE="northamerica-northeast1-docker.pkg.dev/shekinah-schoolmatrix/schoolmatrix-backend/backend:latest"
 NETWORK="schoolmatrix_default"
 STORAGE_VOL="schoolmatrix_schoolmatrix_storage_cloud"
 
@@ -31,7 +31,7 @@ else
 fi
 
 # Postgres via compose (une fois)
-if ! docker ps -a --format '{{.Names}}' | grep -qx schoolmatrix_postgres_cloud; then
+if ! docker ps -a --format '{{.Names}}' | grep -qx shekinah_postgres_cloud; then
   "${COMPOSE[@]}" -f docker-compose.gcp.yml --env-file .env.prod up -d postgres
   sleep 5
 fi
@@ -39,7 +39,7 @@ fi
 # Backend : docker run (évite le bug ContainerConfig de docker-compose 1.29)
 docker pull "${IMAGE}"
 # Nom exact — évite les courses CI (deux deploys concurrent) et les filtres substring Docker
-docker rm -f schoolmatrix_api_cloud 2>/dev/null || true
+docker rm -f shekinah_api_cloud 2>/dev/null || true
 # Anciens noms éventuels
 docker ps -aq --filter name=schoolmatrix_api | while read -r cid; do
   [[ -n "${cid}" ]] && docker rm -f "${cid}" 2>/dev/null || true
@@ -47,11 +47,11 @@ done
 
 docker network inspect "${NETWORK}" >/dev/null 2>&1 || docker network create "${NETWORK}"
 # Attacher postgres au network si besoin
-docker network connect "${NETWORK}" schoolmatrix_postgres_cloud 2>/dev/null || true
+docker network connect "${NETWORK}" shekinah_postgres_cloud 2>/dev/null || true
 docker volume create "${STORAGE_VOL}" >/dev/null 2>&1 || true
 
 docker run -d \
-  --name schoolmatrix_api_cloud \
+  --name shekinah_api_cloud \
   --restart unless-stopped \
   --network "${NETWORK}" \
   --env-file .env.prod \
@@ -61,9 +61,9 @@ docker run -d \
   -e DB_PORT=5432 \
   -e STORAGE_ROOT=/app/storage \
   -e NODE_ID=CLOUD \
-  -e GCS_BUCKET=parallele-schoolmatrix-assets \
+  -e GCS_BUCKET=shekinah-schoolmatrix-assets \
   -e GCS_PREFIX=schoolmatrix \
-  -e GCS_PROJECT_ID=parallele-schoolmatrix \
+  -e GCS_PROJECT_ID=shekinah-schoolmatrix \
   -p 127.0.0.1:3000:3000 \
   -v "${STORAGE_VOL}:/app/storage" \
   "${IMAGE}"

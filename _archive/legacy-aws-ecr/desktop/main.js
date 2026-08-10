@@ -1,5 +1,5 @@
 /**
- * Parallele SchoolMatrix — application desktop (repart de zéro).
+ * Shekinah SchoolMatrix — application desktop (repart de zéro).
  *
  * 1) Premier lancement : choix du dossier des données → copie des fichiers + création dossiers/.env → fenêtre "À faire" (pas de démarrage des conteneurs).
  * 2) Lancements suivants : si les conteneurs existent → les démarrer et afficher le frontend ; sinon → fenêtre "À faire" (instructions + bouton Mettre à jour).
@@ -17,7 +17,7 @@ const CHECK_INTERVAL_MS = 2000;
 const MAX_WAIT_MS = 120000;
 const APP_LOGO = path.join(__dirname, 'App logo.png');
 
-const CONTAINER_NAMES_DEV = ['schoolmatrix-db-dev', 'schoolmatrix-api', 'schoolmatrix-web'];
+const CONTAINER_NAMES_DEV = ['shekinah-db-dev', 'schoolmatrix-api', 'schoolmatrix-web'];
 const CONTAINER_NAMES_PROD = ['schoolmatrix-db-prod-local', 'schoolmatrix-api', 'schoolmatrix-web'];
 
 const DEV_MODE_FLAG = process.argv.includes('--dev') || process.argv.includes('-d');
@@ -162,7 +162,7 @@ function containersExist(dataDir) {
 /** Configuration du dossier des données (choix + copie + préparation). Retourne dataDir ou null. */
 async function runDataDirSetup() {
   const { canceled, filePaths } = await dialog.showOpenDialog(null, {
-    title: 'Parallele SchoolMatrix — Dossier des données',
+    title: 'Shekinah SchoolMatrix — Dossier des données',
     message: 'Choisissez le dossier où seront créées les bases (PostgreSQL, stockage, .env, docker-compose). Vous pouvez créer un nouveau dossier.',
     properties: ['openDirectory'],
     buttonLabel: 'Sélectionner',
@@ -206,7 +206,7 @@ function getInstructionsHtml(dataDir) {
   .btn.secondary { background: #64748b; }
   .btn.secondary:hover { background: #475569; }
 </style></head><body>
-  <h2>Parallele SchoolMatrix</h2>
+  <h2>Shekinah SchoolMatrix</h2>
   <p>L'environnement est prêt. Les conteneurs Docker n'existent pas encore.</p>
   <p><strong>Dossier des données :</strong></p>
   <div class="path">${(dataDir || '').replace(/</g, '&lt;')}</div>
@@ -304,7 +304,7 @@ function createAppMenu(dataDir) {
       ],
     },
     {
-      label: 'Parallele SchoolMatrix',
+      label: 'Shekinah SchoolMatrix',
       submenu: [
         {
           label: 'Mode développement (frontend local)',
@@ -455,7 +455,7 @@ function registerInstallerIPC() {
     copyResourcesToDataDir(root);
 
     const envLines = [
-      '# Généré par l\'installateur Parallele SchoolMatrix',
+      '# Généré par l\'installateur Shekinah SchoolMatrix',
       `SCHOOLMATRIX_DATA=${env.SCHOOLMATRIX_DATA || root.split(path.sep).join('/')}`,
       `DB_USER=${env.DB_USER || 'schoolmatrix'}`,
       `DB_PASS=${env.DB_PASS || 'schoolmatrix'}`,

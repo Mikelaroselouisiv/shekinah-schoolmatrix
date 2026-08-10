@@ -70,7 +70,7 @@ function lighten(rgb: [number, number, number], amount: number): [number, number
 }
 
 const GCS_PUBLIC_UPLOADS =
-  "https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads";
+  "https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads";
 
 /** Extrait le nom de fichier uploads/… depuis un chemin ou une URL GCS. */
 function extractUploadFilename(stored: string): string | null {

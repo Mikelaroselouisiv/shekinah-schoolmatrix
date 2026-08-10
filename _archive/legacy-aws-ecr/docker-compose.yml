@@ -1,4 +1,4 @@
-# Même logique qu'en dev : une seule base (schoolmatrix-db-dev, port 5433).
+# Même logique qu'en dev : une seule base (shekinah-db-dev, port 5433).
 # L'API charge le .env du backend (env_file) pour avoir les mêmes identifiants qu'en dev.
 # DB_HOST et DB_PORT sont forcés pour que le conteneur joigne la base sur l'hôte (5433).
 #
@@ -11,13 +11,13 @@ services:
   api:
     image: schoolmatrix-api
     build:
-      context: ./parallele-schoolmatrix-backend
+      context: ./shekinah-schoolmatrix-backend
       args:
         - CACHEBUST=${CACHEBUST:-0}
     container_name: schoolmatrix-api
     restart: unless-stopped
     env_file:
-      - ./parallele-schoolmatrix-backend/.env.dev
+      - ./shekinah-schoolmatrix-backend/.env.dev
     environment:
       NODE_ENV: production
       DB_HOST: host.docker.internal

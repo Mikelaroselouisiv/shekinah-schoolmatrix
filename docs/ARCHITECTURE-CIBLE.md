@@ -1,4 +1,4 @@
-# Architecture cible — Parallele SchoolMatrix
+# Architecture cible — Shekinah SchoolMatrix
 
 > État d’exploitation actuel (DEV / GCP / école) : [ENVIRONMENTS.md](ENVIRONMENTS.md).  
 > L’UI desktop est **Electron + Vite** (`apps/desktop`) — plus de sidecar Next en production.
@@ -49,7 +49,7 @@ Inspiré de POS Entreprises Israel, avec une règle claire :
 
 0. Projet GCP + bootstrap + secrets GitHub — **fait**  
 1. Docker cloud (API + Postgres) + CI deploy — **fait** (API miroir live)  
-2. Stockage GCS — **fait** (`GcsService`, bucket `parallele-schoolmatrix-assets`)  
+2. Stockage GCS — **fait** (`GcsService`, bucket `shekinah-schoolmatrix-assets`)  
 3. Sync-agent (local → cloud, local wins) — **fait** (API `/sync/*` cloud + agent + compose server)  
 4. Desktop unifié Server / Remote — **fait** (`apps/desktop`, Next sidecar, updater GCS)  
 5. APIs WordPress  

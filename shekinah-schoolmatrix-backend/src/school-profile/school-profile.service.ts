@@ -135,7 +135,7 @@ export class SchoolProfileService implements OnModuleInit {
     const existing = await this.getProfile();
     if (existing) return existing;
     const profile = this.profileRepo.create({
-      name: 'Parallele SchoolMatrix',
+      name: 'Shekinah SchoolMatrix',
       domain: 'localhost',
       primary_color: '#1e293b',
       secondary_color: '#334155',

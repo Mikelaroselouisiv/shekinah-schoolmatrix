@@ -1,9 +1,9 @@
 {
-  "name": "parallele-schoolmatrix-desktop",
+  "name": "shekinah-schoolmatrix-desktop",
   "version": "1.0.9",
-  "description": "Application desktop Electron pour Parallele SchoolMatrix",
+  "description": "Application desktop Electron pour Shekinah SchoolMatrix",
   "main": "main.js",
-  "author": "Parallele SchoolMatrix",
+  "author": "Shekinah SchoolMatrix",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -11,8 +11,8 @@
     "build:win": "electron-builder --win"
   },
   "build": {
-    "appId": "com.parallele.schoolmatrix",
-    "productName": "Parallele SchoolMatrix",
+    "appId": "com.shekinah.schoolmatrix",
+    "productName": "Shekinah SchoolMatrix",
     "directories": {
       "output": "dist"
     },

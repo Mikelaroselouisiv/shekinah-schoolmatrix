@@ -1,5 +1,5 @@
 /**
- * En DEV : démarre Postgres `schoolmatrix-db-dev` puis Nest --watch.
+ * En DEV : démarre Postgres `shekinah-db-dev` puis Nest --watch.
  * Utilisation : npm run dev
  *
  * Ne touche PAS au stack Server école (schoolmatrix_*_server) ni au cloud GCP.
@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const containerName = 'schoolmatrix-db-dev';
+const containerName = 'shekinah-db-dev';
 const repoRoot = path.resolve(__dirname, '..', '..');
 const composeFile = path.join(repoRoot, 'dev', 'docker-compose.postgres.yml');
 

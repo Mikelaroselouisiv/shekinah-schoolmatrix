@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   Bootstrap machine Server SchoolMatrix - appelé automatiquement au lancement de l'app.
   Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env
@@ -17,7 +17,7 @@ $DefaultsFile = Join-Path $StackDir 'defaults.env'
 $DefaultsExample = Join-Path $StackDir 'defaults.env.example'
 $ImagesDir = Join-Path $StackDir 'images'
 $StateFile = Join-Path $StackDir '.bootstrap-done'
-$TaskName = 'Parallele-SchoolMatrix-Server-Stack'
+$TaskName = 'Shekinah-SchoolMatrix-Server-Stack'
 $StartScript = Join-Path $StackDir 'stack-start.ps1'
 
 function Write-Step([string]$Message) {
@@ -103,14 +103,14 @@ function Ensure-EnvFile {
 
     if (-not $map['DB_USER']) { $map['DB_USER'] = 'schoolmatrix' }
     if (-not $map['DB_NAME']) { $map['DB_NAME'] = 'schoolmatrix' }
-    if (-not $map['REMOTE_API_URL']) { $map['REMOTE_API_URL'] = 'http://34.95.43.132' }
+    if (-not $map['REMOTE_API_URL']) { $map['REMOTE_API_URL'] = 'http://34.118.138.96' }
     if (-not $map['NODE_ID']) { $map['NODE_ID'] = 'LOCAL' }
     if (-not $map['SYNC_INTERVAL_MS']) { $map['SYNC_INTERVAL_MS'] = '5000' }
     if (-not $map['SYNC_KICK_URL']) { $map['SYNC_KICK_URL'] = 'http://sync-agent:3911/kick' }
     if (-not $map['SYNC_NODE_ID']) { $map['SYNC_NODE_ID'] = 'local-mother' }
-    if (-not $map['GCS_BUCKET']) { $map['GCS_BUCKET'] = 'parallele-schoolmatrix-assets' }
+    if (-not $map['GCS_BUCKET']) { $map['GCS_BUCKET'] = 'shekinah-schoolmatrix-assets' }
     if (-not $map['GCS_PREFIX']) { $map['GCS_PREFIX'] = 'schoolmatrix' }
-    if (-not $map['GCS_PROJECT_ID']) { $map['GCS_PROJECT_ID'] = 'parallele-schoolmatrix' }
+    if (-not $map['GCS_PROJECT_ID']) { $map['GCS_PROJECT_ID'] = 'shekinah-schoolmatrix' }
     if (-not $map['GOOGLE_APPLICATION_CREDENTIALS']) {
       $map['GOOGLE_APPLICATION_CREDENTIALS'] = '/run/secrets/gcs-sa.json'
     }

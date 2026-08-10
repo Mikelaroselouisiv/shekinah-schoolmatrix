@@ -29,7 +29,7 @@ export default function HomePage() {
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Bienvenue</h2>
       <p className="text-slate-600">
-        Bienvenue sur Parallele SchoolMatrix, le logiciel de gestion scolaire.
+        Bienvenue sur Shekinah SchoolMatrix, le logiciel de gestion scolaire.
       </p>
       <div className="flex gap-3">
         <Link href="/login" className="app-btn-primary">

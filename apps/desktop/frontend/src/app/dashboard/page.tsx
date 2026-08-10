@@ -276,7 +276,7 @@ export default function DashboardPage() {
             )}
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 uppercase tracking-tight">
-            {school?.name ?? "Parallele SchoolMatrix"}
+            {school?.name ?? "Shekinah SchoolMatrix"}
           </h1>
           {school?.slogan && (
             <p className="font-script text-slate-700 text-xl sm:text-2xl md:text-3xl">

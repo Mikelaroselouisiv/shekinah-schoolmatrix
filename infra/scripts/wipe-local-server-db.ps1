@@ -6,16 +6,16 @@
 
 [CmdletBinding()]
 param(
-  [string] $StackDir = (Join-Path $env:ProgramData 'Parallele SchoolMatrix\server-stack')
+  [string] $StackDir = (Join-Path $env:ProgramData 'Shekinah SchoolMatrix\server-stack')
 )
 
 $ErrorActionPreference = 'Stop'
 
 function Write-Step([string] $msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
-$pg = 'schoolmatrix_postgres_server'
-$api = 'schoolmatrix_api_server'
-$sync = 'schoolmatrix_sync_agent'
+$pg = 'shekinah_postgres_server'
+$api = 'shekinah_api_server'
+$sync = 'shekinah_sync_agent'
 $dbUser = 'schoolmatrix'
 $dbName = 'schoolmatrix'
 

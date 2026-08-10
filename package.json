@@ -1,12 +1,12 @@
 {
-  "name": "parallele-schoolmatrix",
+  "name": "shekinah-schoolmatrix",
   "private": true,
   "description": "Racine SchoolMatrix — raccourcis DEV uniquement. Produit desktop = apps/desktop. Ne pas confondre avec _archive/.",
   "scripts": {
     "dev:db": "docker compose -f dev/docker-compose.postgres.yml up -d",
     "dev:db:down": "docker compose -f dev/docker-compose.postgres.yml down",
     "dev:free-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./dev/stop-local-server-stack.ps1",
-    "dev:backend": "npm --prefix parallele-schoolmatrix-backend run dev",
+    "dev:backend": "npm --prefix shekinah-schoolmatrix-backend run dev",
     "dev:desktop": "npm --prefix apps/desktop run dev",
     "dev:desktop:remote": "npm --prefix apps/desktop run dev:remote",
     "dev:sync-agent": "npm --prefix apps/sync-agent start"

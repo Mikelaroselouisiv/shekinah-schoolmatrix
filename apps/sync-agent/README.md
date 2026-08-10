@@ -15,7 +15,7 @@ Cycle (~5s) + kick HTTP :
 | Variable | Défaut | Rôle |
 |----------|--------|------|
 | `LOCAL_API_URL` | `http://127.0.0.1:3000` | API locale |
-| `REMOTE_API_URL` | `http://34.95.43.132` | API GCP |
+| `REMOTE_API_URL` | `http://34.118.138.96` | API GCP |
 | `SYNC_API_KEY` | *(requis)* | Header `X-Sync-Key` |
 | `SYNC_INTERVAL_MS` | `5000` | Période de secours |
 | `SYNC_NODE_ID` | `local-mother` | `sourceNodeId` du push |
@@ -28,6 +28,6 @@ cd apps/sync-agent
 npm install
 $env:SYNC_API_KEY="..."
 $env:LOCAL_API_URL="http://127.0.0.1:3000"
-$env:REMOTE_API_URL="http://34.95.43.132"
+$env:REMOTE_API_URL="http://34.118.138.96"
 npm start
 ```

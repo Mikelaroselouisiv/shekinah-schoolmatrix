@@ -13,7 +13,7 @@
   Ajoute / aligne GEMINI_* dans /opt/schoolmatrix/.env.prod sur la VM GCP.
 #>
 param(
-  [string] $ProjectId = 'parallele-schoolmatrix',
+  [string] $ProjectId = 'shekinah-schoolmatrix',
   [string] $VmName = 'schoolmatrix-api',
   [string] $Zone = 'northamerica-northeast1-a',
   [string] $RemoteDir = '/opt/schoolmatrix',
@@ -99,7 +99,7 @@ function Get-KeyFromLocalSecrets {
 }
 
 function Get-KeyFromDevEnv {
-  $dev = Join-Path $RepoRoot 'parallele-schoolmatrix-backend\.env.dev'
+  $dev = Join-Path $RepoRoot 'shekinah-schoolmatrix-backend\.env.dev'
   if (-not (Test-Path -LiteralPath $dev)) { return '' }
   foreach ($line in Get-Content -LiteralPath $dev) {
     if ($line -match '^\s*GEMINI_API_KEY=(.+)$') {

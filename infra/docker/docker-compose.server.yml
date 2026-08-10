@@ -4,7 +4,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: schoolmatrix_postgres_server
+    container_name: shekinah_postgres_server
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-schoolmatrix}
@@ -13,7 +13,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - schoolmatrix_pgdata_server:/var/lib/postgresql/data
+      - shekinah_pgdata_server:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -21,8 +21,8 @@ services:
       retries: 10
 
   backend:
-    image: ${GCP_ARTIFACT_IMAGE:-northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend/backend:latest}
-    container_name: schoolmatrix_api_server
+    image: ${GCP_ARTIFACT_IMAGE:-northamerica-northeast1-docker.pkg.dev/shekinah-schoolmatrix/schoolmatrix-backend/backend:latest}
+    container_name: shekinah_api_server
     restart: unless-stopped
     env_file:
       - .env.server
@@ -50,11 +50,11 @@ services:
     build:
       context: ../../apps/sync-agent
       dockerfile: Dockerfile
-    container_name: schoolmatrix_sync_agent
+    container_name: shekinah_sync_agent
     restart: unless-stopped
     environment:
       LOCAL_API_URL: http://backend:3000
-      REMOTE_API_URL: ${REMOTE_API_URL:-http://34.95.43.132}
+      REMOTE_API_URL: ${REMOTE_API_URL:-http://34.118.138.96}
       SYNC_API_KEY: ${SYNC_API_KEY}
       SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
       SYNC_NODE_ID: ${SYNC_NODE_ID:-local-mother}
@@ -63,5 +63,5 @@ services:
       - backend
 
 volumes:
-  schoolmatrix_pgdata_server:
+  shekinah_pgdata_server:
   schoolmatrix_storage_server:

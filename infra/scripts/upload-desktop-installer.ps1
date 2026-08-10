@@ -4,8 +4,8 @@
   Publie les artefacts desktop (exe, latest.yml, blockmap) vers GCS pour electron-updater.
 
 .PARAMETER Edition
-  server -> gs://parallele-schoolmatrix-assets/installers/server/
-  remote -> gs://parallele-schoolmatrix-assets/installers/remote/
+  server -> gs://shekinah-schoolmatrix-assets/installers/server/
+  remote -> gs://shekinah-schoolmatrix-assets/installers/remote/
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File infra/scripts/upload-desktop-installer.ps1 -Edition remote
@@ -16,7 +16,7 @@ param(
   [string] $Edition,
 
   [string] $ReleaseDir = '',
-  [string] $Bucket = 'parallele-schoolmatrix-assets',
+  [string] $Bucket = 'shekinah-schoolmatrix-assets',
   [string] $Version = ''
 )
 

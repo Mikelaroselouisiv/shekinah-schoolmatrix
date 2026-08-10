@@ -1,7 +1,7 @@
 ---
 name: post-change-release
 description: >-
-  Post-modification release for Parallele SchoolMatrix: bump desktop semver,
+  Post-modification release for Shekinah SchoolMatrix: bump desktop semver,
   run ship-all.ps1 (git push, backend GCP, Remote/Server GCS installers so
   installed apps get update notifications). Use when the user finished changes
   and asks to ship, publier, push, release, déployer, GCS, GCP, or mettre à jour partout.
@@ -24,7 +24,7 @@ Post-change SchoolMatrix:
 
 | Cible | Mis à jour par |
 |-------|----------------|
-| Apps **Remote** (API cloud) | CI backend → VM GCP `34.95.43.132` |
+| Apps **Remote** (API cloud) | CI backend → VM GCP `34.118.138.96` |
 | Apps **Server** (école) | Installateur NSIS qui embarque `server-stack/images/*.tar` → GCS → MAJ auto → `bootstrap.ps1` sur **le Docker de l’école** |
 | Docker sur le **poste de dev** | Ignoré pour la prod école |
 
@@ -55,13 +55,13 @@ Détails : [docs/RELEASE.md](../../../docs/RELEASE.md), [docs/DESKTOP.md](../../
 
 | Chemins | Effet via ship / CI |
 |---------|---------------------|
-| `parallele-schoolmatrix-backend/**`, `infra/docker/**` | Image AR + deploy VM GCP (**Remote**). Pour les **écoles** : aussi rebuild installateur Server après AR. |
+| `shekinah-schoolmatrix-backend/**`, `infra/docker/**` | Image AR + deploy VM GCP (**Remote**). Pour les **écoles** : aussi rebuild installateur Server après AR. |
 | `apps/desktop/**` | Bump + installers GCS → notif MAJ |
 | `apps/sync-agent/**` | Doit être re-bundlé dans Server (`prepare-server-stack`) |
 | `docs/**`, `.github/**` | Push GitHub |
 
-Remote Git : **`origin`** → `https://github.com/Mikelaroselouisiv/schoolmatrix.git`  
-GCP : projet **`parallele-schoolmatrix`** uniquement (`assert-schoolmatrix-gcp.ps1`).
+Remote Git : **`origin`** → `https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix.git`  
+GCP : projet **`shekinah-schoolmatrix`** uniquement (`assert-schoolmatrix-gcp.ps1`).
 
 ## Anti-patterns
 

@@ -4,7 +4,7 @@
   Crée /opt/schoolmatrix/.env.prod sur la VM GCP si absent (mots de passe générés).
 #>
 param(
-  [string] $ProjectId = 'parallele-schoolmatrix',
+  [string] $ProjectId = 'shekinah-schoolmatrix',
   [string] $VmName = 'schoolmatrix-api',
   [string] $Zone = 'northamerica-northeast1-a',
   [string] $RemoteDir = '/opt/schoolmatrix',

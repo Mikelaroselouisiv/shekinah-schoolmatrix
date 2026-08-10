@@ -6,7 +6,7 @@ Si le workflow GitHub Actions n’a pas poussé les images sur ECR (dernières d
 
 ## 1. Vérifier le workflow sur GitHub
 
-1. Ouvrez : **https://github.com/Mikelaroselouisiv/schoolmatrix/actions**
+1. Ouvrez : **https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix/actions**
 2. Cliquez sur le workflow **« Build and push to ECR »** (dernière exécution).
 3. Regardez quelle **étape a échoué** (rouge) :
    - **Configure AWS credentials** → les secrets du dépôt ne sont pas bons ou absents (étape 2 ci‑dessous).
@@ -19,7 +19,7 @@ Si le workflow GitHub Actions n’a pas poussé les images sur ECR (dernières d
 
 Le workflow a besoin de deux secrets dans le dépôt :
 
-1. **https://github.com/Mikelaroselouisiv/schoolmatrix** → **Settings** → **Secrets and variables** → **Actions**.
+1. **https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix** → **Settings** → **Secrets and variables** → **Actions**.
 2. Vérifiez que ces deux secrets existent (la valeur ne se voit pas, seulement le nom) :
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
@@ -60,7 +60,7 @@ aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --
 ### 3.3 Build et push backend (schoolmatrix-api)
 
 ```powershell
-docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./parallele-schoolmatrix-backend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./shekinah-schoolmatrix-backend
 docker push "${ECR_REGISTRY}/schoolmatrix-api:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 ```
@@ -68,7 +68,7 @@ docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 ### 3.4 Build et push frontend (schoolmatrix-web)
 
 ```powershell
-docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./parallele-schoolmatrix-frontend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./shekinah-schoolmatrix-frontend
 docker push "${ECR_REGISTRY}/schoolmatrix-web:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}"
 ```
@@ -88,12 +88,12 @@ $IMAGE_TAG    = (git rev-parse --short HEAD).Trim()
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./parallele-schoolmatrix-backend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./shekinah-schoolmatrix-backend
 if ($LASTEXITCODE -ne 0) { exit 1 }
 docker push "${ECR_REGISTRY}/schoolmatrix-api:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 
-docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./parallele-schoolmatrix-frontend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./shekinah-schoolmatrix-frontend
 if ($LASTEXITCODE -ne 0) { exit 1 }
 docker push "${ECR_REGISTRY}/schoolmatrix-web:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}"

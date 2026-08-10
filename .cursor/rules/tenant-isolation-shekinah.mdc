@@ -1,0 +1,20 @@
+---
+description: Isolation absolue — ce dépôt est Shekinah SchoolMatrix uniquement
+alwaysApply: true
+---
+
+# Tenant Shekinah — isolation
+
+Ce workspace est **Shekinah SchoolMatrix** (`shekinah-schoolmatrix`) uniquement.
+
+- Config gcloud : `schoolmatrix-shekinah`
+- Project GCP : `shekinah-schoolmatrix`
+- Repo GitHub : `Mikelaroselouisiv/shekinah-schoolmatrix`
+- Bucket : `shekinah-schoolmatrix-assets`
+- Postgres DEV : `shekinah-db-dev` port **5436**
+
+**Interdit :** opérer sur `parallele-schoolmatrix`, POS Israel / Frères / Eau Cascade, ou tout autre tenant.
+
+**Exception IA :** `GEMINI_API_KEY` = clé agence partagée (copiée depuis Parallele), volontairement.
+
+Avant toute commande GCP : `gcloud config configurations activate schoolmatrix-shekinah` puis `infra/scripts/assert-schoolmatrix-gcp.ps1`.

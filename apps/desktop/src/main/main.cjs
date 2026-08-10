@@ -1,5 +1,5 @@
 /**
- * Parallele SchoolMatrix — Electron unifié (Server | Remote).
+ * Shekinah SchoolMatrix — Electron unifié (Server | Remote).
  * UI = Vite/React (renderer). Server démarre aussi la stack Docker locale + sync-agent.
  */
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
@@ -108,14 +108,14 @@ ipcMain.handle('app:fetch-media', async (_event, url) => {
 async function boot() {
   app.setName(
     edition === 'server'
-      ? 'Parallele SchoolMatrix Server'
-      : 'Parallele SchoolMatrix Remote',
+      ? 'Shekinah SchoolMatrix Server'
+      : 'Shekinah SchoolMatrix Remote',
   );
   if (process.platform === 'win32') {
     app.setAppUserModelId(
       edition === 'server'
-        ? 'com.parallele.schoolmatrix.desktop.server'
-        : 'com.parallele.schoolmatrix.desktop.remote',
+        ? 'com.shekinah.schoolmatrix.desktop.server'
+        : 'com.shekinah.schoolmatrix.desktop.remote',
     );
   }
 

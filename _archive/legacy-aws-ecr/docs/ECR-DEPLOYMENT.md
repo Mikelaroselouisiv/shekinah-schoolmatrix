@@ -13,8 +13,8 @@ Build des images sur GitHub Actions et mise à jour de la production locale depu
   - Checkout du dépôt
   - Configuration des identifiants AWS (secrets)
   - Login Docker vers ECR
-  - **Backend :** build de l’image depuis `./parallele-schoolmatrix-backend`, tag `latest` + short SHA du commit, push vers `421983920969.dkr.ecr.us-east-2.amazonaws.com/schoolmatrix-api`
-  - **Frontend :** build depuis `./parallele-schoolmatrix-frontend` avec `NEXT_PUBLIC_API_URL=http://127.0.0.1:3000`, tag `latest` + short SHA, push vers `.../schoolmatrix-web`
+  - **Backend :** build de l’image depuis `./shekinah-schoolmatrix-backend`, tag `latest` + short SHA du commit, push vers `421983920969.dkr.ecr.us-east-2.amazonaws.com/schoolmatrix-api`
+  - **Frontend :** build depuis `./shekinah-schoolmatrix-frontend` avec `NEXT_PUBLIC_API_URL=http://127.0.0.1:3000`, tag `latest` + short SHA, push vers `.../schoolmatrix-web`
 
 **Compte et région :** account `421983920969`, région `us-east-2`, repositories ECR : `schoolmatrix-api`, `schoolmatrix-web`.
 

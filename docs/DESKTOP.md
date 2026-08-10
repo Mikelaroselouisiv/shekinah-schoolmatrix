@@ -13,7 +13,7 @@ Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 | Édition | API |
 |--------|-----|
 | **Server** | `http://127.0.0.1:3000` (+ stack Docker / sync-agent) |
-| **Remote** | `http://34.95.43.132` |
+| **Remote** | `http://34.118.138.96` |
 
 ### Machine Server (site école) ≠ machine de développement
 
@@ -22,7 +22,7 @@ Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 
 Sur site : installer l’exe **Server** → l’app se lance → tout est automatique :
 
-1. Copie `server-stack` → `C:\ProgramData\Parallele SchoolMatrix\server-stack`
+1. Copie `server-stack` → `C:\ProgramData\Shekinah SchoolMatrix\server-stack`
 2. Installe Docker Desktop si besoin (winget)
 3. Crée / réaligne `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY, GCS, GEMINI, `SYNC_INTERVAL_MS`, `SYNC_KICK_URL`)
 4. Monte `credentials/gcs-sa.json` dans Docker (`GOOGLE_APPLICATION_CREDENTIALS`)
@@ -51,7 +51,7 @@ Seul le **backend** reste à part (API Nest). L’UI part avec Electron + Vite.
 
 ```powershell
 # Terminal A — API (Server uniquement ; Remote parle au cloud)
-cd parallele-schoolmatrix-backend
+cd shekinah-schoolmatrix-backend
 npm run dev
 ```
 
@@ -95,8 +95,8 @@ Les apps **installées** (Remote et Server) vérifient le feed GCS au démarrage
    - **GitHub Actions** → workflow **Desktop - release to GCS** (choix `remote` / `server` / `both`)
    - ou tag : `git tag desktop-v1.0.1 && git push origin desktop-v1.0.1`
 3. Artefacts uploadés : `latest.yml`, `.exe`, `.blockmap` vers :
-   - Remote : `https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote/`
-   - Server : `https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/server/`
+   - Remote : `https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/remote/`
+   - Server : `https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/server/`
 4. Sur la machine distante : notification OS + modal in-app → **Télécharger** → **Redémarrer et installer**
 
 En dev (`npm run dev`), les mises à jour sont désactivées (bouton version visible mais feed inactif).

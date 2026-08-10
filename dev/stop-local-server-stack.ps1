@@ -9,9 +9,9 @@ $compose = Join-Path $root "apps\desktop\server-stack\docker-compose.yml"
 Write-Host "Stopping local Server stack (project schoolmatrix-server)..." -ForegroundColor Cyan
 
 $names = @(
-  "schoolmatrix_api_server",
-  "schoolmatrix_postgres_server",
-  "schoolmatrix_sync_agent"
+  "shekinah_api_server",
+  "shekinah_postgres_server",
+  "shekinah_sync_agent"
 )
 
 foreach ($n in $names) {
@@ -24,4 +24,4 @@ if (Test-Path $compose) {
 }
 
 Write-Host "OK - you can run: npm run dev:backend" -ForegroundColor Green
-Write-Host "Postgres DEV (schoolmatrix-db-dev) left running." -ForegroundColor DarkGray
+Write-Host "Postgres DEV (shekinah-db-dev) left running." -ForegroundColor DarkGray

@@ -1,4 +1,4 @@
-# Règles de synchronisation — Parallele SchoolMatrix
+# Règles de synchronisation — Shekinah SchoolMatrix
 
 ## Topologie
 

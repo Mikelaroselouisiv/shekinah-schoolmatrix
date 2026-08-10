@@ -14,4 +14,4 @@ cd /opt/schoolmatrix
 sudo docker-compose -f docker-compose.gcp.yml --env-file .env.prod up -d --force-recreate --no-deps backend
 sleep 10
 echo -n 'SYNC_API_KEY length in container: '
-sudo docker exec schoolmatrix_api_cloud printenv SYNC_API_KEY | wc -c
+sudo docker exec shekinah_api_cloud printenv SYNC_API_KEY | wc -c

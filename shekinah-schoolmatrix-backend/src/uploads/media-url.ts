@@ -3,7 +3,7 @@
  * Source unique d’affichage : URL publique GCS quand l’objet est sous schoolmatrix/uploads/.
  */
 
-const DEFAULT_BUCKET = 'parallele-schoolmatrix-assets';
+const DEFAULT_BUCKET = 'shekinah-schoolmatrix-assets';
 const DEFAULT_PREFIX = 'schoolmatrix';
 
 export function gcsPublicBase(

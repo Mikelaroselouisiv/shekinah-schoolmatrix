@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch 
 ```
 
 - Remote git : **origin** (`schoolmatrix`)
-- GCP : **parallele-schoolmatrix** seulement
+- GCP : **shekinah-schoolmatrix** seulement
 - Desktop Remote + Server : même version dans `apps/desktop/package.json` → feeds GCS → notifications de MAJ
 
 **Rappel critique :** la VM GCP / le Docker de la machine de dev **ne mettent pas à jour** les Servers école. Le stack (backend, Postgres, sync-agent) doit être **embarqué** dans l’installateur Server (`prepare-server-stack` → `.tar`) ; `ship-all` doit **attendre** le CI backend (Artifact Registry) avant ce build. Voir `.cursor/rules/server-stack-vs-cloud.mdc`.

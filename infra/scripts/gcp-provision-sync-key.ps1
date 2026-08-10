@@ -11,7 +11,7 @@
   Ne change pas la VM sauf si aucune cle n'existe nulle part.
 #>
 param(
-  [string] $ProjectId = 'parallele-schoolmatrix',
+  [string] $ProjectId = 'shekinah-schoolmatrix',
   [string] $VmName = 'schoolmatrix-api',
   [string] $Zone = 'northamerica-northeast1-a',
   [string] $RemoteDir = '/opt/schoolmatrix',

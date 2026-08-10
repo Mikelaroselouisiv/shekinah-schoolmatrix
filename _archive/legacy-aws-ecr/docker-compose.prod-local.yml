@@ -24,7 +24,7 @@ services:
   api:
     image: schoolmatrix-api
     build:
-      context: ./parallele-schoolmatrix-backend
+      context: ./shekinah-schoolmatrix-backend
       args:
         - CACHEBUST=${CACHEBUST:-0}
     container_name: schoolmatrix-api

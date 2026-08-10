@@ -1,4 +1,4 @@
-# Parallele SchoolMatrix
+# Shekinah SchoolMatrix
 
 Logiciel scolaire : **API NestJS** + **desktop Electron** (éditions Server / Remote) + **agent de sync** + miroir cloud **GCP**.
 
@@ -6,8 +6,8 @@ Logiciel scolaire : **API NestJS** + **desktop Electron** (éditions Server / Re
 
 | Environnement | Rôle | Comment ça vit |
 |---------------|------|----------------|
-| **DEV** (cette machine) | Coder et tester | Nest + Vite/Electron en local ; Postgres Docker `schoolmatrix-db-dev` uniquement |
-| **CLOUD GCP** | API pour Remote / apps / site | Image Artifact Registry → VM `schoolmatrix-api` (`34.95.43.132`) |
+| **DEV** (cette machine) | Coder et tester | Nest + Vite/Electron en local ; Postgres Docker `shekinah-db-dev` uniquement |
+| **CLOUD GCP** | API pour Remote / apps / site | Image Artifact Registry → VM `schoolmatrix-api` (`34.118.138.96`) |
 | **SERVER école** | Vérité locale sur site | Installateur `SchoolMatrix Server` → images `.tar` dans Docker **de l’école** |
 
 > Déployer sur GCP ou faire tourner Docker « Server » sur le PC de dev **ne met pas à jour** les écoles.  
@@ -30,7 +30,7 @@ npm run dev:sync-agent
 
 | Besoin | Dossier / commande |
 |--------|-------------------|
-| Backend | `parallele-schoolmatrix-backend` → `npm run dev` |
+| Backend | `shekinah-schoolmatrix-backend` → `npm run dev` |
 | Frontend (Electron) | `apps/desktop` → `npm run dev` ou `npm run dev:remote` |
 | Sync-agent | `apps/sync-agent` → `npm start` |
 | Livraison prod | `infra/scripts/ship-all.ps1` (voir [docs/RELEASE.md](docs/RELEASE.md)) |
@@ -38,7 +38,7 @@ npm run dev:sync-agent
 ## Carte du dépôt (canonique)
 
 ```
-parallele-schoolmatrix-backend/   ← API Nest (dev + source de l’image Docker)
+shekinah-schoolmatrix-backend/   ← API Nest (dev + source de l’image Docker)
 apps/desktop/                     ← Produit Electron (UI Vite + Server/Remote)
 apps/desktop/server-stack/        ← Bundle installateur école (pas pour le quotidien DEV)
 apps/sync-agent/                  ← Agent de synchronisation

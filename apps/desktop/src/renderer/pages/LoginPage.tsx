@@ -1,4 +1,4 @@
-﻿import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AppUpdateControls } from '../components/AppUpdateControls';
 import { PasswordInput } from '../components/PasswordInput';
@@ -43,7 +43,7 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--app-bg-gradient)' }}>
       <div className="w-full max-w-md bg-white rounded-2xl border border-[var(--app-border)] shadow-sm p-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-1">Parallele SchoolMatrix</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-1">Shekinah SchoolMatrix</h1>
         <p className="text-slate-600 mb-6">Connexion</p>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           <div>

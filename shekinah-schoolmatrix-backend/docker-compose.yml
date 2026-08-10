@@ -2,4 +2,4 @@
 # Utiliser à la racine du repo : dev/docker-compose.postgres.yml
 #   npm run dev:db
 #
-# Ancien rappel : conteneur schoolmatrix-db-dev, port hôte 5435.
+# Ancien rappel : conteneur shekinah-db-dev, port hôte 5435.

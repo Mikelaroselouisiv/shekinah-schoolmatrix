@@ -5,7 +5,7 @@ description: >-
   pour une nouvelle école cliente (nouveau dossier, repo GitHub, projet GCP,
   branding Electron Server/Remote) à partir du prototype Parallele. Use when the
   user asks to cloner, dupliquer, nouveau client école, Shekinah, Yahweshamma,
-  nouveau SchoolMatrix, isolation GCP école, or forker Parallele SchoolMatrix.
+  nouveau SchoolMatrix, isolation GCP école, or forker Shekinah SchoolMatrix.
 ---
 
 # Agent de duplication SchoolMatrix (modèle agence)
@@ -37,8 +37,8 @@ Positionnement : **personnalisation totale** — le logiciel doit coller à 100 
 - Cette exception **ne s’applique pas** à `SYNC_API_KEY`, SA GCS, WIF, buckets,
   IP VM : ceux-là restent **isolés par client**.
 
-- **Prototype / modèle source** : Parallele SchoolMatrix
-  (`parallele-schoolmatrix`, repo `schoolmatrix`, dossier local type
+- **Prototype / modèle source** : Shekinah SchoolMatrix
+  (`shekinah-schoolmatrix`, repo `schoolmatrix`, dossier local type
   `Parallele-Schoolmatrix`).
 - **Clients suivants (exemples)** : Shekinah, Yahweshamma, etc.
 - Chaque duplication = une **enveloppe complète** (code + pipeline + cloud),
@@ -64,7 +64,7 @@ même projet GCP.
 3. **Ne jamais** pointer `gcloud`, deploy, WIF, buckets, VM IP, ou secrets GitHub
    GCP/sync vers Parallele (ou un autre client) une fois entré dans le duplicata.
 4. Avant toute commande GCP : activer la config dédiée du **nouveau** client ;
-   refuser si le project ID / config correspond à `parallele-schoolmatrix` ou
+   refuser si le project ID / config correspond à `shekinah-schoolmatrix` ou
    à un autre tenant non cible.
 5. Fuseau métier Haïti si applicable : `America/Port-au-Prince`.
 6. **Exception IA** : `GEMINI_API_KEY` / `GEMINI_MODEL` (/ `OPENAI_API_KEY` si
@@ -110,16 +110,16 @@ scripts, règles Cursor) :
 
 | Concept | Source Parallele (ex.) | Cible |
 |---------|------------------------|--------|
-| Product / brand | Parallele SchoolMatrix | `<PRODUCT_NAME>` |
-| Project ID GCP | `parallele-schoolmatrix` | `<PROJECT_ID>` |
+| Product / brand | Shekinah SchoolMatrix | `<PRODUCT_NAME>` |
+| Project ID GCP | `shekinah-schoolmatrix` | `<PROJECT_ID>` |
 | Config gcloud | `schoolmatrix` | `schoolmatrix-<slug>` |
-| Bucket GCS | `parallele-schoolmatrix-assets` | `<PROJECT_ID>-assets` (ou fourni) |
+| Bucket GCS | `shekinah-schoolmatrix-assets` | `<PROJECT_ID>-assets` (ou fourni) |
 | Artifact Registry | `schoolmatrix-backend` | `schoolmatrix-backend` (ou `<slug>-backend`) |
 | VM name | `schoolmatrix-api` | `schoolmatrix-api` (ou `<slug>-api`) |
-| IP API cloud | `34.95.43.132` | **nouvelle IP** après bootstrap (effacer l’ancienne) |
-| appId Electron | `com.parallele.schoolmatrix…` | `com.<slug>.schoolmatrix.desktop[.remote\|.server]` |
-| artifactName | `Parallele-SchoolMatrix-…` | `<Brand>-SchoolMatrix-…` |
-| Postgres DEV | `schoolmatrix-db-dev` :5435 | `<slug>-db-dev` + **port libre** |
+| IP API cloud | `34.118.138.96` | **nouvelle IP** après bootstrap (effacer l’ancienne) |
+| appId Electron | `com.shekinah.schoolmatrix…` | `com.<slug>.schoolmatrix.desktop[.remote\|.server]` |
+| artifactName | `Shekinah-SchoolMatrix-…` | `<Brand>-SchoolMatrix-…` |
+| Postgres DEV | `shekinah-db-dev` :5436 | `<slug>-db-dev` + **port libre** |
 | Compose Server project | `schoolmatrix-server` | `<slug>-schoolmatrix-server` |
 | Conteneurs Server | `schoolmatrix_*_server` | préfixe `<slug>_` ou équivalent unique |
 | Doc / assert / bootstrap | `*-schoolmatrix-*` | scripts renommés pour ce tenant |
@@ -199,7 +199,7 @@ Sources possibles (prototype Parallele) :
 
 - `secrets/gemini-api-key.txt`
 - script `infra/scripts/gcp-provision-gemini-key.ps1` (lire la valeur, ne pas en créer une nouvelle par client)
-- `parallele-schoolmatrix-backend/.env.dev` (`GEMINI_API_KEY=…`)
+- `shekinah-schoolmatrix-backend/.env.dev` (`GEMINI_API_KEY=…`)
 
 Actions sur le fork :
 
@@ -283,7 +283,7 @@ d’après les frictions rencontrées jusqu’à tenir la cible ~10 minutes.
 - Modifier Parallele « pour tester » le rebrand du client
 - Réutiliser le bucket / la VM / le WIF Parallele
 - Lancer `ship-all` du dossier Parallele en croyant publier le client
-- Garder `34.95.43.132` dans le fork
+- Garder `34.118.138.96` dans le fork
 - Faire tourner deux stacks Server Docker avec les **mêmes** `container_name`
 - Committer `secrets/`, `.pem`, installateurs `.exe`, images `.tar`
 - Demander à l’école / au client sa **propre** clé Gemini / OpenAI

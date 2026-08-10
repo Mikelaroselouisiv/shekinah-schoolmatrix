@@ -9,9 +9,9 @@ alwaysApply: true
 
 | Composant | Chemin | Commande racine |
 |-----------|--------|-----------------|
-| API Nest | `parallele-schoolmatrix-backend` | `npm run dev:backend` |
+| API Nest | `shekinah-schoolmatrix-backend` | `npm run dev:backend` |
 | Desktop Electron | `apps/desktop` | `npm run dev:desktop` |
-| Postgres DEV | conteneur `schoolmatrix-db-dev` :5435 | `npm run dev:db` |
+| Postgres DEV | conteneur `shekinah-db-dev` :5436 | `npm run dev:db` |
 | Sync-agent (optionnel) | `apps/sync-agent` | `npm run dev:sync-agent` |
 
 Docs : `README.md`, `docs/DEV.md`, `docs/ENVIRONMENTS.md`.
@@ -20,6 +20,6 @@ Docs : `README.md`, `docs/DEV.md`, `docs/ENVIRONMENTS.md`.
 
 - Ne pas utiliser `_archive/` (AWS ECR, Electron prod-local, compose Next).
 - Ne pas lancer `apps/desktop/frontend` (Next archive).
-- Si `schoolmatrix_api_server` occupe `:3000` sur le laptop → `npm run dev:free-port` avant Nest.
+- Si `shekinah_api_server` occupe `:3000` sur le laptop → `npm run dev:free-port` avant Nest.
 - Docker Desktop du PC de dev ≠ école ≠ VM GCP.
 - Publier uniquement via `infra/scripts/ship-all.ps1` quand l’utilisateur le demande.

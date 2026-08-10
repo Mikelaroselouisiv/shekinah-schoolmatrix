@@ -1,4 +1,4 @@
-# Parallele SchoolMatrix — Application desktop
+# Shekinah SchoolMatrix — Application desktop
 
 L’application lance les conteneurs Docker et affiche le frontend. **Au premier lancement**, un **assistant d’installation** (style panneau de configuration) permet de tout configurer avant tout démarrage.
 
@@ -33,7 +33,7 @@ Une fois l’assistant terminé, la configuration est enregistrée ; les lanceme
 Pour ne faire que choisir le dossier des données puis quitter (ancien mode) :
 
 ```text
-Parallele SchoolMatrix.exe --setup
+Shekinah SchoolMatrix.exe --setup
 ```
 
 Utile si vous préférez configurer à la main sans passer par l’assistant.

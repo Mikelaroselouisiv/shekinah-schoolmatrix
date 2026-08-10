@@ -21,7 +21,7 @@ function getBundledStackDir() {
 
 function getInstalledStackDir() {
   const programData = process.env.ProgramData || 'C:\\ProgramData';
-  return path.join(programData, 'Parallele SchoolMatrix', 'server-stack');
+  return path.join(programData, 'Shekinah SchoolMatrix', 'server-stack');
 }
 
 function copyDirRecursive(src, dest) {

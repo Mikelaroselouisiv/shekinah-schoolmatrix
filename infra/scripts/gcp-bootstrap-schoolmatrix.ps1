@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Provisionne l'infra GCP pour Parallele SchoolMatrix uniquement.
+  Provisionne l'infra GCP pour Shekinah SchoolMatrix uniquement.
   N'utilise JAMAIS les projets POS (Israel, Freres, Eau Cascade, etc.).
 
 .NOTES
@@ -11,17 +11,17 @@
   - Sync : last-write-wins (updatedAt) ; voir docs/SYNC_RULES.md.
 #>
 param(
-  [string] $ProjectId = 'parallele-schoolmatrix',
+  [string] $ProjectId = 'shekinah-schoolmatrix',
   [string] $Region = 'northamerica-northeast1',
   [string] $Zone = 'northamerica-northeast1-a',
   [string] $ArtifactRepo = 'schoolmatrix-backend',
-  [string] $Bucket = 'parallele-schoolmatrix-assets',
+  [string] $Bucket = 'shekinah-schoolmatrix-assets',
   [string] $VmName = 'schoolmatrix-api',
   [string] $MachineType = 'e2-medium',
   [string] $CiSaName = 'github-actions',
   [string] $VmSaName = 'schoolmatrix-vm',
   [string] $GitHubOwner = 'Mikelaroselouisiv',
-  [string] $GitHubRepo = 'schoolmatrix',
+  [string] $GitHubRepo = 'shekinah-schoolmatrix',
   [switch] $SkipVm,
   [switch] $SkipWif
 )
@@ -84,7 +84,7 @@ if (-not $repoExists) {
   gcloud artifacts repositories create $ArtifactRepo `
     --repository-format=docker `
     --location=$Region `
-    --description='Parallele SchoolMatrix backend images' `
+    --description='Shekinah SchoolMatrix backend images' `
     --project=$ProjectId
 } else {
   Write-Host 'Artifact Registry already exists'

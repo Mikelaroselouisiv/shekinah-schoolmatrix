@@ -9,7 +9,7 @@
     powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit
 
   Ce que fait le script (par défaut) :
-    1. Assert projet GCP = parallele-schoolmatrix
+    1. Assert projet GCP = shekinah-schoolmatrix
     2. Bump semver apps/desktop/package.json (Remote + Server partagent la version)
     3. Commit + push origin (si -Commit)
     4. Backend : déclenche / laisse tourner CI « Backend - build and push to GCP »
@@ -198,7 +198,7 @@ Write-Host "Bump=$Bump Desktop=$Desktop Commit=$Commit UseCI=$UseCI DryRun=$DryR
 if (-not $DryRun -and ($Desktop -ne 'none' -or -not $SkipBackend)) {
   Write-Step "Assert GCP SchoolMatrix"
   try {
-    & gcloud config configurations activate schoolmatrix 2>$null | Out-Null
+    & gcloud config configurations activate schoolmatrix-shekinah 2>$null | Out-Null
   } catch { }
   & $AssertScript
 }
@@ -348,10 +348,10 @@ if ($Desktop -eq 'none') {
 Write-Step "Livraison terminée"
 Write-Host "Desktop version : $version"
 Write-Host "Feeds MAJ :"
-Write-Host "  Remote: https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote/latest.yml"
-Write-Host "  Server: https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/server/latest.yml"
-Write-Host "API cloud  : http://34.95.43.132/"
-Write-Host "GitHub     : https://github.com/Mikelaroselouisiv/schoolmatrix"
+Write-Host "  Remote: https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/remote/latest.yml"
+Write-Host "  Server: https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/server/latest.yml"
+Write-Host "API cloud  : http://34.118.138.96/"
+Write-Host "GitHub     : https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix"
 Write-Host ""
 Write-Host "Sur les machines installées : notification → télécharger → redémarrer."
 if ($DryRun) {

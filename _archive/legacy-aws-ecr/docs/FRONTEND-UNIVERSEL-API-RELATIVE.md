@@ -71,7 +71,7 @@ Les pages construisent les URLs ainsi : `${API_BASE}/classes`, `${API_BASE}/auth
 
 | Fichier | Usage |
 |---------|--------|
-| `parallele-schoolmatrix-frontend/Dockerfile` | `ARG NEXT_PUBLIC_API_URL=http://127.0.0.1:3000` + `ENV NEXT_PUBLIC_API_URL=...` au build. |
+| `shekinah-schoolmatrix-frontend/Dockerfile` | `ARG NEXT_PUBLIC_API_URL=http://127.0.0.1:3000` + `ENV NEXT_PUBLIC_API_URL=...` au build. |
 | `docker-compose.yml` | Build-arg et env `NEXT_PUBLIC_API_URL=http://127.0.0.1:3000` pour le service `web`. |
 | `docker-compose.prod-local.yml` | Idem. |
 | `docker-compose.prod-local-ecr.yml` | Env runtime `NEXT_PUBLIC_API_URL: http://127.0.0.1:3000` pour `web`. |

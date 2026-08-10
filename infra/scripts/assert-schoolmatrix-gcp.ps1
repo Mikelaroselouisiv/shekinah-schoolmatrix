@@ -1,14 +1,15 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Refuse toute ops GCP si le projet actif n'est pas Parallele SchoolMatrix.
+  Refuse toute ops GCP si le projet actif n'est pas Shekinah SchoolMatrix.
 #>
 $ErrorActionPreference = 'Continue'
 
-$ExpectedProject = 'parallele-schoolmatrix'
+$ExpectedProject = 'shekinah-schoolmatrix'
 $ForbiddenSubstrings = @(
   'freres', 'bazile', 'baziles', 'pos-freres',
-  'israel', 'entrprise-israel', 'eau-cascade', 'pos-entrprise'
+  'israel', 'entrprise-israel', 'eau-cascade', 'pos-entrprise',
+  'parallele-schoolmatrix'
 )
 
 function Get-GcloudValue([string] $Key) {
@@ -24,7 +25,7 @@ $project = Get-GcloudValue 'project'
 $account = Get-GcloudValue 'account'
 
 if (-not $project) {
-  throw 'Aucun projet gcloud actif. Activez schoolmatrix puis : gcloud config set project parallele-schoolmatrix'
+  throw 'Aucun projet gcloud actif. Activez schoolmatrix-shekinah puis : gcloud config set project shekinah-schoolmatrix'
 }
 
 $lower = $project.ToLowerInvariant()
@@ -35,7 +36,7 @@ foreach ($bad in $ForbiddenSubstrings) {
 }
 
 if ($project -ne $ExpectedProject) {
-  throw "ABORT: projet actif='$project' attendu='$ExpectedProject'. gcloud config configurations activate schoolmatrix"
+  throw "ABORT: projet actif='$project' attendu='$ExpectedProject'. gcloud config configurations activate schoolmatrix-shekinah"
 }
 
 Write-Host "OK GCP SchoolMatrix: project=$project account=$account" -ForegroundColor Green

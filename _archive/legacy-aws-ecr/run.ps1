@@ -1,6 +1,6 @@
 # Build des images + démarrage des conteneurs (api + web).
-# Utilise la même base qu'en dev : schoolmatrix-db-dev (port 5433).
-# Prérequis : démarrer la base avant si besoin — docker start schoolmatrix-db-dev
+# Utilise la même base qu'en dev : shekinah-db-dev (port 5433).
+# Prérequis : démarrer la base avant si besoin — docker start shekinah-db-dev
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot

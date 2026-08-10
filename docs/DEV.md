@@ -6,7 +6,7 @@ Poste développeur uniquement. Pour la logique des 3 environnements : [ENVIRONME
 
 - Node.js 20+
 - Docker Desktop (pour Postgres DEV)
-- Depuis la racine du repo : `npm install` dans `parallele-schoolmatrix-backend` et `apps/desktop` (une fois)
+- Depuis la racine du repo : `npm install` dans `shekinah-schoolmatrix-backend` et `apps/desktop` (une fois)
 
 ## Lancer (recommandé)
 
@@ -16,7 +16,7 @@ Depuis la **racine** du dépôt :
 # 1) S’assurer que le stack « Server école » n’occupe pas :3000 sur ce PC
 npm run dev:free-port
 
-# 2) API (démarre schoolmatrix-db-dev si besoin, puis Nest --watch)
+# 2) API (démarre shekinah-db-dev si besoin, puis Nest --watch)
 npm run dev:backend
 
 # 3) Desktop Electron édition Server (API http://127.0.0.1:3000)
@@ -33,7 +33,7 @@ npm run dev:desktop:remote
 
 ```powershell
 # Terminal A
-cd parallele-schoolmatrix-backend
+cd shekinah-schoolmatrix-backend
 npm run dev
 
 # Terminal B
@@ -45,17 +45,17 @@ npm run dev
 
 | | |
 |--|--|
-| Conteneur | `schoolmatrix-db-dev` |
+| Conteneur | `shekinah-db-dev` |
 | Port hôte | **5435** → 5432 conteneur |
 | Compose | `dev/docker-compose.postgres.yml` |
-| Env Nest | `parallele-schoolmatrix-backend/.env.dev` (copie de `.env.dev.example`) |
+| Env Nest | `shekinah-schoolmatrix-backend/.env.dev` (copie de `.env.dev.example`) |
 
 ```powershell
 npm run dev:db          # up -d
 npm run dev:db:down     # stop
 ```
 
-`npm run dev` du backend appelle déjà `docker start schoolmatrix-db-dev`, et crée le conteneur via le compose DEV s’il n’existe pas.
+`npm run dev` du backend appelle déjà `docker start shekinah-db-dev`, et crée le conteneur via le compose DEV s’il n’existe pas.
 
 > Sur cette machine, les ports 5432–5434 sont souvent pris par d’autres projets (POS). D’où **5435** pour SchoolMatrix DEV.
 
@@ -68,7 +68,7 @@ cd apps\sync-agent
 npm install
 $env:SYNC_API_KEY="..."          # même clé que LOCAL + CLOUD
 $env:LOCAL_API_URL="http://127.0.0.1:3000"
-$env:REMOTE_API_URL="http://34.95.43.132"
+$env:REMOTE_API_URL="http://34.118.138.96"
 npm start
 ```
 
@@ -91,7 +91,7 @@ Ne pas lancer `npm run dev` dans `apps/desktop/frontend` pour le produit.
 |--------|----------|
 | Utiliser `_archive/` | Ancien AWS/ECR/Electron local-prod |
 | `docker compose -f infra/docker/docker-compose.gcp.yml …` sur le laptop | Définition **cloud** |
-| Laisser `schoolmatrix_api_server` sur `:3000` + Nest en parallèle | Collision + confusion prod/dev |
+| Laisser `shekinah_api_server` sur `:3000` + Nest en parallèle | Collision + confusion prod/dev |
 | Croire que Docker Desktop = école | L’école a son propre Docker, alimenté par l’installeur |
 | `ship-all` / upload GCS par erreur | Publie en production |
 

@@ -10,7 +10,7 @@ alwaysApply: true
 | Cible | Rôle | Comment ça se met à jour |
 |-------|------|---------------------------|
 | **Poste de développement** (cette machine) | Code + tests locaux | `npm run dev`, Docker local optionnel — **jamais** la source de vérité pour une école |
-| **VM GCP** `schoolmatrix-api` (`34.95.43.132`) | Miroir cloud pour les apps **Remote** | Workflow `Backend - build and push to GCP` → Artifact Registry → deploy VM |
+| **VM GCP** `schoolmatrix-api` (`34.118.138.96`) | Miroir cloud pour les apps **Remote** | Workflow `Backend - build and push to GCP` → Artifact Registry → deploy VM |
 | **Machine Server (école)** | Source de vérité locale (Postgres + API + sync-agent) | Uniquement via l’**installateur Server** (NSIS) qui embarque `server-stack/*.tar` |
 
 ## Règle absolue pour les agents

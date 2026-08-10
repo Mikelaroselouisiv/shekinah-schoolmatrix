@@ -11,8 +11,8 @@ const dancingScript = Dancing_Script({
 });
 
 export const metadata: Metadata = {
-  title: "Parallele SchoolMatrix",
-  description: "Gestion scolaire Parallele SchoolMatrix",
+  title: "Shekinah SchoolMatrix",
+  description: "Gestion scolaire Shekinah SchoolMatrix",
 };
 
 export default function RootLayout({

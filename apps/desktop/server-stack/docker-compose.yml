@@ -2,19 +2,19 @@
 # name: unique (evite collision avec d'autres POS dont le dossier s'appelle aussi server-stack).
 # Postgres interne Docker uniquement (pas de bind 5432 hote).
 
-name: schoolmatrix-server
+name: shekinah-schoolmatrix-server
 
 services:
   postgres:
     image: schoolmatrix/postgres:bundle
-    container_name: schoolmatrix_postgres_server
+    container_name: shekinah_postgres_server
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-schoolmatrix}
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_DB: ${DB_NAME:-schoolmatrix}
     volumes:
-      - schoolmatrix_pgdata_server:/var/lib/postgresql/data
+      - shekinah_pgdata_server:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -23,7 +23,7 @@ services:
 
   backend:
     image: schoolmatrix/backend:bundle
-    container_name: schoolmatrix_api_server
+    container_name: shekinah_api_server
     restart: unless-stopped
     env_file:
       - .env.server
@@ -35,9 +35,9 @@ services:
       STORAGE_ROOT: /app/storage
       NODE_ID: LOCAL
       SYNC_KICK_URL: http://sync-agent:3911/kick
-      GCS_BUCKET: ${GCS_BUCKET:-parallele-schoolmatrix-assets}
+      GCS_BUCKET: ${GCS_BUCKET:-shekinah-schoolmatrix-assets}
       GCS_PREFIX: ${GCS_PREFIX:-schoolmatrix}
-      GCS_PROJECT_ID: ${GCS_PROJECT_ID:-parallele-schoolmatrix}
+      GCS_PROJECT_ID: ${GCS_PROJECT_ID:-shekinah-schoolmatrix}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcs-sa.json
     ports:
       - "127.0.0.1:3000:3000"
@@ -50,11 +50,11 @@ services:
 
   sync-agent:
     image: schoolmatrix/sync-agent:bundle
-    container_name: schoolmatrix_sync_agent
+    container_name: shekinah_sync_agent
     restart: unless-stopped
     environment:
       LOCAL_API_URL: http://backend:3000
-      REMOTE_API_URL: ${REMOTE_API_URL:-http://34.95.43.132}
+      REMOTE_API_URL: ${REMOTE_API_URL:-http://34.118.138.96}
       SYNC_API_KEY: ${SYNC_API_KEY}
       SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
       SYNC_NODE_ID: ${SYNC_NODE_ID:-local-mother}
@@ -63,5 +63,5 @@ services:
       - backend
 
 volumes:
-  schoolmatrix_pgdata_server:
+  shekinah_pgdata_server:
   schoolmatrix_storage_server:

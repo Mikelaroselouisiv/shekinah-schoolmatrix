@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   Prepare server-stack/ before dist:win:server :
 
@@ -124,12 +124,12 @@ $defaultsLines = @(
   'JWT_SECRET=CHANGE_ME',
   'NODE_ID=LOCAL',
   "SYNC_API_KEY=$SyncKey",
-  'REMOTE_API_URL=http://34.95.43.132',
+  'REMOTE_API_URL=http://34.118.138.96',
   'SYNC_INTERVAL_MS=5000',
   'SYNC_KICK_URL=http://sync-agent:3911/kick',
-  'GCS_BUCKET=parallele-schoolmatrix-assets',
+  'GCS_BUCKET=shekinah-schoolmatrix-assets',
   'GCS_PREFIX=schoolmatrix',
-  'GCS_PROJECT_ID=parallele-schoolmatrix',
+  'GCS_PROJECT_ID=shekinah-schoolmatrix',
   'GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcs-sa.json',
   "GEMINI_API_KEY=$($Gemini.Key)",
   "GEMINI_MODEL=$($Gemini.Model)"
@@ -138,7 +138,7 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllLines($DefaultsEnv, $defaultsLines, $utf8)
 Write-Host 'defaults.env pret (SYNC_API_KEY + GCS + GEMINI injectes)'
 
-$Registry = 'northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend'
+$Registry = 'northamerica-northeast1-docker.pkg.dev/shekinah-schoolmatrix/schoolmatrix-backend'
 $Backend = "${Registry}/backend:latest"
 $Postgres = 'postgres:16'
 

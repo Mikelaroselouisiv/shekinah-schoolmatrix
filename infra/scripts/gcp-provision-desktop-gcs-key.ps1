@@ -11,8 +11,8 @@
   pour les builds CI / machines de build.
 #>
 param(
-  [string] $ProjectId = 'parallele-schoolmatrix',
-  [string] $Bucket = 'parallele-schoolmatrix-assets',
+  [string] $ProjectId = 'shekinah-schoolmatrix',
+  [string] $Bucket = 'shekinah-schoolmatrix-assets',
   [string] $SaName = 'schoolmatrix-desktop',
   [string] $SecretId = 'schoolmatrix-desktop-gcs-key',
   [switch] $ForceNewKey

@@ -123,7 +123,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase truncate">
-                {school?.name ?? "Parallele SchoolMatrix"}
+                {school?.name ?? "Shekinah SchoolMatrix"}
               </h1>
             </div>
           </Link>

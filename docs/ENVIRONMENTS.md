@@ -9,7 +9,7 @@ flowchart TB
   subgraph DEV["Poste développeur"]
     Nest["Nest npm run dev :3000"]
     Electron["Electron apps/desktop"]
-    PgDev["Docker schoolmatrix-db-dev :5435"]
+    PgDev["Docker shekinah-db-dev :5436"]
     SyncDev["sync-agent npm start optionnel"]
     Nest --> PgDev
     Electron -->|"Server edition"| Nest
@@ -18,7 +18,7 @@ flowchart TB
 
   subgraph CLOUD["GCP — miroir Remote"]
     AR["Artifact Registry backend:latest"]
-    VM["VM schoolmatrix-api 34.95.43.132"]
+    VM["VM schoolmatrix-api 34.118.138.96"]
     PgCloud["Postgres cloud"]
     AR --> VM
     VM --> PgCloud
@@ -44,9 +44,9 @@ flowchart TB
 | Composant | Où | Comment |
 |-----------|-----|---------|
 | Code source | ce dépôt | Git |
-| API | process Node local | `cd parallele-schoolmatrix-backend && npm run dev` |
+| API | process Node local | `cd shekinah-schoolmatrix-backend && npm run dev` |
 | UI | Electron + Vite | `cd apps/desktop && npm run dev` |
-| Postgres | conteneur **`schoolmatrix-db-dev`** | port hôte **5435** — voir `dev/docker-compose.postgres.yml` |
+| Postgres | conteneur **`shekinah-db-dev`** | port hôte **5436** — voir `dev/docker-compose.postgres.yml` |
 | Sync-agent | process Node local (optionnel) | `cd apps/sync-agent && npm start` |
 
 **Règles :**
@@ -59,9 +59,9 @@ flowchart TB
 
 Si tu as déjà lancé l’installateur Server (ou `prepare-server-stack` + bootstrap), Docker Desktop peut contenir :
 
-- `schoolmatrix_api_server` → **occupe le port 3000**
-- `schoolmatrix_postgres_server`
-- `schoolmatrix_sync_agent`
+- `shekinah_api_server` → **occupe le port 3000**
+- `shekinah_postgres_server`
+- `shekinah_sync_agent`
 
 Alors Nest local ne peut plus binder `:3000`, et tu mélanges stack « prod école » et DEV.
 
@@ -77,10 +77,10 @@ Cela arrête uniquement le projet Docker `schoolmatrix-server` sur **cette machi
 
 | Élément | Valeur |
 |---------|--------|
-| Projet | `parallele-schoolmatrix` |
-| VM | `schoolmatrix-api` / `34.95.43.132` |
+| Projet | `shekinah-schoolmatrix` |
+| VM | `schoolmatrix-api` / `34.118.138.96` |
 | Compose | `infra/docker/docker-compose.gcp.yml` |
-| Conteneurs typiques | `schoolmatrix_api_cloud`, `schoolmatrix_postgres_cloud` |
+| Conteneurs typiques | `shekinah_api_cloud`, `shekinah_postgres_cloud` |
 | Sync-agent | **non** (le cloud est miroir ; l’agent vit côté école / tests locaux) |
 | Mise à jour | CI `Backend - build and push to GCP` ou `ship-all` |
 
@@ -92,8 +92,8 @@ Les apps **Remote**, futures apps natives et sites web parlent à **cette** API.
 |---------|--------|
 | Livrable | exe **SchoolMatrix Server** |
 | Bundle | `apps/desktop/server-stack/` (`images/*.tar`, `bootstrap.ps1`, `defaults.env`) |
-| Sur site | `C:\ProgramData\Parallele SchoolMatrix\server-stack` |
-| Conteneurs | `schoolmatrix_api_server`, `schoolmatrix_postgres_server`, `schoolmatrix_sync_agent` |
+| Sur site | `C:\ProgramData\Shekinah SchoolMatrix\server-stack` |
+| Conteneurs | `shekinah_api_server`, `shekinah_postgres_server`, `shekinah_sync_agent` |
 | Mise à jour | feed GCS → MAJ auto → `bootstrap.ps1` → `docker load` |
 
 **Seul** ce chemin met à jour une école. Modifier `infra/docker/docker-compose.gcp.yml` ou le Docker du laptop **ne change rien** sur site.

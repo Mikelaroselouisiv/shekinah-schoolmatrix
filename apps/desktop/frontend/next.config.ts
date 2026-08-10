@@ -5,7 +5,7 @@ import type { NextConfig } from "next";
 // Bloquer la résolution sur le dossier frontend (évite C:\Users\User à cause du lockfile parent)
 const getRoot = () => {
   const cwd = process.cwd();
-  if (cwd.includes("parallele-schoolmatrix-frontend")) return path.resolve(cwd);
+  if (cwd.includes("shekinah-schoolmatrix-frontend")) return path.resolve(cwd);
   try {
     if (typeof __dirname !== "undefined") return path.resolve(__dirname);
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)));

@@ -1,8 +1,8 @@
 {
-  "appId": "com.parallele.schoolmatrix.desktop.server",
-  "productName": "Parallele SchoolMatrix Server",
-  "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",
-  "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
+  "appId": "com.shekinah.schoolmatrix.desktop.server",
+  "productName": "Shekinah SchoolMatrix Server",
+  "artifactName": "Shekinah-SchoolMatrix-Server-${version}.${ext}",
+  "copyright": "Copyright Â© 2026 Shekinah SchoolMatrix",
   "directories": {
     "output": "release-server-b",
     "buildResources": "build"
@@ -29,7 +29,7 @@
   ],
   "publish": {
     "provider": "generic",
-    "url": "https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/server"
+    "url": "https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/server"
   },
   "win": {
     "icon": "build/icon.ico",

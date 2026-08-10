@@ -1,4 +1,4 @@
-﻿import { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolProfileOptional } from '../context/SchoolProfileContext';
@@ -161,7 +161,7 @@ export function AppLayout() {
             </div>
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase truncate">
-                {school?.name ?? 'Parallele SchoolMatrix'}
+                {school?.name ?? 'Shekinah SchoolMatrix'}
               </h1>
             </div>
           </Link>

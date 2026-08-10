@@ -42,7 +42,7 @@ function loadEnvFile(filePath) {
 }
 
 function isProjectRepo() {
-  return fs.existsSync(path.join(PROJECT_ROOT, 'parallele-schoolmatrix-backend'));
+  return fs.existsSync(path.join(PROJECT_ROOT, 'shekinah-schoolmatrix-backend'));
 }
 
 function getDataRoot() {
