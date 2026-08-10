@@ -52,7 +52,7 @@ Lié à `01D27D-8BA5C8-721AC7` (Troisième Compte de facturation).
 |--------|--------|
 | `GCP_PROJECT_ID` | `shekinah-schoolmatrix` |
 | `GCP_SERVICE_ACCOUNT` | `github-actions@shekinah-schoolmatrix.iam.gserviceaccount.com` |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/1093524002924/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/972156035703/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
 
 **Variables**
 
