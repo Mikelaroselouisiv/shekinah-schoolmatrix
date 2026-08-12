@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Shekinah",
+    "slug": "shekinah-schoolmatrix-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shekinah.schoolmatrix",
+      "icon": "./assets/icon.png"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#000000",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.shekinah.schoolmatrix",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Shekinah utilise vos photos pour les fiches élèves.",
+          "cameraPermission": "Shekinah utilise la caméra pour photographier les élèves."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "owner": "larosemike",
+    "extra": {
+      "eas": {
+        "projectId": "a0014c42-75b1-4542-a1a9-042b1f2bd75b"
+      }
+    }
+  }
+}

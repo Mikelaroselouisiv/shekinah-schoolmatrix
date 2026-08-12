@@ -9,6 +9,10 @@
     "dev:backend": "npm --prefix shekinah-schoolmatrix-backend run dev",
     "dev:desktop": "npm --prefix apps/desktop run dev",
     "dev:desktop:remote": "npm --prefix apps/desktop run dev:remote",
+    "dev:mobile": "npm --prefix apps/mobile start",
+    "dev:mobile:android": "npm --prefix apps/mobile run android",
+    "dev:mobile:ios": "npm --prefix apps/mobile run ios",
+    "dev:mobile:android:fresh": "npm --prefix apps/mobile run android:fresh",
     "dev:sync-agent": "npm --prefix apps/sync-agent start"
   }
 }
