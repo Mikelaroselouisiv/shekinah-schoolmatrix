@@ -14,9 +14,12 @@ import {
 } from '@nestjs/common';
 import { TeachersService } from './teachers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('teachers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
+@DenyParents()
 export class TeachersController {
   constructor(private readonly teachersService: TeachersService) {}
 

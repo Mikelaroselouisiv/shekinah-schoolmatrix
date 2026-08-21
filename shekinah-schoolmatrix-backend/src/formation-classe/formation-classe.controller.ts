@@ -11,9 +11,12 @@ import {
 } from '@nestjs/common';
 import { FormationClasseService } from './formation-classe.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('formation-classe')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
+@DenyParents()
 export class FormationClasseController {
   constructor(private readonly formationClasseService: FormationClasseService) {}
 

@@ -12,6 +12,7 @@ import { Period } from '../period/period.entity';
 import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { GradesController } from './grades.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { GradesController } from './grades.controller';
       Subject,
       Period,
     ]),
+    ParentScopeModule,
   ],
   controllers: [GradesController],
   providers: [GradesService, PreschoolGradesService],

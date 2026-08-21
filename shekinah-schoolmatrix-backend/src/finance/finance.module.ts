@@ -12,9 +12,11 @@ import { FeeService } from '../economat/fee-service.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { FinanceService } from './finance.service';
 import { FinanceController } from './finance.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
+    ParentScopeModule,
     TypeOrmModule.forFeature([
       Exercice,
       Account,

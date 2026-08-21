@@ -12,6 +12,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 type Student = {
   id: string;
   order_number: string | null;
+  student_code: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;
@@ -96,7 +97,7 @@ const DECISION_LABELS: Record<string, string> = {
   EXPELLED: "Exclu",
 };
 
-type LinkedStudent = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
+type LinkedStudent = { id: string; order_number: string | null; student_code: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 
@@ -148,7 +149,7 @@ export function DashboardFicheElevePage() {
   const { roleName, school } = useSchoolProfile() ?? { roleName: "", school: null };
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [students, setStudents] = useState<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
+  const [students, setStudents] = useState<{ id: string; order_number: string | null; student_code: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
   const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
   const [restrictToLinkedStudents, setRestrictToLinkedStudents] = useState(false);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -235,7 +236,7 @@ export function DashboardFicheElevePage() {
         if (list.length > 0) {
           setLinkedStudents(list);
           setRestrictToLinkedStudents(true);
-          setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+          setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, student_code: s.student_code ?? null, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
           const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
           const sel = list.find((x) => x.id === toSelect) ?? list[0];
           setSelectedStudentId(toSelect);
@@ -423,7 +424,7 @@ export function DashboardFicheElevePage() {
             <option value="">— Sélectionner —</option>
             {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
               <option key={s.id} value={s.id}>
-                {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                {s.student_code ? `${s.student_code} — ` : ""}{s.first_name} {s.last_name}
                 {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
               </option>
             ))}
@@ -453,7 +454,9 @@ export function DashboardFicheElevePage() {
                 <h3 className="text-xl font-bold text-slate-900">
                   {student.first_name} {student.last_name}
                 </h3>
-                <p className="text-slate-600 font-mono text-sm">{student.order_number ?? "—"}</p>
+                <p className="text-slate-600 font-mono text-sm">
+                  Code école : {student.student_code ?? "—"}
+                </p>
                 <p className="text-slate-700 mt-1">
                   <span className="font-medium">Tél. :</span> {student.phone ?? student.email ?? "—"}
                 </p>
@@ -474,7 +477,7 @@ export function DashboardFicheElevePage() {
                       {
                         first_name: student.first_name,
                         last_name: student.last_name,
-                        order_number: student.order_number,
+                        student_code: student.student_code,
                         class_name: student.class_name,
                         room_name: student.room_name ?? null,
                         photo_url: student.photo_identity_student,

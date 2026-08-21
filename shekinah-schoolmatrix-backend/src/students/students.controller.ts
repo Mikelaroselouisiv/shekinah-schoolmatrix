@@ -15,13 +15,20 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import {
+  DenyParents,
+  ParentScopedStudent,
+} from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
 
 @Controller('students')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
+  /** Liste de toute l'école : jamais accessible depuis un compte parent. */
+  @DenyParents()
   @Get()
   async list(
     @Query('class_id') classId?: string,
@@ -36,6 +43,7 @@ export class StudentsController {
       students: students.map((s) => ({
         id: s.id,
         order_number: s.order_number,
+        student_code: s.student_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -65,6 +73,8 @@ export class StudentsController {
     };
   }
 
+  /** Recherche par numéro d'ordre : permettrait à un parent d'énumérer l'école. */
+  @DenyParents()
   @Get('by-order-number/:orderNumber')
   async byOrderNumber(@Param('orderNumber') orderNumber: string) {
     const s = await this.studentsService.findByOrderNumber(decodeURIComponent(orderNumber));
@@ -76,6 +86,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        student_code: s.student_code,
         first_name: s.first_name,
         last_name: s.last_name,
         class_id: s.class?.id,
@@ -84,6 +95,7 @@ export class StudentsController {
     };
   }
 
+  @ParentScopedStudent({ in: 'param', key: 'id' })
   @Get(':id')
   async one(@Param('id') id: string) {
     const s = await this.studentsService.findOne(id);
@@ -94,6 +106,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        student_code: s.student_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -124,6 +137,7 @@ export class StudentsController {
     };
   }
 
+  @DenyParents()
   @Post('import')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   async importCsv(
@@ -150,6 +164,7 @@ export class StudentsController {
   }
 
   /** Aperçu PDF (heuristique + IA) — n’écrit pas en base. */
+  @DenyParents()
   @Post('import-pdf/preview')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
   async importPdfPreview(@UploadedFile() file: { buffer?: Buffer }) {
@@ -169,6 +184,7 @@ export class StudentsController {
   }
 
   /** Confirme l’inscription PDF dans la classe choisie (sans salle). */
+  @DenyParents()
   @Post('import-pdf')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
   async importPdf(
@@ -200,14 +216,16 @@ export class StudentsController {
     return { ok: true, ...result };
   }
 
+  @DenyParents()
   @Post()
   async create(@Body() body: Record<string, unknown>) {
-    const s = await this.studentsService.create(body as any);
+    const { student: s, parent_account } = await this.studentsService.create(body as any);
     return {
       ok: true,
       student: {
         id: s.id,
         order_number: s.order_number,
+        student_code: s.student_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -233,9 +251,19 @@ export class StudentsController {
         created_at: s.created_at,
         updated_at: s.updated_at,
       },
+      parent_account: parent_account
+        ? {
+            id: parent_account.user.id,
+            email: parent_account.email,
+            phone: parent_account.phone,
+            created: parent_account.created,
+            temporary_password: parent_account.temporary_password,
+          }
+        : null,
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     const s = await this.studentsService.update(id, body as any);
@@ -244,6 +272,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        student_code: s.student_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -272,6 +301,7 @@ export class StudentsController {
     };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.studentsService.delete(id);

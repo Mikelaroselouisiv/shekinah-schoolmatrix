@@ -10,9 +10,11 @@ import {
 } from '@nestjs/common';
 import { SubjectsService } from './subjects.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('subjects')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class SubjectsController {
   constructor(private readonly subjectsService: SubjectsService) {}
 
@@ -48,6 +50,7 @@ export class SubjectsController {
     };
   }
 
+  @DenyParents()
   @Post()
   async create(@Body() body: { name: string; code?: string }) {
     const subject = await this.subjectsService.create({
@@ -67,6 +70,7 @@ export class SubjectsController {
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -86,6 +90,7 @@ export class SubjectsController {
     };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.subjectsService.delete(id);

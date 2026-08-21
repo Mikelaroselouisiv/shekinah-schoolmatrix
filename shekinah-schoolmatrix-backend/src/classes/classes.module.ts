@@ -6,10 +6,12 @@ import { Room } from '../rooms/room.entity';
 import { Subject } from '../subjects/subject.entity';
 import { ClassesService } from './classes.service';
 import { ClassesController } from './classes.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Class, ClassSubject, Room, Subject]),
+    ParentScopeModule,
   ],
   controllers: [ClassesController],
   providers: [ClassesService],

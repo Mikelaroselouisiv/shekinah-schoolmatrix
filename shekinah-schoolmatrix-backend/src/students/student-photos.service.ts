@@ -7,6 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StudentPhoto, StudentPhotoKind } from './student-photo.entity';
 import { Student } from './student.entity';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 const ALLOWED_KINDS: StudentPhotoKind[] = [
   'profile',
@@ -23,6 +25,8 @@ export class StudentPhotosService {
     private readonly photoRepo: Repository<StudentPhoto>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async listForStudent(studentId: string): Promise<StudentPhoto[]> {
@@ -70,7 +74,9 @@ export class StudentPhotosService {
       where: { id: photoId, student_id: studentId },
     });
     if (!photo) throw new NotFoundException('Photo introuvable');
+    await this.syncService.recordDelete('StudentPhoto', photoId);
     await this.photoRepo.remove(photo);
+    this.syncKick.kick('student-photo-delete');
   }
 
   private async assertStudent(id: string): Promise<Student> {

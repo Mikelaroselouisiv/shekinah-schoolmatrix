@@ -24,6 +24,22 @@ export class FeeService {
   @Column({ type: 'varchar', length: 20, default: 'OBLIGATOIRE' })
   nature: string;
 
+  /**
+   * Fréquence de facturation :
+   * - ONCE : montant unique (inscription, versement)
+   * - MONTHLY : montant unitaire × occurrences (cantine, leçon…)
+   * - TERM : montant unitaire × occurrences (trimestre)
+   */
+  @Column({ type: 'varchar', length: 20, default: 'ONCE' })
+  billing_frequency: string;
+
+  /**
+   * Nombre d’échéances (null = défaut selon fréquence : ONCE=1, MONTHLY=10, TERM=3).
+   * Le montant sur class_fee est le montant **par** échéance.
+   */
+  @Column({ type: 'int', nullable: true })
+  billing_occurrences: number | null;
+
   @CreateDateColumn()
   created_at: Date;
 

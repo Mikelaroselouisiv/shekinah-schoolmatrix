@@ -26,6 +26,9 @@ import { Attendance } from '../discipline/attendance.entity';
 import { FileMetadata } from '../file-metadata/file-metadata.entity';
 import { ClassSubject } from '../classes/class-subject.entity';
 import { User } from '../users/user.entity';
+import { UserLinkedStudent } from '../users/user-linked-student.entity';
+import { StudentParent } from '../student-parents/student-parent.entity';
+import { SyncTombstone } from './sync-tombstone.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
@@ -38,6 +41,8 @@ export type SyncEntityName =
   | 'Class'
   | 'ClassSubject'
   | 'Student'
+  | 'UserLinkedStudent'
+  | 'StudentParent'
   | 'StudentPhoto'
   | 'FeeService'
   | 'ClassFee'
@@ -54,7 +59,9 @@ export type SyncEntityName =
   | 'StudentClassAssignment'
   | 'ClassDecisionThreshold'
   | 'Attendance'
-  | 'FileMetadata';
+  | 'FileMetadata'
+  /** Toujours en premier dans SYNC_ENTITY_DEFS : deletes avant upserts. */
+  | 'SyncTombstone';
 
 export type SyncEntityDef = {
   name: SyncEntityName;
@@ -63,8 +70,10 @@ export type SyncEntityDef = {
   timeField: 'updated_at' | 'created_at';
 };
 
-/** Ordre parents → enfants (agent + doc). */
+/** Ordre parents → enfants (agent + doc). SyncTombstone en premier. */
 export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
+  /** Premier : deletes avant upserts (anti-résurrection dans le même cycle). */
+  { name: 'SyncTombstone', target: SyncTombstone, timeField: 'updated_at' },
   { name: 'SchoolProfile', target: SchoolProfile, timeField: 'updated_at' },
   { name: 'SchoolSignature', target: SchoolSignature, timeField: 'updated_at' },
   /** Comptes login Server → Remote (PK int acceptée comme uuid filaire). Roles seedés identiques des deux côtés. */
@@ -77,6 +86,9 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'ClassSubject', target: ClassSubject, timeField: 'created_at' },
   { name: 'Student', target: Student, timeField: 'updated_at' },
+  /** Rattachements parent → élève : sans eux, un parent synchronisé n'a aucun enfant. */
+  { name: 'UserLinkedStudent', target: UserLinkedStudent, timeField: 'created_at' },
+  { name: 'StudentParent', target: StudentParent, timeField: 'created_at' },
   { name: 'StudentPhoto', target: StudentPhoto, timeField: 'updated_at' },
   { name: 'FeeService', target: FeeService, timeField: 'updated_at' },
   { name: 'ClassFee', target: ClassFee, timeField: 'updated_at' },

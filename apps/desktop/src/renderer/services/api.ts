@@ -13,6 +13,7 @@ export type SessionUser = {
   profile_photo_url?: string | null;
   role?: { name: string } | string;
   role_permissions?: string[];
+  must_change_password?: boolean;
 };
 
 export type LoginResponse = {

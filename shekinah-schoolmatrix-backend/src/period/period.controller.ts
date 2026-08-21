@@ -11,9 +11,11 @@ import {
 } from '@nestjs/common';
 import { PeriodService } from './period.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('periods')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class PeriodController {
   constructor(private readonly service: PeriodService) {}
 
@@ -40,6 +42,7 @@ export class PeriodController {
     return { ok: true, period: p };
   }
 
+  @DenyParents()
   @Post()
   async create(
     @Body() body: { academic_year_id: string; name: string; order_index?: number },
@@ -56,6 +59,7 @@ export class PeriodController {
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -65,6 +69,7 @@ export class PeriodController {
     return { ok: true, period: p };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.service.delete(id);

@@ -4,12 +4,16 @@ import { Repository } from 'typeorm';
 import { ExamSchedule } from './exam-schedule.entity';
 import { Class } from '../classes/class.entity';
 import { Subject } from '../subjects/subject.entity';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class ExamScheduleService {
   constructor(
     @InjectRepository(ExamSchedule)
     private readonly repo: Repository<ExamSchedule>,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async findAll(filters: {
@@ -118,7 +122,9 @@ export class ExamScheduleService {
   async delete(id: string): Promise<{ deleted: boolean }> {
     const exam = await this.repo.findOne({ where: { id } });
     if (!exam) throw new NotFoundException('Exam schedule not found');
+    await this.syncService.recordDelete('ExamSchedule', id);
     await this.repo.remove(exam);
+    this.syncKick.kick('exam-schedule-delete');
     return { deleted: true };
   }
 }

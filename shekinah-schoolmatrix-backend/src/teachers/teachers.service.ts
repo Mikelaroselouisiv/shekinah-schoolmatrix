@@ -10,6 +10,11 @@ import { Role } from '../roles/role.entity';
 import { Class } from '../classes/class.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Room } from '../rooms/room.entity';
+import { Student } from '../students/student.entity';
+import {
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
 
 @Injectable()
 export class TeachersService {
@@ -28,7 +33,50 @@ export class TeachersService {
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
+    @InjectRepository(Student)
+    private readonly studentRepo: Repository<Student>,
   ) {}
+
+  /**
+   * Emploi du temps d'un élève = celui de sa classe.
+   * Renvoie une liste vide (et non une erreur) si l'élève n'a pas de classe.
+   */
+  async getScheduleForStudent(studentId: string, academicYear?: string) {
+    const student = await this.studentRepo.findOne({
+      where: { id: studentId },
+      relations: ['class'],
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    const classId = student.class?.id ?? null;
+    const slots = classId
+      ? await this.getScheduleSlots({
+          class_id: classId,
+          academic_year: academicYear,
+        })
+      : [];
+
+    return {
+      student_id: student.id,
+      student_name: `${student.first_name} ${student.last_name}`,
+      class_id: classId,
+      class_name: student.class?.name ?? null,
+      academic_year: academicYear ?? null,
+      slots: slots.map((s) => ({
+        id: s.id,
+        day_of_week: s.day_of_week,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        subject_id: s.subject_id ?? null,
+        subject_name: s.subject_name ?? null,
+        room_id: s.room_id ?? null,
+        room_name: s.room_name ?? null,
+        teacher_id: s.teacher_id ?? null,
+        teacher_name: s.teacher_name ?? null,
+        academic_year: s.academic_year,
+      })),
+    };
+  }
 
   private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
     if (!roomId) return undefined;
@@ -64,12 +112,14 @@ export class TeachersService {
   }
 
   async findTeachers(): Promise<User[]> {
-    const teacherRole = await this.roleRepo.findOne({ where: { name: 'TEACHER' } });
-    if (!teacherRole) return [];
-    return this.userRepo.find({
-      where: { role: { id: teacherRole.id }, active: true },
-      order: { last_name: 'ASC', first_name: 'ASC' },
-    });
+    return this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r')
+      .where('UPPER(r.name) IN (:...roles)', { roles: TEACHER_ROLE_NAMES })
+      .andWhere('u.active = :active', { active: true })
+      .orderBy('u.last_name', 'ASC')
+      .addOrderBy('u.first_name', 'ASC')
+      .getMany();
   }
 
   async findOneTeacher(teacherId: number): Promise<User> {
@@ -78,7 +128,7 @@ export class TeachersService {
       relations: ['role'],
     });
     if (!user) throw new NotFoundException('User not found');
-    if (user.role?.name !== 'TEACHER') {
+    if (!isTeacherRoleName(user.role?.name)) {
       throw new BadRequestException('User is not a teacher');
     }
     return user;
@@ -298,7 +348,7 @@ export class TeachersService {
       relations: ['role'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
-    return users.filter((u) => u.role?.name === 'TEACHER');
+    return users.filter((u) => isTeacherRoleName(u.role?.name));
   }
 
   async getScheduleSlots(filters: {

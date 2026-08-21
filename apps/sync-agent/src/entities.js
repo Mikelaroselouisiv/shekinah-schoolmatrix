@@ -1,5 +1,9 @@
-/** Ordre parents → enfants (doit matcher le backend SYNC_ENTITY_DEFS). */
+/** Ordre sync (doit matcher le backend SYNC_ENTITY_DEFS).
+ * SyncTombstone EN PREMIER : propager les deletes plus récents
+ * avant les upserts du même cycle (anti-rebond). LWW vs ligne vivante.
+ */
 export const ENTITY_ORDER = [
+  'SyncTombstone',
   'SchoolProfile',
   'SchoolSignature',
   'User',
@@ -10,6 +14,8 @@ export const ENTITY_ORDER = [
   'Room',
   'ClassSubject',
   'Student',
+  'UserLinkedStudent',
+  'StudentParent',
   'StudentPhoto',
   'FeeService',
   'ClassFee',

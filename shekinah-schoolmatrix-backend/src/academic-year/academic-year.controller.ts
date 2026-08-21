@@ -10,9 +10,11 @@ import {
 } from '@nestjs/common';
 import { AcademicYearService } from './academic-year.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('academic-years')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class AcademicYearController {
   constructor(private readonly service: AcademicYearService) {}
 
@@ -28,12 +30,14 @@ export class AcademicYearController {
     return { ok: true, academic_year: ay };
   }
 
+  @DenyParents()
   @Post()
   async create(@Body() body: { name: string; start_date?: string; end_date?: string }) {
     const ay = await this.service.create(body);
     return { ok: true, academic_year: ay };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -44,6 +48,7 @@ export class AcademicYearController {
     return { ok: true, academic_year: ay };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.service.delete(id);

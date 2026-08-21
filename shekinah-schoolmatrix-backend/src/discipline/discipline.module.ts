@@ -8,6 +8,7 @@ import { Student } from '../students/student.entity';
 import { Class } from '../classes/class.entity';
 import { DisciplineService } from './discipline.service';
 import { DisciplineController } from './discipline.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { DisciplineController } from './discipline.controller';
       Student,
       Class,
     ]),
+    ParentScopeModule,
   ],
   controllers: [DisciplineController],
   providers: [DisciplineService],

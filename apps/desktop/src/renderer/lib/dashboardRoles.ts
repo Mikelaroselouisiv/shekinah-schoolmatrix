@@ -21,6 +21,23 @@ export const ROLES_FULL: string[] = [
   "SCHOOL_ADMIN",
 ];
 
+/**
+ * Une école peut renommer le rôle TEACHER (ex. « PROFESSEUR ») : le role_id
+ * reste le même, seul le libellé change. Reconnaître les alias.
+ */
+export const TEACHER_ROLE_NAMES: string[] = [
+  "TEACHER",
+  "PROFESSEUR",
+  "PROFESSEURE",
+  "PROF",
+  "ENSEIGNANT",
+  "ENSEIGNANTE",
+];
+
+export function isTeacherRole(role?: string | null): boolean {
+  return TEACHER_ROLE_NAMES.includes((role ?? "").toUpperCase().trim());
+}
+
 /** Rôles qui voient Horaires et Saisie des notes. */
 const ROLES_HORAIRES_ET_NOTES: string[] = ["DIRECTEUR_PEDAGOGIQUE", "CENSEUR"];
 
@@ -96,7 +113,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], permissionKey: "schedule", block: "configuration" },
   // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], permissionKey: "students", block: "management" },
-  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], permissionKey: "formation-classe", block: "management" },
   // Bloc Finance opérationnel : Économat + Dépenses (économe)

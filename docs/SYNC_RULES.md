@@ -8,11 +8,17 @@
 
 ## Cycle agent
 
-1. Pull cloud → local  
-2. Push local → cloud  
+1. **Push tombstones** local → cloud  
+2. Pull cloud → local (tombstones cloud en premier dans `ENTITY_ORDER`)  
+3. **Push tombstones** encore (deletes survenues pendant le pull)  
+4. Push local → cloud (reste)
 
 - Intervalle par défaut : **~5s** (`SYNC_INTERVAL_MS`).
 - Kick immédiat : l’API locale POST `SYNC_KICK_URL` (agent `:3911/kick`) après écritures école / utilisateur / upload.
+
+Le `pull` **n’émet pas** les lignes encore en table mais déjà tombstonées (évite de republier une delete incomplète).
+
+**Piège métier** : le provisionnement auto des comptes PARENT ne doit avoir lieu qu’à **l’inscription** élève — pas à chaque MAJ fiche (sinon une suppression de parent est recréée au prochain save). D’où le drapeau `provision` de `ParentAccountService.ensureForStudent`.
 
 ## Conflits : last-write-wins
 
@@ -40,7 +46,26 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 - UUID métier (`id`) = clé de sync (sauf SchoolProfile singleton qui peut changer d’UUID gagnant).
 - Filaire : colonnes scalaires + FK ManyToOne comme uuid (via `loadRelationIds`).
 - Curseur composite `{ since, afterId }` + horodatage µs Postgres (pas de blocage sur skip).
-- Pas de soft-delete généralisé en V1 (`deletedAt` toujours `null`).
+- Une ligne en erreur dans un lot **n’arrête plus** le curseur : le reste de l’école continue.
+- FK **optionnelles** absentes à l’arrivée (ex. `student.room_id`) : on enregistre la ligne **sans** la salle. Inscrire sans salle est valide ; le rattachement se fera au prochain write une fois la salle sync.
+- Payload JSON API : **10 Mo** (le défaut Express 100 Ko rejetait un lot d’utilisateurs ~103 Ko → `entity.too.large` et **tout le cycle** — User, élèves, liens — s’arrêtait). Lots agent : 50 lignes.
+
+## Suppressions (tombstones)
+
+Les hard deletes métier sont propagés via `sync_tombstone` (entité **`SyncTombstone`**, toujours **en premier** dans `ENTITY_ORDER`). Ça empêche le rebond : supprimer en local sans tombstone → le cloud rattache la ligne au prochain pull, et inversement.
+
+Même règle LWW que le reste (`deleted_at` vs `updated_at` de la cible ; à égalité, le **local** gagne) :
+
+1. Suppressions ORM (`.remove`) → subscriber + `markDeleted` puis kick agent.
+2. L’agent pousse d’abord les tombstones local→cloud, puis pull, puis push du reste.
+3. Delete **plus récent** que la ligne → hard delete distant (anti-rebond).
+4. Ligne **plus récente** que le tombstone → le write gagne : on **retire** le tombstone et on upsert (nouveau compte après une purge, y compris si l’id serial a été réutilisé). Un vieux delete cloud ne veto pas le Server.
+5. Création locale (`createUser`) : `forgetDeleted` pour cet id.
+
+`SchoolProfile` (singleton / dédup) n’utilise pas ce mécanisme.  
+Les séquences entières (`users_id_seq`) **n’avancent que** : jamais de `setval(MAX(id))` qui recule après un mass-delete.
+
+Les suppressions faites **avant** le déploiement des tombstones n’en ont pas : les supprimer une fois de l’autre côté, ou re-supprimer après MAJ.
 
 ## Append-only
 
@@ -63,6 +88,8 @@ Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
 Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS` dans le backend.
 
-Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`).
+Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`, optionnel).
 
-Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+Inclut **`User`** (`password_hash`, photos, `role_id`) ainsi que les rattachements `UserLinkedStudent` / `StudentParent` — sans eux, un parent synchronisé arrive sans aucun enfant. Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+
+Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, porté côté desktop dans `lib/dashboardRoles.ts`).

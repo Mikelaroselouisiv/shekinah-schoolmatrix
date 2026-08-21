@@ -11,9 +11,11 @@ import {
 } from '@nestjs/common';
 import { ExamScheduleService } from './exam-schedule.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('exam-schedules')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class ExamScheduleController {
   constructor(private readonly examScheduleService: ExamScheduleService) {}
 
@@ -37,6 +39,7 @@ export class ExamScheduleController {
     return { ok: true, exam_schedule: exam };
   }
 
+  @DenyParents()
   @Post()
   async create(
     @Body()
@@ -72,6 +75,7 @@ export class ExamScheduleController {
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -89,6 +93,7 @@ export class ExamScheduleController {
     return { ok: true, exam_schedule: exam };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.examScheduleService.delete(id);

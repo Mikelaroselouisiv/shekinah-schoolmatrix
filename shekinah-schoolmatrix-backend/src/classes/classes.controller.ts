@@ -10,10 +10,12 @@ import {
 } from '@nestjs/common';
 import { ClassesService } from './classes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
 
 @Controller('classes')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
@@ -45,6 +47,8 @@ export class ClassesController {
     };
   }
 
+  /** Inclut la liste des élèves de la classe. */
+  @DenyParents()
   @Get(':id')
   async one(@Param('id') id: string) {
     const cls = await this.classesService.findOne(id);
@@ -74,6 +78,7 @@ export class ClassesController {
     };
   }
 
+  @DenyParents()
   @Get(':id/subjects')
   async getSubjects(@Param('id') id: string) {
     await this.classesService.findOne(id);
@@ -81,6 +86,7 @@ export class ClassesController {
     return { ok: true, subjects };
   }
 
+  @DenyParents()
   @Post()
   async create(
     @Body()
@@ -116,6 +122,7 @@ export class ClassesController {
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -149,6 +156,7 @@ export class ClassesController {
     };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.classesService.delete(id);

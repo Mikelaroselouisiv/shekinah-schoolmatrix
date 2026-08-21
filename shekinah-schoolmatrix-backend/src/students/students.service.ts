@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
@@ -9,6 +9,14 @@ import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
+import { generateStudentCode, isLegacyStudentCode, normalizeStudentCode } from './student-code';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
+import { UsersService } from '../users/users.service';
+import {
+  ParentAccountService,
+  EnsureParentAccountResult,
+} from '../users/parent-account.service';
 
 export type ImportResult = {
   created: number;
@@ -16,8 +24,15 @@ export type ImportResult = {
   errors: { row: number; message: string }[];
 };
 
+export type StudentCreateResult = {
+  student: Student;
+  parent_account: EnsureParentAccountResult | null;
+};
+
 @Injectable()
 export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+
   constructor(
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
@@ -26,6 +41,10 @@ export class StudentsService {
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
     private readonly studentAiImport: StudentAiImportService,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
+    private readonly usersService: UsersService,
+    private readonly parentAccounts: ParentAccountService,
   ) {}
 
   async findAll(filters?: {
@@ -46,7 +65,13 @@ export class StudentsService {
     if (filters?.roomId) {
       qb.andWhere('s.room_id = :roomId', { roomId: filters.roomId });
     }
-    return qb.getMany();
+    const list = await qb.getMany();
+    for (const s of list) {
+      if (!normalizeStudentCode(s.student_code)) {
+        await this.ensureStudentCode(s);
+      }
+    }
+    return list;
   }
 
   async findOne(id: string): Promise<Student> {
@@ -57,7 +82,7 @@ export class StudentsService {
     if (!s) {
       throw new NotFoundException('Student not found');
     }
-    return s;
+    return this.ensureStudentCode(s);
   }
 
   /** Valide salle ↔ classe et capacité. */
@@ -101,7 +126,7 @@ export class StudentsService {
     father_phone?: string;
     responsible_name?: string;
     responsible_phone?: string;
-  }): Promise<Student> {
+  }): Promise<StudentCreateResult> {
     const nisu = normalizeNisu(params.order_number);
     if (!nisu) {
       throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
@@ -114,41 +139,56 @@ export class StudentsService {
     const room = params.room_id?.trim()
       ? await this.resolveRoomForClass(params.class_id, params.room_id)
       : null;
-    const student = this.studentRepo.create({
-      order_number: nisu,
-      first_name: params.first_name.trim(),
-      last_name: params.last_name.trim(),
-      email: params.email?.trim(),
-      phone: params.phone?.trim(),
-      address: params.address?.trim(),
-      birth_date: params.birth_date ? new Date(params.birth_date) : undefined,
-      birth_place: params.birth_place?.trim(),
-      gender: params.gender?.trim(),
-      photo_identity_student: params.photo_identity_student?.trim() || undefined,
-      photo_identity_mother: params.photo_identity_mother?.trim() || undefined,
-      photo_identity_father: params.photo_identity_father?.trim() || undefined,
-      photo_identity_responsible:
-        params.photo_identity_responsible?.trim() || undefined,
-      mother_name: params.mother_name?.trim() || undefined,
-      mother_phone: params.mother_phone?.trim() || undefined,
-      father_name: params.father_name?.trim() || undefined,
-      father_phone: params.father_phone?.trim() || undefined,
-      responsible_name: params.responsible_name?.trim() || undefined,
-      responsible_phone: params.responsible_phone?.trim() || undefined,
-      class: { id: params.class_id },
-      room,
-      active: true,
-    });
-    let saved: Student;
-    try {
-      saved = await this.studentRepo.save(student);
-    } catch (err) {
-      if (isPostgresUniqueViolation(err)) {
-        throw new BadRequestException(
-          `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
-        );
+
+    let saved: Student | null = null;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const studentCode = await this.allocateStudentCode();
+      const student = this.studentRepo.create({
+        order_number: nisu,
+        student_code: studentCode,
+        first_name: params.first_name.trim(),
+        last_name: params.last_name.trim(),
+        email: params.email?.trim(),
+        phone: params.phone?.trim(),
+        address: params.address?.trim(),
+        birth_date: params.birth_date ? new Date(params.birth_date) : undefined,
+        birth_place: params.birth_place?.trim(),
+        gender: params.gender?.trim(),
+        photo_identity_student: params.photo_identity_student?.trim() || undefined,
+        photo_identity_mother: params.photo_identity_mother?.trim() || undefined,
+        photo_identity_father: params.photo_identity_father?.trim() || undefined,
+        photo_identity_responsible:
+          params.photo_identity_responsible?.trim() || undefined,
+        mother_name: params.mother_name?.trim() || undefined,
+        mother_phone: params.mother_phone?.trim() || undefined,
+        father_name: params.father_name?.trim() || undefined,
+        father_phone: params.father_phone?.trim() || undefined,
+        responsible_name: params.responsible_name?.trim() || undefined,
+        responsible_phone: params.responsible_phone?.trim() || undefined,
+        class: { id: params.class_id },
+        room,
+        active: true,
+      });
+      try {
+        saved = await this.studentRepo.save(student);
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isPostgresUniqueViolation(err)) throw err;
+        // Collision NISU → message clair ; collision code école → retry
+        const existingNisu = await this.studentRepo.findOne({ where: { order_number: nisu } });
+        if (existingNisu) {
+          throw new BadRequestException(
+            `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
+          );
+        }
       }
-      throw err;
+    }
+    if (!saved) {
+      throw lastErr instanceof Error
+        ? lastErr
+        : new BadRequestException('Impossible d’attribuer un code école unique.');
     }
     if (params.academic_year_id) {
       await this.formationClasseService.addStudentToClass(
@@ -157,7 +197,18 @@ export class StudentsService {
         params.class_id,
       );
     }
-    return this.findOne(saved.id);
+    const student = await this.findOne(saved.id);
+    let parent_account: EnsureParentAccountResult | null = null;
+    try {
+      parent_account = await this.parentAccounts.ensureForStudent(student, {
+        provision: true,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Compte parent auto non créé pour élève ${student.id}: ${(err as Error)?.message || err}`,
+      );
+    }
+    return { student, parent_account };
   }
 
   /** NISU unique global (Haïti) — refuse tout doublon. */
@@ -168,6 +219,40 @@ export class StudentsService {
         `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
       );
     }
+  }
+
+  /**
+   * Alloue un code de gestion école (public), indépendant du NISU.
+   * 8 caractères alphanumériques (lettres + chiffres), sans année.
+   */
+  private async allocateStudentCode(): Promise<string> {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const code = generateStudentCode();
+      const existing = await this.studentRepo.findOne({ where: { student_code: code } });
+      if (!existing) return code;
+    }
+    throw new BadRequestException('Impossible d’attribuer un code école unique.');
+  }
+
+  /** Garantit un code école public valide (8 car. alphanumériques, pas d’ancien format EL-AAAA). */
+  async ensureStudentCode(student: Student): Promise<Student> {
+    const current = normalizeStudentCode(student.student_code);
+    const ok =
+      !!current &&
+      current.length === 8 &&
+      !isLegacyStudentCode(student.student_code);
+    if (ok) return student;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const code = await this.allocateStudentCode();
+      student.student_code = code;
+      try {
+        await this.studentRepo.save(student);
+        return student;
+      } catch (err) {
+        if (!isPostgresUniqueViolation(err)) throw err;
+      }
+    }
+    throw new BadRequestException('Impossible d’attribuer un code école unique.');
   }
 
   async update(
@@ -289,7 +374,17 @@ export class StudentsService {
       }
       throw err;
     }
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    // `provision: false` : on rattache un parent existant si le contact a été
+    // corrigé, mais on ne recrée jamais un compte supprimé volontairement.
+    try {
+      await this.parentAccounts.ensureForStudent(updated, { provision: false });
+    } catch (err) {
+      this.logger.warn(
+        `Rattachement parent non effectué pour élève ${id}: ${(err as Error)?.message || err}`,
+      );
+    }
+    return updated;
   }
 
   async findByOrderNumber(orderNumber: string): Promise<Student | null> {
@@ -306,7 +401,10 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
+    // Tombstone avant hard-delete — empêche la résurrection au prochain pull cloud→local
+    await this.syncService.recordDelete('Student', id);
     await this.studentRepo.remove(student);
+    this.syncKick.kick('student-delete');
   }
 
   /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */

@@ -23,6 +23,14 @@ const pushCursors = Object.create(null);
 let running = false;
 let rerun = false;
 
+/**
+ * Cycle LWW (local = source de vérité à horodatage égal) :
+ * 1) Push tombstones local→cloud (deletes plus récents que la ligne)
+ * 2) Pull cloud→local (tombstones en premier dans ENTITY_ORDER)
+ * 3) Push tombstones encore (deletes locaux nés pendant le pull / kick)
+ * 4) Push reste local→cloud
+ * Un tombstone plus vieux qu’un write vivant ne veto pas (nouveau compte).
+ */
 async function tick(reason = 'interval') {
   if (running) {
     rerun = true;
@@ -34,6 +42,16 @@ async function tick(reason = 'interval') {
       rerun = false;
       const started = Date.now();
       try {
+        const tombsOut = await replicateDirection({
+          from: local,
+          to: remote,
+          cursors: pushCursors,
+          sourceNodeId: NODE_ID,
+          label: 'push-tombs-local→gcp',
+          entities: ['SyncTombstone'],
+        });
+        console.log('[sync-agent]', JSON.stringify(tombsOut));
+
         const pullSummary = await replicateDirection({
           from: remote,
           to: local,
@@ -42,6 +60,16 @@ async function tick(reason = 'interval') {
           label: 'pull-gcp→local',
         });
         console.log('[sync-agent]', JSON.stringify(pullSummary));
+
+        const tombsOut2 = await replicateDirection({
+          from: local,
+          to: remote,
+          cursors: pushCursors,
+          sourceNodeId: NODE_ID,
+          label: 'push-tombs-local→gcp-2',
+          entities: ['SyncTombstone'],
+        });
+        console.log('[sync-agent]', JSON.stringify(tombsOut2));
 
         const pushSummary = await replicateDirection({
           from: local,
@@ -89,7 +117,7 @@ kickServer.listen(KICK_PORT, '0.0.0.0', () => {
 });
 
 console.log(
-  `[sync-agent] démarrage — local=${LOCAL_API_URL} remote=${REMOTE_API_URL} interval=${SYNC_INTERVAL_MS}ms LWW+kick`,
+  `[sync-agent] démarrage — local=${LOCAL_API_URL} remote=${REMOTE_API_URL} interval=${SYNC_INTERVAL_MS}ms tombs-first+LWW+kick`,
 );
 void tick('startup');
 setInterval(() => void tick('interval'), SYNC_INTERVAL_MS);

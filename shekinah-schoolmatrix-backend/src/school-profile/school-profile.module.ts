@@ -11,6 +11,7 @@ import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { AuthModule } from '../auth/auth.module';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AuthModule } from '../auth/auth.module';
       Role,
     ]),
     AuthModule,
+    ParentScopeModule,
   ],
   controllers: [SchoolProfileController],
   providers: [SchoolProfileService],

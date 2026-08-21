@@ -8,6 +8,8 @@ import { StudentServiceExemption } from './student-service-exemption.entity';
 import { Student } from '../students/student.entity';
 import { Class } from '../classes/class.entity';
 
+export type BillingFrequency = 'ONCE' | 'MONTHLY' | 'TERM';
+
 export function getCurrentAcademicYear(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -15,6 +17,49 @@ export function getCurrentAcademicYear(): string {
   if (month >= 9) return `${year}-${year + 1}`;
   return `${year - 1}-${year}`;
 }
+
+export function normalizeBillingFrequency(raw?: string | null): BillingFrequency {
+  const v = String(raw || 'ONCE').trim().toUpperCase();
+  if (v === 'MONTHLY' || v === 'MENSUEL') return 'MONTHLY';
+  if (v === 'TERM' || v === 'TRIMESTER' || v === 'TRIMESTRIEL') return 'TERM';
+  return 'ONCE';
+}
+
+/** Défaut d’occurrences si non précisé sur le service. */
+export function defaultBillingOccurrences(freq: BillingFrequency): number {
+  if (freq === 'MONTHLY') return 10; // sept → juin (année scolaire Haïti)
+  if (freq === 'TERM') return 3;
+  return 1;
+}
+
+export function resolveBillingOccurrences(
+  freq: BillingFrequency,
+  explicit: number | null | undefined,
+): number {
+  if (explicit != null && Number.isFinite(Number(explicit)) && Number(explicit) > 0) {
+    return Math.floor(Number(explicit));
+  }
+  return defaultBillingOccurrences(freq);
+}
+
+/** Ajoute n mois calendaires à une date YYYY-MM-DD (jour plafonné fin de mois). */
+export function addCalendarMonths(isoDate: string, months: number): string {
+  const [y, m, d] = isoDate.split('-').map((x) => parseInt(x, 10));
+  const base = new Date(Date.UTC(y, m - 1, 1));
+  base.setUTCMonth(base.getUTCMonth() + months);
+  const year = base.getUTCFullYear();
+  const month = base.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(d || 1, lastDay);
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+export type FeeInstallment = {
+  index: number;
+  label: string;
+  due_date: string | null;
+  amount: number;
+};
 
 @Injectable()
 export class EconomatService {
@@ -41,24 +86,72 @@ export class EconomatService {
     return this.feeServiceRepo.find({ order: { name: 'ASC' } });
   }
 
-  async createFeeService(params: { name: string; code?: string; nature?: string }): Promise<FeeService> {
+  private mapFeeService(s: FeeService) {
+    const billing_frequency = normalizeBillingFrequency(s.billing_frequency);
+    const billing_occurrences = resolveBillingOccurrences(
+      billing_frequency,
+      s.billing_occurrences,
+    );
+    return {
+      id: s.id,
+      name: s.name,
+      code: s.code,
+      active: s.active,
+      nature: s.nature,
+      billing_frequency,
+      billing_occurrences,
+    };
+  }
+
+  async createFeeService(params: {
+    name: string;
+    code?: string;
+    nature?: string;
+    billing_frequency?: string;
+    billing_occurrences?: number | null;
+  }): Promise<FeeService> {
     const nature = params.nature === 'PARASCOLAIRE' ? 'PARASCOLAIRE' : 'OBLIGATOIRE';
+    const billing_frequency = normalizeBillingFrequency(params.billing_frequency);
     const s = this.feeServiceRepo.create({
       name: params.name.trim(),
       code: params.code?.trim(),
       active: true,
       nature,
+      billing_frequency,
+      billing_occurrences:
+        params.billing_occurrences != null && params.billing_occurrences > 0
+          ? Math.floor(params.billing_occurrences)
+          : null,
     });
     return this.feeServiceRepo.save(s);
   }
 
-  async updateFeeService(id: string, params: Partial<{ name: string; code: string; active: boolean; nature: string }>): Promise<FeeService> {
+  async updateFeeService(
+    id: string,
+    params: Partial<{
+      name: string;
+      code: string;
+      active: boolean;
+      nature: string;
+      billing_frequency: string;
+      billing_occurrences: number | null;
+    }>,
+  ): Promise<FeeService> {
     const s = await this.feeServiceRepo.findOne({ where: { id } });
     if (!s) throw new NotFoundException('Fee service not found');
     if (params.name !== undefined) s.name = params.name.trim();
     if (params.code !== undefined) s.code = params.code?.trim() || undefined;
     if (params.active !== undefined) s.active = params.active;
     if (params.nature !== undefined) s.nature = params.nature === 'PARASCOLAIRE' ? 'PARASCOLAIRE' : 'OBLIGATOIRE';
+    if (params.billing_frequency !== undefined) {
+      s.billing_frequency = normalizeBillingFrequency(params.billing_frequency);
+    }
+    if (params.billing_occurrences !== undefined) {
+      s.billing_occurrences =
+        params.billing_occurrences != null && params.billing_occurrences > 0
+          ? Math.floor(params.billing_occurrences)
+          : null;
+    }
     return this.feeServiceRepo.save(s);
   }
 
@@ -80,21 +173,40 @@ export class EconomatService {
     if (filters.academic_year) qb.andWhere('cf.academic_year = :y', { y: filters.academic_year });
     if (filters.class_id) qb.andWhere('cf.class_id = :c', { c: filters.class_id });
     const list = await qb.getMany();
-    return list.map((cf) => ({
-      id: cf.id,
-      academic_year: cf.academic_year,
-      class_id: cf.class?.id,
-      class_name: cf.class?.name,
-      service_id: cf.service?.id,
-      service_name: cf.service?.name,
-      amount: Number(cf.amount),
-      due_date: cf.due_date ? (typeof cf.due_date === 'string' ? cf.due_date : (cf.due_date as Date).toISOString().slice(0, 10)) : null,
-      detail: cf.detail,
-      created_at: cf.created_at,
-    }));
+    return list.map((cf) => {
+      const freq = normalizeBillingFrequency(cf.service?.billing_frequency);
+      const occurrences = resolveBillingOccurrences(freq, cf.service?.billing_occurrences);
+      const unit = Number(cf.amount);
+      return {
+        id: cf.id,
+        academic_year: cf.academic_year,
+        class_id: cf.class?.id,
+        class_name: cf.class?.name,
+        service_id: cf.service?.id,
+        service_name: cf.service?.name,
+        amount: unit,
+        billing_frequency: freq,
+        billing_occurrences: occurrences,
+        total_amount: Math.round(unit * occurrences * 100) / 100,
+        due_date: cf.due_date
+          ? typeof cf.due_date === 'string'
+            ? cf.due_date
+            : (cf.due_date as Date).toISOString().slice(0, 10)
+          : null,
+        detail: cf.detail,
+        created_at: cf.created_at,
+      };
+    });
   }
 
-  async createClassFee(params: { academic_year: string; class_id: string; service_id: string; amount: number; due_date?: string | null; detail?: string }): Promise<ClassFee> {
+  async createClassFee(params: {
+    academic_year: string;
+    class_id: string;
+    service_id: string;
+    amount: number;
+    due_date?: string | null;
+    detail?: string;
+  }): Promise<ClassFee> {
     const existing = await this.classFeeRepo.findOne({
       where: {
         academic_year: params.academic_year,
@@ -114,7 +226,10 @@ export class EconomatService {
     return this.classFeeRepo.save(cf);
   }
 
-  async updateClassFee(id: string, params: Partial<{ amount: number; due_date: string | null; detail: string }>): Promise<ClassFee> {
+  async updateClassFee(
+    id: string,
+    params: Partial<{ amount: number; due_date: string | null; detail: string }>,
+  ): Promise<ClassFee> {
     const cf = await this.classFeeRepo.findOne({ where: { id }, relations: ['class', 'service'] });
     if (!cf) throw new NotFoundException('Class fee not found');
     if (params.amount !== undefined) cf.amount = String(params.amount);
@@ -130,6 +245,41 @@ export class EconomatService {
     return { deleted: true };
   }
 
+  /** Construit les échéances (mensuelles / trimestrielles / unique) à partir du class_fee. */
+  buildInstallments(cf: ClassFee): FeeInstallment[] {
+    const freq = normalizeBillingFrequency(cf.service?.billing_frequency);
+    const occurrences = resolveBillingOccurrences(freq, cf.service?.billing_occurrences);
+    const unit = Number(cf.amount);
+    let firstDue: string | null = null;
+    if (cf.due_date) {
+      if (cf.due_date instanceof Date) {
+        firstDue = cf.due_date.toISOString().slice(0, 10);
+      } else {
+        firstDue = String(cf.due_date).slice(0, 10);
+      }
+    }
+
+    const out: FeeInstallment[] = [];
+    for (let i = 0; i < occurrences; i++) {
+      let label = cf.service?.name || 'Frais';
+      if (freq === 'MONTHLY') label = `${cf.service?.name || 'Mensuel'} (${i + 1}/${occurrences})`;
+      if (freq === 'TERM') label = `${cf.service?.name || 'Trimestre'} ${i + 1}`;
+      let due: string | null = null;
+      if (firstDue) {
+        if (freq === 'MONTHLY') due = addCalendarMonths(firstDue, i);
+        else if (freq === 'TERM') due = addCalendarMonths(firstDue, i * 3);
+        else due = firstDue;
+      }
+      out.push({
+        index: i + 1,
+        label,
+        due_date: due,
+        amount: unit,
+      });
+    }
+    return out;
+  }
+
   async getAmountDueForStudent(studentId: string, academicYear: string, serviceId: string): Promise<number> {
     const student = await this.studentRepo.findOne({ where: { id: studentId }, relations: ['class'] });
     if (!student) throw new NotFoundException('Student not found');
@@ -142,7 +292,9 @@ export class EconomatService {
       relations: ['service'],
     });
     if (!classFee) return 0;
-    const baseAmount = Number(classFee.amount);
+    const freq = normalizeBillingFrequency(classFee.service?.billing_frequency);
+    const occurrences = resolveBillingOccurrences(freq, classFee.service?.billing_occurrences);
+    const baseAmount = Math.round(Number(classFee.amount) * occurrences * 100) / 100;
     const exemption = await this.exemptionRepo.findOne({
       where: {
         student: { id: studentId },
@@ -167,7 +319,11 @@ export class EconomatService {
     return Number(result?.total ?? 0);
   }
 
-  async getBalance(studentId: string, academicYear: string, serviceId: string): Promise<{ amount_due: number; total_paid: number; balance: number }> {
+  async getBalance(
+    studentId: string,
+    academicYear: string,
+    serviceId: string,
+  ): Promise<{ amount_due: number; total_paid: number; balance: number }> {
     const amount_due = await this.getAmountDueForStudent(studentId, academicYear, serviceId);
     const total_paid = await this.getTotalPaidForStudent(studentId, academicYear, serviceId);
     return { amount_due, total_paid, balance: Math.round((amount_due - total_paid) * 100) / 100 };
@@ -199,7 +355,11 @@ export class EconomatService {
     return this.transactionRepo.save(tx);
   }
 
-  async findTransactions(filters: { student_id?: string; academic_year?: string; class_id?: string }): Promise<any[]> {
+  async findTransactions(filters: {
+    student_id?: string;
+    academic_year?: string;
+    class_id?: string;
+  }): Promise<any[]> {
     const qb = this.transactionRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.student', 'student')
@@ -240,15 +400,26 @@ export class EconomatService {
     for (const cf of classFees) {
       const amount_due = await this.getAmountDueForStudent(studentId, year, cf.service.id);
       const total_paid = await this.getTotalPaidForStudent(studentId, year, cf.service.id);
-      const dueDateStr = cf.due_date ? (typeof cf.due_date === 'string' ? cf.due_date : (cf.due_date as Date).toISOString().slice(0, 10)) : null;
+      const freq = normalizeBillingFrequency(cf.service?.billing_frequency);
+      const occurrences = resolveBillingOccurrences(freq, cf.service?.billing_occurrences);
+      const unit = Number(cf.amount);
+      const dueDateStr = cf.due_date
+        ? typeof cf.due_date === 'string'
+          ? cf.due_date
+          : (cf.due_date as Date).toISOString().slice(0, 10)
+        : null;
       result.push({
         service_id: cf.service.id,
         service_name: cf.service.name,
         payment_modality: cf.detail?.trim() || undefined,
+        billing_frequency: freq,
+        billing_occurrences: occurrences,
+        unit_amount: unit,
         due_date: dueDateStr,
         amount_due,
         total_paid,
         balance: Math.round((amount_due - total_paid) * 100) / 100,
+        installments: this.buildInstallments(cf),
       });
     }
     const transactions = await this.findTransactions({ student_id: studentId, academic_year: year });

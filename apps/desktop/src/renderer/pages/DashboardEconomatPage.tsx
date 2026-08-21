@@ -9,8 +9,15 @@ const ROLES_SERVICES_ET_EXONERATIONS = ROLES_FULL; // DIRECTEUR_GENERAL, SCHOOL_
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string };
-type Student = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
-type FeeService = { id: string; name: string; code: string | null; nature?: string };
+type Student = { id: string; order_number: string | null; student_code: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
+type FeeService = {
+  id: string;
+  name: string;
+  code: string | null;
+  nature?: string;
+  billing_frequency?: string;
+  billing_occurrences?: number | null;
+};
 type ClassFee = {
   id: string;
   academic_year: string;
@@ -102,7 +109,13 @@ export function DashboardEconomatPage() {
   const [savingExemption, setSavingExemption] = useState(false);
   const [exemptionFilterYear, setExemptionFilterYear] = useState("");
   const [showServiceForm, setShowServiceForm] = useState(false);
-  const [serviceForm, setServiceForm] = useState({ name: "", code: "", nature: "OBLIGATOIRE" as string });
+  const [serviceForm, setServiceForm] = useState({
+    name: "",
+    code: "",
+    nature: "OBLIGATOIRE" as string,
+    billing_frequency: "ONCE" as string,
+    billing_occurrences: "" as string,
+  });
   const [editingService, setEditingService] = useState<FeeService | null>(null);
   const [savingService, setSavingService] = useState(false);
 
@@ -376,11 +389,23 @@ export function DashboardEconomatPage() {
     setError("");
     setSavingService(true);
     try {
+      const occRaw = serviceForm.billing_occurrences.trim();
+      const billing_occurrences = occRaw ? Number(occRaw) : null;
+      const payload = {
+        name: serviceForm.name.trim(),
+        code: serviceForm.code.trim() || undefined,
+        nature: serviceForm.nature,
+        billing_frequency: serviceForm.billing_frequency,
+        billing_occurrences:
+          billing_occurrences != null && Number.isFinite(billing_occurrences) && billing_occurrences > 0
+            ? billing_occurrences
+            : null,
+      };
       if (editingService) {
         const res = await fetchWithAuth(`${API_BASE}/economat/fee-services/${editingService.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: serviceForm.name.trim(), code: serviceForm.code.trim() || undefined, nature: serviceForm.nature }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -390,7 +415,7 @@ export function DashboardEconomatPage() {
         const res = await fetchWithAuth(`${API_BASE}/economat/fee-services`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: serviceForm.name.trim(), code: serviceForm.code.trim() || undefined, nature: serviceForm.nature }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -399,7 +424,7 @@ export function DashboardEconomatPage() {
       }
       setShowServiceForm(false);
       setEditingService(null);
-      setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" });
+      setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE", billing_frequency: "ONCE", billing_occurrences: "" });
       loadBaseData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
@@ -525,7 +550,7 @@ export function DashboardEconomatPage() {
                 <option value="">Sélectionner</option>
                 {students.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                    {s.student_code ? `${s.student_code} — ` : ""}{s.first_name} {s.last_name}
                   </option>
                 ))}
               </select>
@@ -684,13 +709,41 @@ export function DashboardEconomatPage() {
                     <option value="PARASCOLAIRE">Activité parascolaire</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Fréquence</label>
+                  <select
+                    value={serviceForm.billing_frequency}
+                    onChange={(e) => setServiceForm((f) => ({ ...f, billing_frequency: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                  >
+                    <option value="ONCE">Unique</option>
+                    <option value="MONTHLY">Mensuel</option>
+                    <option value="TERM">Trimestriel</option>
+                  </select>
+                </div>
+                {(serviceForm.billing_frequency === "MONTHLY" || serviceForm.billing_frequency === "TERM") && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Nombre d&apos;échéances (vide = {serviceForm.billing_frequency === "MONTHLY" ? "10" : "3"})
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={serviceForm.billing_occurrences}
+                      onChange={(e) => setServiceForm((f) => ({ ...f, billing_occurrences: e.target.value }))}
+                      className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                      placeholder={serviceForm.billing_frequency === "MONTHLY" ? "10" : "3"}
+                    />
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button type="submit" disabled={savingService} className="app-btn-primary disabled:opacity-60">{savingService ? "Enregistrement..." : "Enregistrer"}</button>
-                  <button type="button" onClick={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" }); }} className="app-btn-secondary">Annuler</button>
+                  <button type="button" onClick={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE", billing_frequency: "ONCE", billing_occurrences: "" }); }} className="app-btn-secondary">Annuler</button>
                 </div>
               </form>
             ) : (
-              <button type="button" onClick={() => { setShowServiceForm(true); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" }); }} className="app-btn-secondary text-sm mb-4">Ajouter une source de revenus</button>
+              <button type="button" onClick={() => { setShowServiceForm(true); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE", billing_frequency: "ONCE", billing_occurrences: "" }); }} className="app-btn-secondary text-sm mb-4">Ajouter une source de revenus</button>
             )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -699,6 +752,7 @@ export function DashboardEconomatPage() {
                     <th className="px-3 py-2 font-medium text-slate-900 text-left">Nom</th>
                     <th className="px-3 py-2 font-medium text-slate-900 text-left">Code</th>
                     <th className="px-3 py-2 font-medium text-slate-900 text-left">Nature</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Fréquence</th>
                     <th className="px-3 py-2 font-medium text-slate-900 w-28">Actions</th>
                   </tr>
                 </thead>
@@ -708,8 +762,15 @@ export function DashboardEconomatPage() {
                       <td className="px-3 py-2 font-medium text-slate-900">{s.name}</td>
                       <td className="px-3 py-2 text-slate-600">{s.code ?? "—"}</td>
                       <td className="px-3 py-2 text-slate-600">{s.nature === "PARASCOLAIRE" ? "Activité parascolaire" : "Paiement obligatoire"}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {s.billing_frequency === "MONTHLY"
+                          ? `Mensuel × ${s.billing_occurrences ?? 10}`
+                          : s.billing_frequency === "TERM"
+                            ? `Trimestriel × ${s.billing_occurrences ?? 3}`
+                            : "Unique"}
+                      </td>
                       <td className="px-3 py-2">
-                        <button type="button" onClick={() => { setEditingService(s); setShowServiceForm(true); setServiceForm({ name: s.name, code: s.code ?? "", nature: s.nature ?? "OBLIGATOIRE" }); }} className="text-[var(--school-accent-1)] hover:underline text-xs mr-2">Modifier</button>
+                        <button type="button" onClick={() => { setEditingService(s); setShowServiceForm(true); setServiceForm({ name: s.name, code: s.code ?? "", nature: s.nature ?? "OBLIGATOIRE", billing_frequency: s.billing_frequency ?? "ONCE", billing_occurrences: s.billing_occurrences != null ? String(s.billing_occurrences) : "" }); }} className="text-[var(--school-accent-1)] hover:underline text-xs mr-2">Modifier</button>
                         <button type="button" onClick={() => handleDeleteService(s.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
                       </td>
                     </tr>
@@ -1038,7 +1099,7 @@ function ExemptionStudentSelect({
         <option value="">Choisir un élève</option>
         {students.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+            {s.student_code ? `${s.student_code} — ` : ""}{s.first_name} {s.last_name}
           </option>
         ))}
       </select>

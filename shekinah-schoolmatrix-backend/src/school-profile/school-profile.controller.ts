@@ -13,6 +13,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Permissions } from '../auth/permissions.decorator';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('school')
 export class SchoolProfileController {
@@ -47,14 +49,16 @@ export class SchoolProfileController {
     return { ok: true, ...stats };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ParentScopeGuard)
+  @DenyParents()
   @Get('signatures')
   async listSignatures() {
     const signatures = await this.schoolProfileService.listSignatures();
     return { ok: true, signatures };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ParentScopeGuard)
+  @DenyParents()
   @Put('signatures')
   async replaceSignatures(
     @Body()
@@ -75,14 +79,16 @@ export class SchoolProfileController {
     return { ok: true, signatures };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ParentScopeGuard)
+  @DenyParents()
   @Delete('signatures/:id')
   async deleteSignature(@Param('id') id: string) {
     await this.schoolProfileService.deleteSignature(id);
     return { ok: true, deleted: true };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ParentScopeGuard)
+  @DenyParents()
   @Patch('profile')
   async updateProfile(
     @Body()

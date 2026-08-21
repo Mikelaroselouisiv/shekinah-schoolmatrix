@@ -12,9 +12,11 @@ import {
 } from '@nestjs/common';
 import { ExtracurricularActivityService } from './extracurricular-activity.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('extracurricular-activities')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class ExtracurricularActivityController {
   constructor(
     private readonly extracurricularActivityService: ExtracurricularActivityService,
@@ -38,6 +40,7 @@ export class ExtracurricularActivityController {
     return { ok: true, extracurricular_activity: activity };
   }
 
+  @DenyParents()
   @Post()
   async create(
     @Body()
@@ -83,6 +86,7 @@ export class ExtracurricularActivityController {
     throw new BadRequestException('class_id or class_ids (array) required');
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -103,6 +107,7 @@ export class ExtracurricularActivityController {
     return { ok: true, extracurricular_activity: activity };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.extracurricularActivityService.delete(id);

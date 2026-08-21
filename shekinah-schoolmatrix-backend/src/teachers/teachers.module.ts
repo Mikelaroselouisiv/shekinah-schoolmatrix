@@ -9,12 +9,16 @@ import { Role } from '../roles/role.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Class } from '../classes/class.entity';
 import { Room } from '../rooms/room.entity';
+import { Student } from '../students/student.entity';
 import { TeachersService } from './teachers.service';
 import { TeachersController } from './teachers.controller';
 import { ScheduleSlotsController } from './schedule-slots.controller';
+import { StudentScheduleController } from './student-schedule.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
+    ParentScopeModule,
     TypeOrmModule.forFeature([
       ClassTeacher,
       TeacherSubject,
@@ -25,9 +29,14 @@ import { ScheduleSlotsController } from './schedule-slots.controller';
       Subject,
       Class,
       Room,
+      Student,
     ]),
   ],
-  controllers: [TeachersController, ScheduleSlotsController],
+  controllers: [
+    TeachersController,
+    ScheduleSlotsController,
+    StudentScheduleController,
+  ],
   providers: [TeachersService],
   exports: [TeachersService],
 })

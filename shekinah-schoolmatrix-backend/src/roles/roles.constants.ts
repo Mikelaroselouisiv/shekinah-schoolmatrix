@@ -1,3 +1,21 @@
+/**
+ * Une école peut renommer le rôle depuis « Gestion des rôles » (TEACHER →
+ * PROFESSEUR). Les comptes gardent le même role_id : reconnaître les alias
+ * évite un annuaire professeurs vide.
+ */
+export const TEACHER_ROLE_NAMES = [
+  'TEACHER',
+  'PROFESSEUR',
+  'PROFESSEURE',
+  'PROF',
+  'ENSEIGNANT',
+  'ENSEIGNANTE',
+];
+
+export function isTeacherRoleName(name?: string | null): boolean {
+  return TEACHER_ROLE_NAMES.includes((name ?? '').toUpperCase().trim());
+}
+
 export const ROLE_NAMES = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   DIRECTEUR_GENERAL: 'DIRECTEUR_GENERAL',
@@ -59,7 +77,7 @@ export const ROLES_GRADES = [
   ROLE_NAMES.ADMIN_FONDAMENTAL,
   ROLE_NAMES.ADMIN_SECONDAIRE,
   ROLE_NAMES.STAFF,
-  ROLE_NAMES.TEACHER,
+  ...TEACHER_ROLE_NAMES,
 ];
 
 export const ROLES_USER_ADMIN = [

@@ -2,12 +2,16 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subject } from './subject.entity';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class SubjectsService {
   constructor(
     @InjectRepository(Subject)
     private readonly subjectRepo: Repository<Subject>,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async findAll(): Promise<Subject[]> {
@@ -62,6 +66,8 @@ export class SubjectsService {
     if (!subject) {
       throw new NotFoundException('Subject not found');
     }
+    await this.syncService.recordDelete('Subject', id);
     await this.subjectRepo.remove(subject);
+    this.syncKick.kick('subject-delete');
   }
 }

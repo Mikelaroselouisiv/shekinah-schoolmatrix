@@ -10,11 +10,13 @@ import { EconomatService } from './economat.service';
 import { EconomatController } from './economat.controller';
 import { FinanceModule } from '../finance/finance.module';
 import { AuthModule } from '../auth/auth.module';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
     FinanceModule,
     AuthModule,
+    ParentScopeModule,
     TypeOrmModule.forFeature([
       FeeService,
       ClassFee,

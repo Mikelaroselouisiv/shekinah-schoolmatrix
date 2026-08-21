@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Grade } from '../grades/grade.entity';
 import { Student } from '../students/student.entity';
 import { Class } from '../classes/class.entity';
@@ -18,6 +18,7 @@ import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { StudentServiceExemption } from '../economat/student-service-exemption.entity';
 import { getCurrentAcademicYear } from '../economat/economat.service';
 import { FinanceService } from '../finance/finance.service';
+import { TEACHER_ROLE_NAMES } from '../roles/roles.constants';
 
 type PeriodBucket = { obtained: number; possible: number };
 
@@ -78,10 +79,10 @@ export class StatisticsService {
       periodName = p?.name ?? null;
     }
 
-    const [classes, students, teacherRole, grades] = await Promise.all([
+    const [classes, students, teacherRoles, grades] = await Promise.all([
       this.classRepo.find({ where: { active: true } as any, order: { name: 'ASC' } }),
       this.studentRepo.find({ where: { active: true }, relations: ['class'] }),
-      this.roleRepo.findOne({ where: { name: 'TEACHER' } }),
+      this.roleRepo.find({ where: { name: In(TEACHER_ROLE_NAMES) } }),
       academicYearId
         ? this.gradeRepo
             .createQueryBuilder('g')
@@ -96,9 +97,9 @@ export class StatisticsService {
     ]);
 
     let teachersCount = 0;
-    if (teacherRole) {
+    if (teacherRoles.length > 0) {
       teachersCount = await this.userRepo.count({
-        where: { role: { id: teacherRole.id }, active: true },
+        where: { role: { id: In(teacherRoles.map((r) => r.id)) }, active: true },
       });
     }
 

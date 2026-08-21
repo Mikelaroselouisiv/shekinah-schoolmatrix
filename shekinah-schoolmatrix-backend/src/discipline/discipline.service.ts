@@ -340,6 +340,84 @@ export class DisciplineService {
     };
   }
 
+  private static readonly DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  /** Colonne `date` Postgres → chaîne YYYY-MM-DD, quel que soit le type hydraté. */
+  private static toDateString(value: Date | string): string {
+    if (typeof value === 'string') return value.slice(0, 10);
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  /** Historique de présence d'un seul élève, borné par dates. */
+  async getStudentAttendance(
+    studentId: string,
+    from?: string,
+    to?: string,
+  ): Promise<any> {
+    for (const [label, value] of [
+      ['from', from],
+      ['to', to],
+    ] as const) {
+      if (value && !DisciplineService.DATE_RE.test(value)) {
+        throw new BadRequestException(
+          `Paramètre « ${label} » invalide : format attendu YYYY-MM-DD.`,
+        );
+      }
+    }
+    if (from && to && from > to) {
+      throw new BadRequestException(
+        'La borne « from » doit précéder la borne « to ».',
+      );
+    }
+
+    const student = await this.studentRepo.findOne({
+      where: { id: studentId },
+      relations: ['class'],
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    const qb = this.attendanceRepo
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.class', 'c')
+      .where('a.student_id = :sid', { sid: studentId })
+      .orderBy('a.date', 'DESC');
+    if (from) qb.andWhere('a.date >= :from', { from });
+    if (to) qb.andWhere('a.date <= :to', { to });
+    const list = await qb.getMany();
+
+    const counts: Record<string, number> = {
+      PRESENT: 0,
+      ABSENT: 0,
+      LATE: 0,
+      EXCUSED: 0,
+    };
+    for (const a of list) {
+      counts[a.status] = (counts[a.status] ?? 0) + 1;
+    }
+
+    return {
+      ok: true,
+      student_id: studentId,
+      student_name: `${student.first_name} ${student.last_name}`,
+      class_id: student.class?.id ?? null,
+      class_name: student.class?.name ?? null,
+      from: from ?? null,
+      to: to ?? null,
+      counts: { ...counts, total: list.length },
+      records: list.map((a) => ({
+        id: a.id,
+        date: DisciplineService.toDateString(a.date),
+        status: a.status,
+        class_id: a.class?.id ?? null,
+        class_name: a.class?.name ?? null,
+        created_at: a.created_at,
+      })),
+    };
+  }
+
   async getStudentDisciplineSummary(studentId: string): Promise<any> {
     const student = await this.studentRepo.findOne({
       where: { id: studentId },

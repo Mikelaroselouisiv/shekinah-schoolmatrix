@@ -89,8 +89,19 @@ export function DashboardStudentsImportPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur d'analyse du PDF.");
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Réponse serveur invalide."
+            : `Erreur serveur (${res.status}). Vérifiez que l’API tourne (backend :3000).`,
+        );
+      }
+      const msg = Array.isArray(data.message) ? data.message.join(" ") : data.message;
+      if (!res.ok) throw new Error(msg || "Erreur d'analyse du PDF.");
       setRows(data.rows ?? []);
       setWarnings(data.warnings ?? []);
       if (!(data.rows ?? []).length) {
@@ -123,8 +134,19 @@ export function DashboardStudentsImportPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur d'import.");
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Réponse serveur invalide."
+            : `Erreur serveur (${res.status}). Vérifiez que l’API tourne (backend :3000).`,
+        );
+      }
+      const msg = Array.isArray(data.message) ? data.message.join(" ") : data.message;
+      if (!res.ok) throw new Error(msg || "Erreur d'import.");
       setResult({
         created: data.created ?? 0,
         skipped: data.skipped ?? 0,
@@ -228,8 +250,13 @@ export function DashboardStudentsImportPage() {
         </div>
         {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
         <button type="submit" disabled={parsing || !classId || !file} className="app-btn-primary text-sm py-2 disabled:opacity-60">
-          {parsing ? "Analyse IA du PDF…" : "Analyser le PDF"}
+          {parsing ? "Analyse IA du PDF (lots auto si long)…" : "Analyser le PDF"}
         </button>
+        {parsing && (
+          <p className="text-xs text-slate-500">
+            Les PDF longs sont découpés automatiquement côté serveur — laissez tourner.
+          </p>
+        )}
       </form>
 
       {rows.length > 0 && (

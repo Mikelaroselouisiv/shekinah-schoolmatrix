@@ -57,6 +57,12 @@ apps/desktop/dist/
 # Installateurs locaux (binaires)
 /release/
 _archive/**/release/
+installers-usb-*/
+
+# Documents de travail école (listes élèves, PDF scannés)
+NISU SHEKINAH/
+Shekinah liste.docx
+~$*.docx
 
 
 apps/desktop/release-server/

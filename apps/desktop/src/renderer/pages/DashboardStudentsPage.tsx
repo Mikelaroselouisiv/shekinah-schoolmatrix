@@ -9,6 +9,7 @@ import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 type Student = {
   id: string;
   order_number: string | null;
+  student_code: string | null;
   first_name: string;
   last_name: string;
   email: string | null;
@@ -60,6 +61,7 @@ export function DashboardStudentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
+  const [createdStudentCode, setCreatedStudentCode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     order_number: "",
@@ -166,6 +168,7 @@ export function DashboardStudentsPage() {
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
+    setCreatedStudentCode(null);
     try {
       const body = {
         order_number: nisu,
@@ -209,6 +212,7 @@ export function DashboardStudentsPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
         setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
+        setCreatedStudentCode(data.student?.student_code ?? null);
         setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
@@ -262,6 +266,7 @@ export function DashboardStudentsPage() {
     });
     setShowForm(true);
     setCreatedOrderNumber(null);
+    setCreatedStudentCode(null);
   }
 
   function openCreate() {
@@ -270,6 +275,7 @@ export function DashboardStudentsPage() {
     setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
     setShowForm(true);
     setCreatedOrderNumber(null);
+    setCreatedStudentCode(null);
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -286,11 +292,17 @@ export function DashboardStudentsPage() {
         </div>
       </div>
 
-      {createdOrderNumber && (
+      {createdStudentCode && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
           <p className="font-semibold text-green-800">Élève inscrit</p>
           <p className="text-green-700 mt-1">
-            NISU : <span className="font-mono font-bold">{createdOrderNumber}</span>
+            Code école : <span className="font-mono font-bold">{createdStudentCode}</span>
+            {createdOrderNumber ? (
+              <>
+                {" "}
+                · NISU enregistré (interne)
+              </>
+            ) : null}
           </p>
         </div>
       )}
@@ -352,7 +364,7 @@ export function DashboardStudentsPage() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              NISU *
+              NISU * <span className="font-normal text-slate-500">(interne — non affiché sur badges / fiches)</span>
             </label>
             <input
               type="text"
@@ -501,7 +513,7 @@ export function DashboardStudentsPage() {
 
           <div className="flex gap-3">
             <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">{saving ? "Enregistrement..." : editing ? "Enregistrer" : "Inscrire"}</button>
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setCreatedOrderNumber(null); }} className="app-btn-secondary">Annuler</button>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setCreatedOrderNumber(null); setCreatedStudentCode(null); }} className="app-btn-secondary">Annuler</button>
           </div>
         </form>
       )}
@@ -511,6 +523,7 @@ export function DashboardStudentsPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
+              <th className="px-4 py-3 font-medium text-slate-900">Code école</th>
               <th className="px-4 py-3 font-medium text-slate-900">NISU</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
@@ -522,11 +535,12 @@ export function DashboardStudentsPage() {
           </thead>
           <tbody>
             {students.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
             ) : (
               students.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.order_number ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.student_code ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono text-slate-600 text-xs">{s.order_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{s.first_name} {s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.class_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.room_name ?? "—"}</td>

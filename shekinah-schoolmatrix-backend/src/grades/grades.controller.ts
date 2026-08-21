@@ -2,15 +2,24 @@ import { Controller, Get, Post, Body, Query, UseGuards, Req, ForbiddenException 
 import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import {
+  DenyParents,
+  ParentScopedStudent,
+} from '../auth/parent-scope.decorator';
+import { isTeacherRoleName } from '../roles/roles.constants';
+
+const STUDENT_QUERY = { in: 'query', key: 'student_id' } as const;
 
 @Controller('grades')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class GradesController {
   constructor(
     private readonly gradesService: GradesService,
     private readonly preschoolGradesService: PreschoolGradesService,
   ) {}
 
+  @DenyParents()
   @Get('teacher-for-class-subject')
   async getTeacher(
     @Query('class_id') classId?: string,
@@ -20,6 +29,7 @@ export class GradesController {
     return { ok: true, teacher };
   }
 
+  @DenyParents()
   @Get('coefficients')
   async listCoefficients(
     @Query('academic_year_id') academicYearId?: string,
@@ -32,6 +42,7 @@ export class GradesController {
     return { ok: true, coefficients: list };
   }
 
+  @DenyParents()
   @Post('coefficients')
   async setCoefficient(@Body() body: {
     academic_year_id: string;
@@ -43,6 +54,8 @@ export class GradesController {
     return { ok: true, coefficient: c };
   }
 
+  /** Grille de saisie : contient les notes de toute la classe. */
+  @DenyParents()
   @Get('form-data')
   async getFormData(
     @Req() req: { user?: { role?: string } },
@@ -59,10 +72,11 @@ export class GradesController {
     });
     const role = req.user?.role;
     const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;
-    const can_edit = role !== 'TEACHER' || !hasExisting;
+    const can_edit = !isTeacherRoleName(role) || !hasExisting;
     return { ok: true, ...data, can_edit: !!can_edit };
   }
 
+  @DenyParents()
   @Post('save')
   async saveGrades(
     @Req() req: { user?: { role?: string } },
@@ -74,7 +88,7 @@ export class GradesController {
       grades: { student_id: string; coefficient: number; grade_value: number | null; detail?: string }[];
     },
   ) {
-    if (req.user?.role === 'TEACHER') {
+    if (isTeacherRoleName(req.user?.role)) {
       const hasExisting = await this.gradesService.hasExistingGrades({
         academic_year_id: body.academic_year_id,
         class_id: body.class_id,
@@ -89,6 +103,7 @@ export class GradesController {
     return { ok: true };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get('student-exam-results')
   async studentExamResults(
     @Query('student_id') studentId?: string,
@@ -98,6 +113,7 @@ export class GradesController {
     return { ok: true, ...data };
   }
 
+  @DenyParents()
   @Get('preschool/form-data')
   async getPreschoolFormData(
     @Req() req: { user?: { role?: string } },
@@ -114,10 +130,11 @@ export class GradesController {
     });
     const role = req.user?.role;
     const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;
-    const can_edit = role !== 'TEACHER' || !hasExisting;
+    const can_edit = !isTeacherRoleName(role) || !hasExisting;
     return { ok: true, ...data, can_edit: !!can_edit };
   }
 
+  @DenyParents()
   @Post('preschool/save')
   async savePreschoolGrades(
     @Req() req: { user?: { role?: string } },
@@ -129,7 +146,7 @@ export class GradesController {
       grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
     },
   ) {
-    if (req.user?.role === 'TEACHER') {
+    if (isTeacherRoleName(req.user?.role)) {
       const hasExisting = await this.preschoolGradesService.hasExistingPreschoolGrades({
         academic_year_id: body.academic_year_id,
         class_id: body.class_id,
@@ -144,6 +161,7 @@ export class GradesController {
     return { ok: true };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get('preschool/student-results')
   async getPreschoolStudentResults(
     @Query('student_id') studentId?: string,
@@ -153,6 +171,7 @@ export class GradesController {
     return { ok: true, ...data };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get()
   async list(
     @Query('academic_year_id') academicYearId?: string,

@@ -14,6 +14,8 @@ import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
+import { TEACHER_ROLE_NAMES } from '../roles/roles.constants';
+import { SyncService } from '../sync/sync.service';
 
 export type DashboardStats = {
   classesCount: number;
@@ -67,6 +69,7 @@ export class SchoolProfileService implements OnModuleInit {
     @InjectRepository(Role)
     private readonly roleRepo: Repository<Role>,
     private readonly syncKick: SyncKickService,
+    private readonly syncService: SyncService,
   ) {}
 
   async onModuleInit() {
@@ -316,6 +319,9 @@ export class SchoolProfileService implements OnModuleInit {
 
     const toDelete = existing.filter((e) => !keepIds.has(e.id));
     if (toDelete.length) {
+      for (const row of toDelete) {
+        await this.syncService.recordDelete('SchoolSignature', row.id);
+      }
       await this.signatureRepo.remove(toDelete);
     }
 
@@ -326,6 +332,7 @@ export class SchoolProfileService implements OnModuleInit {
   async deleteSignature(id: string): Promise<void> {
     const row = await this.signatureRepo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Signature introuvable');
+    await this.syncService.recordDelete('SchoolSignature', id);
     await this.signatureRepo.remove(row);
     this.syncKick.kick('school-signature');
   }
@@ -354,17 +361,16 @@ export class SchoolProfileService implements OnModuleInit {
 
   /** Statistiques tableau de bord (réservé directeurs / superadmin). */
   async getDashboardStats(): Promise<DashboardStats> {
-    const [classesCount, studentsCount, teacherRole] = await Promise.all([
+    const [classesCount, studentsCount, teachersCount] = await Promise.all([
       this.classRepo.count(),
       this.studentRepo.count(),
-      this.roleRepo.findOne({ where: { name: 'TEACHER' } }),
+      this.userRepo
+        .createQueryBuilder('u')
+        .innerJoin('u.role', 'r')
+        .where('UPPER(r.name) IN (:...roles)', { roles: TEACHER_ROLE_NAMES })
+        .andWhere('u.active = :active', { active: true })
+        .getCount(),
     ]);
-    let teachersCount = 0;
-    if (teacherRole) {
-      teachersCount = await this.userRepo.count({
-        where: { role: { id: teacherRole.id }, active: true },
-      });
-    }
     return { classesCount, studentsCount, teachersCount };
   }
 }

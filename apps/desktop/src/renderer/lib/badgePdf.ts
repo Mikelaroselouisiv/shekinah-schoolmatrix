@@ -21,7 +21,8 @@ export type BadgeSchoolInfo = {
 export type BadgeStudentInfo = {
   first_name: string;
   last_name: string;
-  order_number?: string | null;
+  /** Code de gestion école (public) — jamais le NISU. */
+  student_code?: string | null;
   class_name?: string | null;
   room_name?: string | null;
   photo_url?: string | null;
@@ -366,13 +367,13 @@ function drawOneBadge(
   doc.text(ellipsize(doc, last.toUpperCase() || "—", infoW), infoX, y);
   y += 5;
 
-  if (student.order_number) {
+  if (student.student_code) {
     doc.setFillColor(pale[0], pale[1], pale[2]);
-    doc.roundedRect(infoX, y - 2.6, Math.min(infoW, 30), 4.2, 0.8, 0.8, "F");
+    doc.roundedRect(infoX, y - 2.6, Math.min(infoW, 36), 4.2, 0.8, 0.8, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6);
     doc.setTextColor(primary[0], primary[1], primary[2]);
-    doc.text(`N° ${student.order_number}`, infoX + 1.5, y);
+    doc.text(`N° ${student.student_code}`, infoX + 1.5, y);
     y += 5.8;
   } else {
     y += 1.2;

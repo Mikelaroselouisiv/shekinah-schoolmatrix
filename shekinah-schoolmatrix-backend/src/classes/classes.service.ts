@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Class } from './class.entity';
 import { ClassSubject } from './class-subject.entity';
 import { Room } from '../rooms/room.entity';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class ClassesService {
@@ -14,6 +16,8 @@ export class ClassesService {
     private readonly classSubjectRepo: Repository<ClassSubject>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
@@ -160,6 +164,8 @@ export class ClassesService {
         `Cannot delete: ${cls.students.length} student(s) in this class. Reassign them first.`,
       );
     }
+    await this.syncService.recordDelete('Class', id);
     await this.classRepo.remove(cls);
+    this.syncKick.kick('class-delete');
   }
 }

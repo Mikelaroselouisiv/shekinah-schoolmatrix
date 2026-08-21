@@ -14,27 +14,50 @@ const edition = getAppEdition();
 const apiBase = edition === 'server' ? LOCAL_API_BASE_URL : PUBLIC_API_BASE_URL;
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
+/** Windows taskbar / jumplist : avant ready. */
+if (process.platform === 'win32') {
+  app.setAppUserModelId(
+    edition === 'server'
+      ? 'com.shekinah.schoolmatrix.desktop.server'
+      : 'com.shekinah.schoolmatrix.desktop.remote',
+  );
+}
+
 let mainWindow = null;
 
 function resolveIcon() {
-  const candidates = [
-    path.join(__dirname, '../../build/icon.png'),
-    path.join(__dirname, '../../build/icon.ico'),
-    path.join(process.resourcesPath || '', 'icon.png'),
-  ];
+  const buildDir = path.join(__dirname, '../../build');
+  const resources = process.resourcesPath || '';
+  // Windows : .ico d'abord (barre des tâches / cadre). PNG ensuite.
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          path.join(buildDir, 'icon.ico'),
+          path.join(resources, 'icon.ico'),
+          path.join(buildDir, 'icon.png'),
+          path.join(resources, 'icon.png'),
+        ]
+      : [
+          path.join(buildDir, 'icon.png'),
+          path.join(buildDir, 'icon.ico'),
+          path.join(resources, 'icon.png'),
+        ];
   for (const p of candidates) {
-    if (p && fs.existsSync(p)) return nativeImage.createFromPath(p);
+    if (!p || !fs.existsSync(p)) continue;
+    const img = nativeImage.createFromPath(p);
+    if (img && !img.isEmpty()) return img;
   }
   return undefined;
 }
 
 function createWindow() {
+  const icon = resolveIcon();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
     show: false,
     title: edition === 'server' ? 'SchoolMatrix Server' : 'SchoolMatrix Remote',
-    icon: resolveIcon(),
+    icon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -44,6 +67,14 @@ function createWindow() {
       webSecurity: isDev,
     },
   });
+
+  if (icon) {
+    try {
+      mainWindow.setIcon(icon);
+    } catch {
+      /* ignore */
+    }
+  }
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('closed', () => {
@@ -111,13 +142,6 @@ async function boot() {
       ? 'Shekinah SchoolMatrix Server'
       : 'Shekinah SchoolMatrix Remote',
   );
-  if (process.platform === 'win32') {
-    app.setAppUserModelId(
-      edition === 'server'
-        ? 'com.shekinah.schoolmatrix.desktop.server'
-        : 'com.shekinah.schoolmatrix.desktop.remote',
-    );
-  }
 
   createWindow();
   setAppMenu();

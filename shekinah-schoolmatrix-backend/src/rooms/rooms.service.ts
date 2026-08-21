@@ -8,6 +8,8 @@ import { Repository } from 'typeorm';
 import { Room } from './room.entity';
 import { Class } from '../classes/class.entity';
 import { Student } from '../students/student.entity';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 export type RoomListItem = {
   id: string;
@@ -31,6 +33,8 @@ export class RoomsService {
     private readonly classRepo: Repository<Class>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   private async toListItem(room: Room): Promise<RoomListItem> {
@@ -242,6 +246,8 @@ export class RoomsService {
         `Impossible de supprimer : ${student_count} élève(s) sont encore dans cette salle`,
       );
     }
+    await this.syncService.recordDelete('Room', id);
     await this.roomRepo.remove(room);
+    this.syncKick.kick('room-delete');
   }
 }

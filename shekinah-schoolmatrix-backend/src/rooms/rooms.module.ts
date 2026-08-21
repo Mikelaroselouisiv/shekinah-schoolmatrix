@@ -5,9 +5,10 @@ import { Class } from '../classes/class.entity';
 import { Student } from '../students/student.entity';
 import { RoomsService } from './rooms.service';
 import { RoomsController } from './rooms.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Room, Class, Student])],
+  imports: [TypeOrmModule.forFeature([Room, Class, Student]), ParentScopeModule],
   controllers: [RoomsController],
   providers: [RoomsService],
   exports: [RoomsService],

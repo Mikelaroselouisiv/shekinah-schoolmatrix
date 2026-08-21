@@ -32,6 +32,7 @@ type StudentInClass = {
   first_name: string;
   last_name: string;
   order_number: string | null;
+  student_code: string | null;
   decision: string | null;
   average: number | null;
   assignment_id: string | null;
@@ -247,14 +248,14 @@ export function DashboardFormationClassePage() {
                   title: `Liste des élèves — ${selectedClass?.name ?? ""}`,
                   subtitle: `${selectedYear?.name ?? ""}`,
                   columns: [
-                    { header: "N° dossier", key: "order_number" },
+                    { header: "Code école", key: "student_code" },
                     { header: "Nom", key: "last_name" },
                     { header: "Prénom", key: "first_name" },
                     { header: "Moyenne", key: "average" },
                     { header: "Décision", key: "decision_label" },
                   ],
                   rows: students.map((s) => ({
-                    order_number: s.order_number ?? "—",
+                    student_code: s.student_code ?? "—",
                     last_name: s.last_name,
                     first_name: s.first_name,
                     average: s.average != null ? s.average.toFixed(2) : "—",
@@ -284,7 +285,7 @@ export function DashboardFormationClassePage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 border-b border-[var(--app-border)]">
                 <tr>
-                  <th className="px-4 py-3 font-medium text-slate-900">N° dossier</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Code école</th>
                   <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
                   <th className="px-4 py-3 font-medium text-slate-900">Prénom</th>
                   <th className="px-4 py-3 font-medium text-slate-900">Moyenne</th>
@@ -308,7 +309,7 @@ export function DashboardFormationClassePage() {
                       className="border-b border-[var(--app-border)] last:border-b-0 hover:bg-slate-50/50"
                     >
                       <td className="px-4 py-3 font-mono font-semibold text-slate-900">
-                        {s.order_number ?? "—"}
+                        {s.student_code ?? "—"}
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {s.last_name}

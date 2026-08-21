@@ -9,10 +9,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import {
+  DenyParents,
+  ParentScopedStudent,
+} from '../auth/parent-scope.decorator';
 import { StudentPhotosService } from './student-photos.service';
 
 @Controller('students/:studentId/photos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
+@ParentScopedStudent({ in: 'param', key: 'studentId' })
 export class StudentPhotosController {
   constructor(private readonly photosService: StudentPhotosService) {}
 
@@ -31,6 +37,7 @@ export class StudentPhotosController {
     };
   }
 
+  @DenyParents()
   @Post()
   async add(
     @Param('studentId') studentId: string,
@@ -57,6 +64,7 @@ export class StudentPhotosController {
     };
   }
 
+  @DenyParents()
   @Delete(':photoId')
   async remove(
     @Param('studentId') studentId: string,

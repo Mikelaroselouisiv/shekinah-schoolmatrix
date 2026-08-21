@@ -11,9 +11,11 @@ import {
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 
 @Controller('rooms')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
@@ -29,6 +31,7 @@ export class RoomsController {
     return { ok: true, room };
   }
 
+  @DenyParents()
   @Post()
   async create(
     @Body()
@@ -43,6 +46,7 @@ export class RoomsController {
     return { ok: true, room };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -59,6 +63,7 @@ export class RoomsController {
     return { ok: true, room };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.roomsService.delete(id);

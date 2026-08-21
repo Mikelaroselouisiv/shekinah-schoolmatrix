@@ -10,6 +10,7 @@ import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.ent
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
 import { FormationClasseService } from './formation-classe.service';
 import { FormationClasseController } from './formation-classe.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { FormationClasseController } from './formation-classe.controller';
       ClassSubjectCoefficient,
       DisciplinaryMeasure,
     ]),
+    ParentScopeModule,
   ],
   controllers: [FormationClasseController],
   providers: [FormationClasseService],

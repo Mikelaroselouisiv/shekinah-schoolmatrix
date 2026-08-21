@@ -4,7 +4,9 @@ import { ENTITY_ORDER } from './entities.js';
 export function createApiClient(baseURL, syncKey) {
   return axios.create({
     baseURL: baseURL.replace(/\/$/, ''),
-    timeout: 60_000,
+    timeout: 120_000,
+    maxBodyLength: 12 * 1024 * 1024,
+    maxContentLength: 12 * 1024 * 1024,
     headers: {
       'X-Sync-Key': syncKey,
       'Content-Type': 'application/json',
@@ -24,8 +26,12 @@ function readCursor(cursors, entity) {
 
 /**
  * Pull deltas from `from` and push them to `to`.
- * Curseur avancé seulement si le batch a 0 erreur.
+ * Curseur avancé même si certaines lignes échouent (une salle / un NISU
+ * ne doit pas geler 1000 élèves). Les erreurs sont loguées.
  * Curseur composite { t, id } pour éviter le blocage µs.
+ *
+ * @param {object} opts
+ * @param {string[]} [opts.entities] sous-ensemble (ex. ['SyncTombstone'])
  */
 export async function replicateDirection({
   from,
@@ -33,10 +39,12 @@ export async function replicateDirection({
   cursors,
   sourceNodeId,
   label,
+  entities = ENTITY_ORDER,
 }) {
   const summary = { label, entities: {} };
+  const list = entities?.length ? entities : ENTITY_ORDER;
 
-  for (const entity of ENTITY_ORDER) {
+  for (const entity of list) {
     let cursor = readCursor(cursors, entity);
     let pulled = 0;
     let applied = 0;
@@ -51,7 +59,7 @@ export async function replicateDirection({
       const params = {
         entity,
         since: cursor.t,
-        take: 200,
+        take: 50,
       };
       if (cursor.id) params.afterId = cursor.id;
 
@@ -68,11 +76,25 @@ export async function replicateDirection({
       }
 
       pulled += records.length;
-      const pushRes = await to.post('/sync/push', {
-        entity,
-        sourceNodeId,
-        records,
-      });
+      let pushRes;
+      try {
+        pushRes = await to.post('/sync/push', {
+          entity,
+          sourceNodeId,
+          records,
+        });
+      } catch (err) {
+        const status = err?.response?.status;
+        const detail = err?.response?.data
+          ? JSON.stringify(err.response.data)
+          : err?.message || String(err);
+        if (status === 413 || /too large|entity\.too\.large/i.test(detail)) {
+          throw new Error(
+            `${entity}: lot sync trop gros (${records.length} lignes, HTTP 413). ${detail}`,
+          );
+        }
+        throw err;
+      }
       const batchApplied = pushRes.data?.applied ?? 0;
       const batchSkipped = pushRes.data?.skipped ?? 0;
       const batchErrors = pushRes.data?.errors ?? 0;
@@ -81,13 +103,12 @@ export async function replicateDirection({
       errors += batchErrors;
 
       if (batchErrors > 0) {
+        blocked = true;
         const failed = (pushRes.data?.results || [])
           .filter((r) => r.action === 'error')
-          .slice(0, 3)
+          .slice(0, 5)
           .map((r) => `${r.uuid}: ${r.error || 'error'}`);
         errorSamples.push(...failed);
-        blocked = true;
-        break;
       }
 
       cursor = {
@@ -102,7 +123,7 @@ export async function replicateDirection({
       };
       cursors[entity] = cursor;
 
-      if (records.length < 200 || pages > 50) break;
+      if (records.length < 50 || pages > 80) break;
     }
 
     summary.entities[entity] = {

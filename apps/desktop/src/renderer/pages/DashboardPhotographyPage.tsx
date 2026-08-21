@@ -13,6 +13,7 @@ type Student = {
   first_name: string;
   last_name: string;
   order_number: string | null;
+  student_code: string | null;
   class_id: string | null;
   class_name: string | null;
   room_id: string | null;
@@ -104,7 +105,7 @@ export function DashboardPhotographyPage() {
   const filtered = students.filter((s) => {
     if (!nameQuery.trim()) return true;
     const q = nameQuery.trim().toLowerCase();
-    const full = `${s.first_name} ${s.last_name} ${s.order_number ?? ""}`.toLowerCase();
+    const full = `${s.first_name} ${s.last_name} ${s.student_code ?? ""} ${s.order_number ?? ""}`.toLowerCase();
     return full.includes(q);
   });
 
@@ -194,7 +195,7 @@ export function DashboardPhotographyPage() {
           </select>
         </div>
         <div className="flex-1 min-w-[180px]">
-          <label className="block text-xs text-slate-500 mb-0.5">Nom / NISU</label>
+          <label className="block text-xs text-slate-500 mb-0.5">Nom / code école</label>
           <input
             type="text"
             value={nameQuery}
@@ -231,7 +232,7 @@ export function DashboardPhotographyPage() {
                     {s.last_name} {s.first_name}
                   </div>
                   <div className="text-xs text-slate-500">
-                    {[s.class_name, s.room_name, s.order_number].filter(Boolean).join(" · ")}
+                    {[s.class_name, s.room_name, s.student_code].filter(Boolean).join(" · ")}
                   </div>
                 </div>
               </button>
