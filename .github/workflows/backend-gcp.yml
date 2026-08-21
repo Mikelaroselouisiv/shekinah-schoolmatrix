@@ -17,6 +17,14 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# Le push sur main et le workflow_dispatch de ship-all.ps1 déclenchent deux runs
+# quasi simultanés : sans file d'attente, les deux `docker run` sur la VM entrent
+# en conflit sur le nom du conteneur. On sérialise au lieu d'annuler pour que
+# ship-all voie bien un succès.
+concurrency:
+  group: backend-gcp-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GCP_REGION: ${{ vars.GCP_REGION }}
