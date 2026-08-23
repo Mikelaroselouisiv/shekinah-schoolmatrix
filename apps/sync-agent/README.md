@@ -1,7 +1,7 @@
 # SchoolMatrix sync-agent
 
 - **École (prod)** : conteneur Docker via l’installateur Server (`server-stack`).
-- **DEV** : process Node local optionnel pour tester la sync (voir [docs/DEV.md](../../docs/DEV.md)).
+- **DEV** : lab local `npm run start:lab` (LOCAL `:3000` ↔ miroir `:3001`). Voir [docs/DEV.md](../../docs/DEV.md). Ne pas pointer `REMOTE_API_URL` vers la VM GCP pour tester un seed local.
 
 Cycle (~5s) + kick HTTP :
 

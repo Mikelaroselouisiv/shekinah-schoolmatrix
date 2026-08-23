@@ -9,30 +9,38 @@ import { Period } from '../period/period.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { TeacherClassSubject } from '../teachers/teacher-class-subject.entity';
+import { ClassTeacher } from '../teachers/class-teacher.entity';
 import { Attendance } from '../discipline/attendance.entity';
 import { Lateness } from '../discipline/lateness.entity';
 import { DisciplinaryDeduction } from '../discipline/disciplinary-deduction.entity';
+import { ClassDecisionThreshold } from '../formation-classe/class-decision-threshold.entity';
+import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { FeeService } from '../economat/fee-service.entity';
 import { ClassFee } from '../economat/class-fee.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { StudentServiceExemption } from '../economat/student-service-exemption.entity';
 import { getCurrentAcademicYear } from '../economat/economat.service';
 import { FinanceService } from '../finance/finance.service';
-import { TEACHER_ROLE_NAMES } from '../roles/roles.constants';
+import { isTeacherRoleName, TEACHER_ROLE_NAMES } from '../roles/roles.constants';
+import { LevelScopeService } from '../auth/level-scope.service';
+import {
+  computeAcademicPayload,
+  detectTeacherProfile,
+  gradeLinkedToTeacher,
+  mapAssignment,
+  studentLinkedToTeacher,
+  type AssignmentPair,
+  type ClassThreshold,
+  type HomeroomLink,
+} from './academic-stats';
 
-type PeriodBucket = { obtained: number; possible: number };
+export type AcademicStatsViewer = {
+  userId?: number;
+  role?: string;
+};
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
-}
-
-function averageFromBuckets(byPeriod: Map<string, PeriodBucket>): number | null {
-  const avgs: number[] = [];
-  for (const { obtained, possible } of byPeriod.values()) {
-    if (possible > 0) avgs.push((obtained / possible) * 10);
-  }
-  if (avgs.length === 0) return null;
-  return round2(avgs.reduce((a, b) => a + b, 0) / avgs.length);
 }
 
 @Injectable()
@@ -47,10 +55,16 @@ export class StatisticsService {
     @InjectRepository(Role) private readonly roleRepo: Repository<Role>,
     @InjectRepository(TeacherClassSubject)
     private readonly teacherClassSubjectRepo: Repository<TeacherClassSubject>,
+    @InjectRepository(ClassTeacher)
+    private readonly classTeacherRepo: Repository<ClassTeacher>,
     @InjectRepository(Attendance) private readonly attendanceRepo: Repository<Attendance>,
     @InjectRepository(Lateness) private readonly latenessRepo: Repository<Lateness>,
     @InjectRepository(DisciplinaryDeduction)
     private readonly deductionRepo: Repository<DisciplinaryDeduction>,
+    @InjectRepository(ClassDecisionThreshold)
+    private readonly thresholdRepo: Repository<ClassDecisionThreshold>,
+    @InjectRepository(ClassSubjectCoefficient)
+    private readonly coefRepo: Repository<ClassSubjectCoefficient>,
     @InjectRepository(FeeService) private readonly feeServiceRepo: Repository<FeeService>,
     @InjectRepository(ClassFee) private readonly classFeeRepo: Repository<ClassFee>,
     @InjectRepository(PaymentTransaction)
@@ -58,9 +72,18 @@ export class StatisticsService {
     @InjectRepository(StudentServiceExemption)
     private readonly exemptionRepo: Repository<StudentServiceExemption>,
     private readonly financeService: FinanceService,
+    private readonly levelScope: LevelScopeService,
   ) {}
 
-  async getAcademicStats(params: { academic_year_id?: string; period_id?: string }) {
+  async getAcademicStats(params: {
+    academic_year_id?: string;
+    period_id?: string;
+    class_id?: string;
+    subject_id?: string;
+    teacher_id?: number;
+    room_id?: string;
+    viewer?: AcademicStatsViewer;
+  }) {
     let academicYearId = params.academic_year_id;
     let academicYearName: string | null = null;
     if (academicYearId) {
@@ -79,22 +102,62 @@ export class StatisticsService {
       periodName = p?.name ?? null;
     }
 
-    const [classes, students, teacherRoles, grades] = await Promise.all([
-      this.classRepo.find({ where: { active: true } as any, order: { name: 'ASC' } }),
-      this.studentRepo.find({ where: { active: true }, relations: ['class'] }),
-      this.roleRepo.find({ where: { name: In(TEACHER_ROLE_NAMES) } }),
-      academicYearId
-        ? this.gradeRepo
-            .createQueryBuilder('g')
-            .leftJoinAndSelect('g.student', 'student')
-            .leftJoinAndSelect('g.class', 'class')
-            .leftJoinAndSelect('g.subject', 'subject')
-            .leftJoinAndSelect('g.period', 'period')
-            .where('g.academic_year_id = :ay', { ay: academicYearId })
-            .andWhere(periodId ? 'g.period_id = :pid' : '1=1', periodId ? { pid: periodId } : {})
-            .getMany()
-        : Promise.resolve([] as Grade[]),
-    ]);
+    const isTeacher = isTeacherRoleName(params.viewer?.role);
+    const scopedTeacherId = isTeacher
+      ? params.viewer?.userId
+      : params.teacher_id || undefined;
+
+    let [classes, studentsAll, teacherRoles, gradesAll, rawAssignments, thresholdRows, classTeachers, coefRows] =
+      await Promise.all([
+        this.classRepo.find({ where: { active: true } as any, order: { name: 'ASC' } }),
+        this.studentRepo.find({ where: { active: true }, relations: ['class', 'room'] }),
+        this.roleRepo.find({ where: { name: In(TEACHER_ROLE_NAMES) } }),
+        academicYearId
+          ? this.gradeRepo
+              .createQueryBuilder('g')
+              .leftJoinAndSelect('g.student', 'student')
+              .leftJoinAndSelect('student.room', 'studentRoom')
+              .leftJoinAndSelect('g.class', 'class')
+              .leftJoinAndSelect('g.subject', 'subject')
+              .leftJoinAndSelect('g.period', 'period')
+              .where('g.academic_year_id = :ay', { ay: academicYearId })
+              .andWhere(periodId ? 'g.period_id = :pid' : '1=1', periodId ? { pid: periodId } : {})
+              .getMany()
+          : Promise.resolve([] as Grade[]),
+        this.teacherClassSubjectRepo.find({
+          relations: ['teacher', 'class', 'subject', 'room'],
+        }),
+        academicYearId
+          ? this.thresholdRepo.find({
+              where: { academic_year: { id: academicYearId } },
+              relations: ['class'],
+            })
+          : Promise.resolve([] as ClassDecisionThreshold[]),
+        this.classTeacherRepo.find({
+          relations: ['teacher', 'class'],
+        }),
+        academicYearId
+          ? this.coefRepo.find({
+              where: { academic_year: { id: academicYearId } },
+              relations: ['class', 'subject'],
+            })
+          : Promise.resolve([] as ClassSubjectCoefficient[]),
+      ]);
+
+    if (!isTeacher) {
+      const ls = await this.levelScope.resolve(params.viewer);
+      if (ls.kind === 'restricted') {
+        const idSet = new Set(ls.classIds);
+        classes = classes.filter(
+          (c) => idSet.has(c.id) || (c.level != null && ls.levels.includes(c.level)),
+        );
+        studentsAll = studentsAll.filter((s) => s.class?.id && idSet.has(s.class.id));
+        gradesAll = gradesAll.filter((g) => {
+          const cid = g.class?.id ?? (g as { class_id?: string }).class_id;
+          return !!cid && idSet.has(cid);
+        });
+      }
+    }
 
     let teachersCount = 0;
     if (teacherRoles.length > 0) {
@@ -103,192 +166,203 @@ export class StatisticsService {
       });
     }
 
-    // studentId -> periodId -> {obtained, possible}
-    const studentBuckets = new Map<string, Map<string, PeriodBucket>>();
-    // classId -> studentId -> buckets
-    const classStudentBuckets = new Map<string, Map<string, Map<string, PeriodBucket>>>();
-    // subjectId -> {name, obtained, possible, count}
-    const subjectAgg = new Map<string, { name: string; obtained: number; possible: number; n: number }>();
-    // classId|subjectId -> {obtained, possible, n}
-    const classSubjectAgg = new Map<string, { obtained: number; possible: number; n: number }>();
+    const allPairs = rawAssignments
+      .map(mapAssignment)
+      .filter((p): p is AssignmentPair => !!p);
 
-    for (const g of grades) {
-      const sid = g.student?.id ?? (g as any).student_id;
-      const cid = g.class?.id ?? (g as any).class_id;
-      const subId = g.subject?.id ?? (g as any).subject_id;
-      const pid = g.period?.id ?? (g as any).period_id;
-      if (!sid || !cid || !subId || !pid) continue;
-      const coef = Number(g.coefficient) || 0;
-      const points = Number(g.grade_value) || 0;
+    const teacherPairs = scopedTeacherId
+      ? allPairs.filter((p) => Number(p.teacher_id) === Number(scopedTeacherId))
+      : allPairs;
 
-      if (!studentBuckets.has(sid)) studentBuckets.set(sid, new Map());
-      const sb = studentBuckets.get(sid)!;
-      const cur = sb.get(pid) ?? { obtained: 0, possible: 0 };
-      cur.obtained += points;
-      cur.possible += coef;
-      sb.set(pid, cur);
+    const homeroomLinks: HomeroomLink[] = classTeachers
+      .map((ct) => {
+        const tid = Number(ct.user_id ?? ct.teacher?.id);
+        const cid = ct.class_id ?? ct.class?.id;
+        if (!Number.isFinite(tid) || tid <= 0 || !cid) return null;
+        const teacher = ct.teacher;
+        return {
+          teacher_id: tid,
+          class_id: cid,
+          teacher_name: teacher
+            ? `${teacher.first_name ?? ''} ${teacher.last_name ?? ''}`.trim() ||
+              teacher.email ||
+              '—'
+            : '—',
+        };
+      })
+      .filter((h): h is HomeroomLink => !!h);
 
-      if (!classStudentBuckets.has(cid)) classStudentBuckets.set(cid, new Map());
-      const cs = classStudentBuckets.get(cid)!;
-      if (!cs.has(sid)) cs.set(sid, new Map());
-      const csb = cs.get(sid)!;
-      const ccur = csb.get(pid) ?? { obtained: 0, possible: 0 };
-      ccur.obtained += points;
-      ccur.possible += coef;
-      csb.set(pid, ccur);
+    const subjectClassIds = new Set(teacherPairs.map((p) => p.class_id));
+    const homeroomOnlyClassIds = new Set(
+      homeroomLinks
+        .filter((h) => !scopedTeacherId || Number(h.teacher_id) === Number(scopedTeacherId))
+        .filter((h) => !subjectClassIds.has(h.class_id))
+        .filter((h) => !params.class_id || h.class_id === params.class_id)
+        .map((h) => h.class_id),
+    );
 
-      const subName = g.subject?.name ?? '—';
-      const sa = subjectAgg.get(subId) ?? { name: subName, obtained: 0, possible: 0, n: 0 };
-      sa.obtained += points;
-      sa.possible += coef;
-      sa.n += 1;
-      subjectAgg.set(subId, sa);
+    const viewerMode: 'admin' | 'teacher' = isTeacher ? 'teacher' : 'admin';
+    const profile = scopedTeacherId
+      ? teacherPairs.length > 0
+        ? detectTeacherProfile(teacherPairs)
+        : homeroomOnlyClassIds.size > 0
+          ? 'homeroom'
+          : 'none'
+      : ('school' as const);
 
-      const key = `${cid}|${subId}`;
-      const csa = classSubjectAgg.get(key) ?? { obtained: 0, possible: 0, n: 0 };
-      csa.obtained += points;
-      csa.possible += coef;
-      csa.n += 1;
-      classSubjectAgg.set(key, csa);
+    let scopePairs: AssignmentPair[] | null = scopedTeacherId ? teacherPairs : null;
+    if (scopePairs) {
+      if (params.class_id) {
+        scopePairs = scopePairs.filter((p) => p.class_id === params.class_id);
+      }
+      if (params.subject_id) {
+        scopePairs = scopePairs.filter((p) => p.subject_id === params.subject_id);
+      }
+      if (params.room_id) {
+        scopePairs = scopePairs.filter((p) => !p.room_id || p.room_id === params.room_id);
+      }
     }
 
-    const studentAvgs: { id: string; name: string; class_id: string | null; class_name: string | null; average: number }[] = [];
-    const studentById = new Map(students.map((s) => [s.id, s]));
-
-    for (const [sid, buckets] of studentBuckets) {
-      const avg = averageFromBuckets(buckets);
-      if (avg == null) continue;
-      const st = studentById.get(sid);
-      studentAvgs.push({
-        id: sid,
-        name: st ? `${st.first_name ?? ''} ${st.last_name ?? ''}`.trim() : '—',
-        class_id: st?.class?.id ?? null,
-        class_name: st?.class?.name ?? null,
-        average: avg,
-      });
+    let classesScoped = classes;
+    if (params.class_id) {
+      classesScoped = classes.filter((c) => c.id === params.class_id);
     }
-    studentAvgs.sort((a, b) => b.average - a.average);
 
-    const allAvgs = studentAvgs.map((s) => s.average);
-    const schoolAverage = allAvgs.length
-      ? round2(allAvgs.reduce((a, b) => a + b, 0) / allAvgs.length)
-      : null;
-    const successCount = allAvgs.filter((a) => a >= 5).length;
-    const successRate = allAvgs.length ? round2((successCount / allAvgs.length) * 100) : null;
+    let students = studentsAll;
+    if (params.class_id) {
+      students = students.filter((s) => s.class?.id === params.class_id);
+    }
+    if (params.room_id) {
+      students = students.filter((s) => s.room?.id === params.room_id);
+    }
+    if (scopedTeacherId) {
+      students = students.filter((s) =>
+        studentLinkedToTeacher(
+          s.class?.id,
+          s.room?.id ?? null,
+          scopePairs ?? [],
+          homeroomOnlyClassIds,
+        ),
+      );
+    }
 
-    const distribution = {
-      insuffisant: allAvgs.filter((a) => a < 5).length,
-      passable: allAvgs.filter((a) => a >= 5 && a < 7).length,
-      bien: allAvgs.filter((a) => a >= 7 && a < 8.5).length,
-      excellent: allAvgs.filter((a) => a >= 8.5).length,
+    const studentIds = new Set(students.map((s) => s.id));
+    let grades = gradesAll.filter((g) => {
+      const sid = g.student?.id ?? (g as { student_id?: string }).student_id;
+      const cid = g.class?.id ?? (g as { class_id?: string }).class_id;
+      const subId = g.subject?.id ?? (g as { subject_id?: string }).subject_id;
+      if (!sid || !cid || !subId) return false;
+      if (!studentIds.has(sid)) return false;
+      if (params.class_id && cid !== params.class_id) return false;
+      if (params.subject_id && subId !== params.subject_id) return false;
+      const roomId = g.student?.room?.id ?? null;
+      if (params.room_id && roomId !== params.room_id) return false;
+      if (
+        scopedTeacherId &&
+        !gradeLinkedToTeacher(cid, subId, roomId, scopePairs ?? [], homeroomOnlyClassIds)
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    const ids = [...studentIds];
+    const emptyDiscipline = {
+      absences: 0,
+      presents: 0,
+      latenesses: 0,
+      deductions_count: 0,
+      deductions_points: 0,
+      students_low_points: 0,
     };
 
-    const by_class = classes.map((c) => {
-      const cmap = classStudentBuckets.get(c.id);
-      const avgs: number[] = [];
-      if (cmap) {
-        for (const buckets of cmap.values()) {
-          const avg = averageFromBuckets(buckets);
-          if (avg != null) avgs.push(avg);
-        }
-      }
-      const studentsInClass = students.filter((s) => s.class?.id === c.id).length;
-      const average = avgs.length ? round2(avgs.reduce((a, b) => a + b, 0) / avgs.length) : null;
-      const success = avgs.length ? round2((avgs.filter((a) => a >= 5).length / avgs.length) * 100) : null;
-      return {
-        class_id: c.id,
-        class_name: c.name,
-        level: c.level ?? null,
-        students: studentsInClass,
-        graded_students: avgs.length,
-        average,
-        success_rate: success,
-      };
-    });
-
-    const by_subject = [...subjectAgg.entries()]
-      .map(([id, s]) => ({
-        subject_id: id,
-        subject_name: s.name,
-        grades_count: s.n,
-        average: s.possible > 0 ? round2((s.obtained / s.possible) * 10) : null,
-      }))
-      .sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
-
-    const assignments = await this.teacherClassSubjectRepo.find({
-      relations: ['teacher', 'class', 'subject'],
-    });
-    const teacherAgg = new Map<
-      number,
-      { name: string; obtained: number; possible: number; assignments: number; grades: number }
-    >();
-    for (const a of assignments) {
-      const tid = a.teacher_id ?? a.teacher?.id;
-      if (!tid) continue;
-      const name = a.teacher
-        ? `${a.teacher.first_name ?? ''} ${a.teacher.last_name ?? ''}`.trim()
-        : '—';
-      const cur = teacherAgg.get(tid) ?? { name, obtained: 0, possible: 0, assignments: 0, grades: 0 };
-      cur.assignments += 1;
-      const key = `${a.class_id}|${a.subject_id}`;
-      const csa = classSubjectAgg.get(key);
-      if (csa) {
-        cur.obtained += csa.obtained;
-        cur.possible += csa.possible;
-        cur.grades += csa.n;
-      }
-      teacherAgg.set(tid, cur);
-    }
-    const by_teacher = [...teacherAgg.entries()]
-      .map(([id, t]) => ({
-        teacher_id: id,
-        teacher_name: t.name,
-        assignments: t.assignments,
-        grades_count: t.grades,
-        average: t.possible > 0 ? round2((t.obtained / t.possible) * 10) : null,
-      }))
-      .sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
-
-    const [absences, presents, latenesses, deductionsSum, deductionsCount] = await Promise.all([
-      this.attendanceRepo.count({ where: { status: 'ABSENT' } }),
-      this.attendanceRepo.count({ where: { status: 'PRESENT' } }),
-      this.latenessRepo.count(),
-      this.deductionRepo
-        .createQueryBuilder('d')
-        .select('COALESCE(SUM(d.points_deducted), 0)', 's')
-        .getRawOne()
-        .then((r) => Number(r?.s ?? 0)),
-      this.deductionRepo.count(),
-    ]);
-
-    return {
-      academic_year_id: academicYearId ?? null,
-      academic_year_name: academicYearName,
-      period_id: periodId ?? null,
-      period_name: periodName,
-      overview: {
-        classes: classes.length,
-        students: students.length,
-        teachers: teachersCount,
-        grades: grades.length,
-        graded_students: allAvgs.length,
-        school_average: schoolAverage,
-        success_rate: successRate,
-      },
-      distribution,
-      by_class,
-      by_subject,
-      by_teacher,
-      top_students: studentAvgs.slice(0, 15),
-      bottom_students: [...studentAvgs].reverse().slice(0, 15),
-      discipline: {
+    let discipline = emptyDiscipline;
+    if (ids.length > 0) {
+      const [absences, presents, latenesses, deductionsSum, deductionsCount, deductionRows] =
+        await Promise.all([
+          this.attendanceRepo.count({ where: { student: { id: In(ids) }, status: 'ABSENT' } }),
+          this.attendanceRepo.count({ where: { student: { id: In(ids) }, status: 'PRESENT' } }),
+          this.latenessRepo.count({ where: { student: { id: In(ids) } } }),
+          this.deductionRepo
+            .createQueryBuilder('d')
+            .leftJoin('d.student', 'st')
+            .select('COALESCE(SUM(d.points_deducted), 0)', 's')
+            .where('st.id IN (:...ids)', { ids })
+            .getRawOne()
+            .then((r) => Number(r?.s ?? 0)),
+          this.deductionRepo
+            .createQueryBuilder('d')
+            .leftJoin('d.student', 'st')
+            .where('st.id IN (:...ids)', { ids })
+            .getCount(),
+          this.deductionRepo
+            .createQueryBuilder('d')
+            .leftJoin('d.student', 'st')
+            .select('st.id', 'sid')
+            .addSelect('COALESCE(SUM(d.points_deducted), 0)', 'pts')
+            .where('st.id IN (:...ids)', { ids })
+            .groupBy('st.id')
+            .getRawMany(),
+        ]);
+      const studentsLow = deductionRows.filter((r) => 100 - Number(r.pts ?? 0) < 70).length;
+      discipline = {
         absences,
         presents,
         latenesses,
         deductions_count: deductionsCount,
         deductions_points: deductionsSum,
-      },
-    };
+        students_low_points: studentsLow,
+      };
+    }
+
+    const scopedTeacherName = scopedTeacherId
+      ? teacherPairs[0]?.teacher_name ??
+        homeroomLinks.find((h) => Number(h.teacher_id) === Number(scopedTeacherId))
+          ?.teacher_name ??
+        allPairs.find((p) => Number(p.teacher_id) === Number(scopedTeacherId))?.teacher_name ??
+        null
+      : null;
+
+    const thresholdsByClass: Record<string, ClassThreshold> = {};
+    for (const t of thresholdRows) {
+      const cid = t.class?.id ?? (t as { class_id?: string }).class_id;
+      if (!cid) continue;
+      thresholdsByClass[cid] = {
+        min_average_admis: Number(t.min_average_admis),
+        min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
+        min_average_redoubler: Number(t.min_average_redoubler),
+        min_average_ajourne: Number(t.min_average_ajourne),
+      };
+    }
+
+    const classBaremeByKey: Record<string, number> = {};
+    for (const c of coefRows) {
+      const cid = c.class?.id ?? (c as { class_id?: string }).class_id;
+      const sid = c.subject?.id ?? (c as { subject_id?: string }).subject_id;
+      if (!cid || !sid) continue;
+      classBaremeByKey[`${cid}|${sid}`] = Number(c.coefficient);
+    }
+
+    return computeAcademicPayload({
+      academicYearId: academicYearId ?? null,
+      academicYearName,
+      periodId: periodId ?? null,
+      periodName,
+      classes: classesScoped,
+      students,
+      grades,
+      allPairs,
+      scopePairs,
+      homeroomLinks,
+      classBaremeByKey,
+      teachersCount,
+      viewerMode,
+      profile,
+      scopedTeacherId,
+      scopedTeacherName,
+      discipline,
+      thresholdsByClass,
+    });
   }
 
   async getFinancialStats(params: {

@@ -8,5 +8,5 @@ export function isPreschoolClass(description?: string | null, level?: string | n
       .replace(/-/g, '');
     return normalized.includes('prescolaire');
   };
-  return check(description) || check(level);
+    return check(description) || check(level) || level === 'PRESCOLAIRE';
 }

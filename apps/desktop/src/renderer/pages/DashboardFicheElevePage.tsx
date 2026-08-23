@@ -8,6 +8,8 @@ import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
+import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
+import type { PdfSection, PdfTableConfig } from "@/lib/pdfExport";
 
 type Student = {
   id: string;
@@ -142,6 +144,94 @@ type ExtracurricularActivityItem = {
   participation_fee: string | null;
   dress_code: string | null;
 };
+
+function studentPdfName(student: Student): string {
+  return `${student.last_name} ${student.first_name}`.trim();
+}
+
+function studentPdfFilename(prefix: string, student: Student, yearName: string): string {
+  return `${prefix}-${student.first_name}-${student.last_name}-${yearName || "annee"}.pdf`;
+}
+
+function courseSchedulePdfTable(
+  student: Student,
+  yearName: string,
+  slots: ScheduleSlot[],
+): PdfTableConfig {
+  return {
+    title: `Emploi du temps — ${studentPdfName(student)}`,
+    subtitle: [student.class_name, student.room_name, yearName].filter(Boolean).join(" · "),
+    columns: [
+      { header: "Jour", key: "day" },
+      { header: "Horaire", key: "time" },
+      { header: "Matière", key: "subject" },
+      { header: "Professeur", key: "teacher" },
+      { header: "Salle", key: "room" },
+    ],
+    rows: slots.map((s) => ({
+      day: DAYS[s.day_of_week] ?? String(s.day_of_week),
+      time: `${s.start_time} – ${s.end_time}`,
+      subject: s.subject_name,
+      teacher: s.teacher_name ?? "—",
+      room: s.room_name ?? "—",
+    })),
+  };
+}
+
+function examSchedulePdfTable(
+  student: Student,
+  yearName: string,
+  exams: ExamScheduleItem[],
+): PdfTableConfig {
+  return {
+    title: `Horaire des examens — ${studentPdfName(student)}`,
+    subtitle: [student.class_name, student.room_name, yearName].filter(Boolean).join(" · "),
+    columns: [
+      { header: "Date", key: "date" },
+      { header: "Horaire", key: "time" },
+      { header: "Matière", key: "subject" },
+      { header: "Période", key: "period" },
+    ],
+    rows: exams.map((e) => ({
+      date: formatDateJJMMAAAA(e.exam_date),
+      time: `${e.start_time} – ${e.end_time}`,
+      subject: e.subject_name,
+      period: e.period,
+    })),
+  };
+}
+
+function extracurricularPdfTable(
+  student: Student,
+  yearName: string,
+  activities: ExtracurricularActivityItem[],
+): PdfTableConfig {
+  return {
+    title: `Activités parascolaires — ${studentPdfName(student)}`,
+    subtitle: [student.class_name, student.room_name, yearName].filter(Boolean).join(" · "),
+    columns: [
+      { header: "Date", key: "date" },
+      { header: "Horaire", key: "time" },
+      { header: "Occasion", key: "occasion" },
+      { header: "Frais", key: "fee" },
+      { header: "Tenue", key: "dress" },
+    ],
+    rows: activities.map((a) => ({
+      date: formatDateJJMMAAAA(a.activity_date),
+      time: `${a.start_time} – ${a.end_time}`,
+      occasion: a.occasion,
+      fee: a.participation_fee ?? "—",
+      dress: a.dress_code ?? "—",
+    })),
+  };
+}
+
+function schedulePdfSection(title: string, table: PdfTableConfig, emptyLabel: string): PdfSection {
+  if (table.rows.length === 0) {
+    return { title, lines: [emptyLabel] };
+  }
+  return { title, table: { columns: table.columns, rows: table.rows } };
+}
 
 export function DashboardFicheElevePage() {
   const [searchParams] = useSearchParams();
@@ -355,6 +445,62 @@ export function DashboardFicheElevePage() {
   useEffect(() => {
     loadStudentData(selectedStudentId);
   }, [selectedStudentId, loadStudentData]);
+
+  const yearLabel =
+    academicYears.find((y) => y.id === (selectedYearId || academicYears[0]?.id))?.name ?? "";
+
+  const coursePdf = student
+    ? courseSchedulePdfTable(student, yearLabel, scheduleSlots)
+    : null;
+  const examPdf = student
+    ? examSchedulePdfTable(student, yearLabel, examSchedules)
+    : null;
+  const activitiesPdf = student
+    ? extracurricularPdfTable(student, yearLabel, extracurricularActivities)
+    : null;
+
+  const currentScheduleExport =
+    scheduleTab === "cours"
+      ? {
+          table: coursePdf,
+          filename: student ? studentPdfFilename("emploi-du-temps", student, yearLabel) : "",
+          canExport: scheduleSlots.length > 0,
+        }
+      : scheduleTab === "examens"
+        ? {
+            table: examPdf,
+            filename: student ? studentPdfFilename("horaires-examens", student, yearLabel) : "",
+            canExport: examSchedules.length > 0,
+          }
+        : {
+            table: activitiesPdf,
+            filename: student ? studentPdfFilename("activites-parascolaires", student, yearLabel) : "",
+            canExport: extracurricularActivities.length > 0,
+          };
+
+  const scheduleAllSections: PdfSection[] | null =
+    student && coursePdf && examPdf && activitiesPdf
+      ? [
+          schedulePdfSection(
+            "Horaire des cours",
+            coursePdf,
+            "Aucun créneau de cours pour cette classe.",
+          ),
+          schedulePdfSection(
+            "Horaire des examens",
+            examPdf,
+            "Aucun examen planifié pour cette classe.",
+          ),
+          schedulePdfSection(
+            "Activités parascolaires",
+            activitiesPdf,
+            "Aucune activité parascolaire pour cette classe.",
+          ),
+        ]
+      : null;
+
+  const canExportAllSchedule =
+    scheduleSlots.length > 0 || examSchedules.length > 0 || extracurricularActivities.length > 0;
 
   const handleYearChange = (yearId: string) => {
     setSelectedYearId(yearId);
@@ -677,17 +823,43 @@ export function DashboardFicheElevePage() {
           <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-2">
               <span>Emploi du temps</span>
-              {academicYears.length > 0 && (
-                <select
-                  value={selectedYearId || academicYears[0]?.id}
-                  onChange={(e) => handleYearChange(e.target.value)}
-                  className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
-                >
-                  {academicYears.map((y) => (
-                    <option key={y.id} value={y.id}>{y.name}</option>
-                  ))}
-                </select>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {currentScheduleExport.table && (
+                  <ExportPdfButton
+                    table={currentScheduleExport.table}
+                    filename={currentScheduleExport.filename}
+                    disabled={!currentScheduleExport.canExport}
+                    label={
+                      scheduleTab === "cours"
+                        ? "Exporter l'emploi du temps"
+                        : scheduleTab === "examens"
+                          ? "Exporter les horaires des examens"
+                          : "Exporter les activités"
+                    }
+                    className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  />
+                )}
+                {scheduleAllSections && canExportAllSchedule && (
+                  <ExportPdfButton
+                    sections={scheduleAllSections}
+                    mainTitle={`Planning — ${studentPdfName(student)} (${yearLabel})`}
+                    filename={studentPdfFilename("planning", student, yearLabel)}
+                    label="Exporter tout"
+                    className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  />
+                )}
+                {academicYears.length > 0 && (
+                  <select
+                    value={selectedYearId || academicYears[0]?.id}
+                    onChange={(e) => handleYearChange(e.target.value)}
+                    className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y.id} value={y.id}>{y.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
             <div className="p-4">
               <div className="flex gap-1 border-b border-[var(--app-border)] mb-4">
@@ -808,7 +980,7 @@ export function DashboardFicheElevePage() {
                 <ExportPdfButton
                   sections={[
                     {
-                      title: "Carnet de notes (points/coef, moy. sur 10)",
+                      title: "Carnet de notes (points / note sur, moy. sur 10)",
                       table: {
                         columns: [
                           { header: "Matière", key: "subject_name" },
@@ -829,7 +1001,7 @@ export function DashboardFicheElevePage() {
                               const g = grades.find((gr) => gr.period_id === p.id);
                               const pts = g?.grade_value != null ? Number(g.grade_value) : null;
                               const coef = g?.coefficient != null ? Number(g.coefficient) : null;
-                              row[`period_${i}`] = pts != null && coef != null ? `${pts}/${coef}` : "—";
+                              row[`period_${i}`] = pts != null && coef != null ? formatPointsOnBareme(pts, coef) : "—";
                             });
                             return row;
                           }),
@@ -906,7 +1078,7 @@ export function DashboardFicheElevePage() {
             <div className="p-4 overflow-auto max-h-[70vh]">
               {examResults && examResults.subjects?.length > 0 ? (
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-500 mb-2">Points avec coefficients (ex. 85/100). Moyennes sur 10.</p>
+                  <p className="text-xs text-slate-500 mb-2">Ex. 180/200 = 9,00/10 · barème 100, 200, 300, 400 ou 500.</p>
                   <table className="w-full text-sm border-collapse min-w-[600px]">
                     <thead>
                       <tr>
@@ -934,7 +1106,14 @@ export function DashboardFicheElevePage() {
                               const coef = g?.coefficient != null ? Number(g.coefficient) : null;
                               return (
                                 <td key={p.id} className="py-2 px-2 text-center">
-                                  {pts != null && coef != null ? `${pts}/${coef}` : "—"}
+                                  {pts != null && coef != null ? (
+                                    <span>
+                                      {pts}/{coef}
+                                      <span className="block text-[11px] text-slate-500">
+                                        {pointsToTen(pts, coef) != null ? `${pointsToTen(pts, coef)!.toFixed(2)}/10` : ""}
+                                      </span>
+                                    </span>
+                                  ) : "—"}
                                 </td>
                               );
                             })}

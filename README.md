@@ -18,21 +18,22 @@ Logiciel scolaire : **API NestJS** + **desktop Electron** (éditions Server / Re
 Guide détaillé : [docs/DEV.md](docs/DEV.md).
 
 ```powershell
-# Terminal A — Postgres DEV (port 5435) + API Nest (:3000)
+# Terminal A — Postgres DEV (port 5436) + API Nest (:3000)
 npm run dev:backend
 
 # Terminal B — UI Electron (édition Server → API locale)
 npm run dev:desktop
 
-# Optionnel — tester la sync locale ↔ cloud
-npm run dev:sync-agent
+# Optionnel — tester la sync SANS toucher la VM GCP
+npm run dev:backend:cloud   # miroir local :3001 / Postgres :5437
+npm run dev:sync-lab        # agent :3000 ↔ :3001
 ```
 
 | Besoin | Dossier / commande |
 |--------|-------------------|
 | Backend | `shekinah-schoolmatrix-backend` → `npm run dev` |
 | Frontend (Electron) | `apps/desktop` → `npm run dev` ou `npm run dev:remote` |
-| Sync-agent | `apps/sync-agent` → `npm start` |
+| Sync lab (local) | `npm run dev:sync-lab` — **pas** `dev:sync-agent` (ça pointe GCP) |
 | Livraison prod | `infra/scripts/ship-all.ps1` (voir [docs/RELEASE.md](docs/RELEASE.md)) |
 
 ## Carte du dépôt (canonique)

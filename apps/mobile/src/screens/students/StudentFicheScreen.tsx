@@ -297,7 +297,16 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                   <Text style={styles.detailTitle}>{sub.subject_name}</Text>
                   <Text style={styles.detailMeta}>
                     {sub.periods
-                      .map((p) => `${p.period_name}: ${p.grade_value}`)
+                      .map((p) => {
+                        const pts = p.grade_value;
+                        const coef = p.coefficient;
+                        if (pts == null) return `${p.period_name}: —`;
+                        if (coef && coef > 0) {
+                          const ten = Math.round((Number(pts) / Number(coef)) * 10 * 100) / 100;
+                          return `${p.period_name}: ${pts}/${coef} (${ten.toFixed(2)}/10)`;
+                        }
+                        return `${p.period_name}: ${pts}`;
+                      })
                       .join(' · ')}
                   </Text>
                 </View>

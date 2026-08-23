@@ -38,7 +38,9 @@ import { migrations } from './migrations';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev',
+      envFilePath:
+        process.env.ENV_FILE ||
+        (process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev'),
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],

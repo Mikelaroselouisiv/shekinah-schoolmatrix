@@ -8,20 +8,33 @@ import {
   Body,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
+import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
 
 @Controller('rooms')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class RoomsController {
-  constructor(private readonly roomsService: RoomsService) {}
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly levelScope: LevelScopeService,
+  ) {}
 
   @Get()
-  async list(@Query('class_id') classId?: string) {
-    const rooms = await this.roomsService.findAll(classId || undefined);
+  async list(
+    @Req() req: { user?: RequestActor },
+    @Query('class_id') classId?: string,
+  ) {
+    if (classId) await this.levelScope.assertClassAccess(req.user, classId);
+    const rooms = await this.levelScope.filterByClassId(
+      req.user,
+      await this.roomsService.findAll(classId || undefined),
+      (r) => r.class_id,
+    );
     return { ok: true, rooms };
   }
 

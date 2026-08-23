@@ -7,21 +7,29 @@ import {
   Param,
   Body,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ClassesService } from './classes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
+import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
 
 @Controller('classes')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class ClassesController {
-  constructor(private readonly classesService: ClassesService) {}
+  constructor(
+    private readonly classesService: ClassesService,
+    private readonly levelScope: LevelScopeService,
+  ) {}
 
   @Get()
-  async list() {
-    const classes = await this.classesService.findAll();
+  async list(@Req() req: { user?: RequestActor }) {
+    const classes = await this.levelScope.filterClasses(
+      req.user,
+      await this.classesService.findAll(),
+    );
     return {
       ok: true,
       classes: classes.map((c) => ({
@@ -50,7 +58,8 @@ export class ClassesController {
   /** Inclut la liste des élèves de la classe. */
   @DenyParents()
   @Get(':id')
-  async one(@Param('id') id: string) {
+  async one(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+    await this.levelScope.assertClassAccess(req.user, id);
     const cls = await this.classesService.findOne(id);
     const subject_ids = await this.classesService.getClassSubjectIds(id);
     const is_preschool = isPreschoolClass(cls.description, cls.level);
@@ -80,7 +89,8 @@ export class ClassesController {
 
   @DenyParents()
   @Get(':id/subjects')
-  async getSubjects(@Param('id') id: string) {
+  async getSubjects(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+    await this.levelScope.assertClassAccess(req.user, id);
     await this.classesService.findOne(id);
     const subjects = await this.classesService.getClassSubjects(id);
     return { ok: true, subjects };
@@ -89,6 +99,7 @@ export class ClassesController {
   @DenyParents()
   @Post()
   async create(
+    @Req() req: { user?: RequestActor },
     @Body()
     body: {
       name: string;
@@ -99,6 +110,7 @@ export class ClassesController {
       subject_ids?: string[];
     },
   ) {
+    await this.levelScope.assertClassLevelAllowed(req.user, body.level);
     const cls = await this.classesService.create({
       name: body.name,
       description: body.description,
@@ -126,6 +138,7 @@ export class ClassesController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
+    @Req() req: { user?: RequestActor },
     @Body()
     body: {
       name?: string;
@@ -137,6 +150,10 @@ export class ClassesController {
       subject_ids?: string[];
     },
   ) {
+    await this.levelScope.assertClassAccess(req.user, id);
+    if (body.level !== undefined) {
+      await this.levelScope.assertClassLevelAllowed(req.user, body.level);
+    }
     const cls = await this.classesService.update(id, {
       ...body,
       section: body.section,
@@ -158,7 +175,8 @@ export class ClassesController {
 
   @DenyParents()
   @Delete(':id')
-  async delete(@Param('id') id: string) {
+  async delete(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+    await this.levelScope.assertClassAccess(req.user, id);
     await this.classesService.delete(id);
     return { ok: true, deleted: true };
   }

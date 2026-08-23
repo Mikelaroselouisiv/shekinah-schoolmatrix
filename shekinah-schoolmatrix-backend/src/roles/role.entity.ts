@@ -20,6 +20,10 @@ export class Role {
   @Column({ type: 'simple-json', nullable: true })
   permissions: string[] | null = null;
 
+  /** Niveaux d’enseignement visibles. `null` = pas de restriction. */
+  @Column({ type: 'simple-json', nullable: true })
+  education_levels: string[] | null = null;
+
   @OneToMany(() => User, (user) => user.role)
   users: User[];
 }

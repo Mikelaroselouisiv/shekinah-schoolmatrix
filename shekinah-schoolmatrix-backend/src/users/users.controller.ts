@@ -43,6 +43,7 @@ export class UsersController {
       order_number: u.order_number ?? null,
       role: u.role?.name,
       role_permissions: u.role?.permissions ?? [],
+      role_education_levels: u.role?.education_levels ?? [],
       active: u.active,
       must_change_password: !!u.must_change_password,
       created_at: u.created_at,

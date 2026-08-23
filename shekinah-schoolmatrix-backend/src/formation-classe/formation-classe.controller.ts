@@ -8,23 +8,30 @@ import {
   Body,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { FormationClasseService } from './formation-classe.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
+import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
 
 @Controller('formation-classe')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 @DenyParents()
 export class FormationClasseController {
-  constructor(private readonly formationClasseService: FormationClasseService) {}
+  constructor(
+    private readonly formationClasseService: FormationClasseService,
+    private readonly levelScope: LevelScopeService,
+  ) {}
 
   @Get('students')
   async getClassStudents(
+    @Req() req: { user?: RequestActor },
     @Query('academic_year_id') academicYearId: string,
     @Query('class_id') classId: string,
   ) {
+    await this.levelScope.assertClassAccess(req.user, classId);
     const students = await this.formationClasseService.getClassStudents(
       academicYearId,
       classId,
@@ -34,18 +41,22 @@ export class FormationClasseController {
 
   @Get('thresholds')
   async listThresholds(
+    @Req() req: { user?: RequestActor },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
   ) {
-    const thresholds = await this.formationClasseService.findAllThresholds(
-      academicYearId,
-      classId,
+    if (classId) await this.levelScope.assertClassAccess(req.user, classId);
+    const thresholds = await this.levelScope.filterByClassId(
+      req.user,
+      await this.formationClasseService.findAllThresholds(academicYearId, classId),
+      (t) => t.class_id,
     );
     return { ok: true, thresholds };
   }
 
   @Post('thresholds')
   async saveThreshold(
+    @Req() req: { user?: RequestActor },
     @Body()
     body: {
       class_id: string;
@@ -56,6 +67,7 @@ export class FormationClasseController {
       min_average_ajourne: number;
     },
   ) {
+    await this.levelScope.assertClassAccess(req.user, body.class_id);
     const t = await this.formationClasseService.saveThreshold(body.class_id, body.academic_year_id, {
       min_average_admis: body.min_average_admis,
       min_average_admis_ailleurs: body.min_average_admis_ailleurs,
@@ -78,9 +90,11 @@ export class FormationClasseController {
 
   @Post('compute-decisions')
   async computeDecisions(
+    @Req() req: { user?: RequestActor },
     @Body()
     body: { academic_year_id: string; class_id: string },
   ) {
+    await this.levelScope.assertClassAccess(req.user, body.class_id);
     const result = await this.formationClasseService.computeAndSetDecisions(
       body.academic_year_id,
       body.class_id,
@@ -132,9 +146,11 @@ export class FormationClasseController {
 
   @Post('add-student')
   async addStudent(
+    @Req() req: { user?: RequestActor },
     @Body()
     body: { student_id: string; academic_year_id: string; class_id: string },
   ) {
+    await this.levelScope.assertClassAccess(req.user, body.class_id);
     const a = await this.formationClasseService.addStudentToClass(
       body.student_id,
       body.academic_year_id,

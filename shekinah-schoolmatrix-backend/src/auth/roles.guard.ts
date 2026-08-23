@@ -77,13 +77,6 @@ export class RolesGuard implements CanActivate {
 
   private matchesPermission(perms: string[], key: string): boolean {
     if (perms.includes(key)) return true;
-    if (key === 'stats-academiques') {
-      return (
-        perms.includes('grades') ||
-        perms.includes('classes') ||
-        perms.includes('stats-academiques')
-      );
-    }
     if (key === 'stats-financieres') {
       return (
         perms.includes('finance') ||

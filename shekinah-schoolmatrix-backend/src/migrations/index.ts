@@ -17,6 +17,7 @@ import { FeeBillingFrequency1739000000014 } from './1739000000014-FeeBillingFreq
 import { UserMustChangePassword1739000000015 } from './1739000000015-UserMustChangePassword';
 import { RefreshToken1739000000016 } from './1739000000016-RefreshToken';
 import { SyncTombstoneV21739000000017 } from './1739000000017-SyncTombstoneV2';
+import { RoleEducationLevels1739000000018 } from './1739000000018-RoleEducationLevels';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -39,4 +40,5 @@ export const migrations = [
   UserMustChangePassword1739000000015,
   RefreshToken1739000000016,
   SyncTombstoneV21739000000017,
+  RoleEducationLevels1739000000018,
 ];

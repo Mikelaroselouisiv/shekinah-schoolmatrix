@@ -1072,6 +1072,14 @@ export async function listFinanceActivities(): Promise<FinanceActivity[]> {
   return unwrapList<FinanceActivity>(data);
 }
 
+export type AcademicDecisionCounts = {
+  admis?: number;
+  admis_ailleurs?: number;
+  redoubler?: number;
+  ajourne?: number;
+  renvoye?: number;
+};
+
 export type AcademicStats = {
   academic_year_id?: string | null;
   academic_year_name?: string | null;
@@ -1085,13 +1093,15 @@ export type AcademicStats = {
     graded_students?: number;
     school_average?: number | null;
     success_rate?: number | null;
+    decisions?: AcademicDecisionCounts;
+    reference_threshold?: {
+      min_average_admis?: number;
+      min_average_admis_ailleurs?: number;
+      min_average_redoubler?: number;
+      min_average_ajourne?: number;
+    };
   };
-  distribution?: {
-    insuffisant?: number;
-    passable?: number;
-    bien?: number;
-    excellent?: number;
-  };
+  decisions?: AcademicDecisionCounts;
   by_class?: {
     class_id: string;
     class_name: string;
@@ -1132,7 +1142,9 @@ export type AcademicStats = {
     latenesses?: number;
     deductions_count?: number;
     deductions_points?: number;
+    students_low_points?: number;
   };
+  insights?: { headline?: string; points?: string[] };
 };
 
 export type FinancialStats = {

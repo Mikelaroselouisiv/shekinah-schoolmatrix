@@ -12,6 +12,7 @@ import { ClassesModule } from '../classes/classes.module';
 import { RoomsModule } from '../rooms/rooms.module';
 import { ParentScopeModule } from '../auth/parent-scope.module';
 import { UsersModule } from '../users/users.module';
+import { LevelScopeModule } from '../auth/level-scope.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { UsersModule } from '../users/users.module';
     RoomsModule,
     ParentScopeModule,
     UsersModule,
+    LevelScopeModule,
   ],
   controllers: [StudentsController, StudentPhotosController],
   providers: [StudentsService, StudentPhotosService, StudentAiImportService],

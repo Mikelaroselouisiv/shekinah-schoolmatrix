@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { API_BASE, getImageUrl, initApi } from "@/services/api";
 import { SquareCropModal } from "@/components/SquareCropModal";
 
@@ -42,6 +42,12 @@ export function ImageUpload({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+    };
+  }, [cropSrc]);
 
   const imageUrl = getImageUrl(value ?? undefined);
 

@@ -30,6 +30,7 @@ export class ClassSubjectCoefficient {
   @JoinColumn({ name: 'subject_id' })
   subject: Subject;
 
+  /** Note maximale de la matière (barème haïtien : 100, 200, 300, 400 ou 500). */
   @Column({ type: 'decimal', precision: 6, scale: 2 })
   coefficient: string;
 

@@ -5,14 +5,29 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { getAppEdition } = require('./edition.cjs');
 const { PUBLIC_API_BASE_URL, LOCAL_API_BASE_URL } = require('./update-feed.cjs');
 const { ensureServerStack } = require('./server-bootstrap.cjs');
 const { initUpdater } = require('./updater.cjs');
 
 const edition = getAppEdition();
-const apiBase = edition === 'server' ? LOCAL_API_BASE_URL : PUBLIC_API_BASE_URL;
+const apiBase =
+  (process.env.SCHOOLMATRIX_API_BASE || '').trim() ||
+  (edition === 'server' ? LOCAL_API_BASE_URL : PUBLIC_API_BASE_URL);
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
+
+const userDataOverride = (process.env.SCHOOLMATRIX_USER_DATA || '').trim();
+if (userDataOverride) {
+  app.setPath(
+    'userData',
+    path.isAbsolute(userDataOverride)
+      ? userDataOverride
+      : path.join(os.tmpdir(), userDataOverride),
+  );
+} else if (isDev && /:3001\b/.test(apiBase)) {
+  app.setPath('userData', path.join(os.tmpdir(), 'shekinah-sm-dev-mirror'));
+}
 
 /** Windows taskbar / jumplist : avant ready. */
 if (process.platform === 'win32') {

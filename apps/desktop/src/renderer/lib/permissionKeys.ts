@@ -16,6 +16,7 @@ export const PERMISSION_OPTIONS: { key: string; label: string }[] = [
   { key: "stats-financieres", label: "Stats financières (Moniteur, Banques, Comptabilité)" },
   { key: "comptabilite", label: "Comptabilité (alias Stats financières)" },
   { key: "grades", label: "Saisie des notes" },
+  { key: "stats-academiques", label: "Moniteur global de rendement académique" },
   { key: "discipline", label: "Discipline" },
   { key: "formation-classe", label: "Formation de classe" },
   { key: "fiche-eleve", label: "Fiche élève" },

@@ -8,7 +8,8 @@ import { resolve } from 'path';
 import { DataSource } from 'typeorm';
 
 const envFile =
-  process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev';
+  process.env.ENV_FILE ||
+  (process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev');
 config({ path: resolve(process.cwd(), envFile) });
 
 export default new DataSource({

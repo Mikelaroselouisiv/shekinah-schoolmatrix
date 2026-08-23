@@ -6,6 +6,7 @@ import { Grade } from './grade.entity';
 import { Student } from '../students/student.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { Period } from '../period/period.entity';
+import { DEFAULT_BAREME, resolveBareme } from './grade-scale';
 
 @Injectable()
 export class GradesService {
@@ -109,7 +110,8 @@ export class GradesService {
       relations: ['class'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
-    const defaultCoef = await this.getCoefficient(params.academic_year_id, params.class_id, params.subject_id, params.period_id);
+    const storedCoef = await this.getCoefficient(params.academic_year_id, params.class_id, params.subject_id, params.period_id);
+    const defaultCoef = storedCoef ?? DEFAULT_BAREME;
     const existingGrades = await this.gradeRepo.find({
       where: {
         academic_year: { id: params.academic_year_id },
@@ -135,13 +137,13 @@ export class GradesService {
       return {
         student_id: s.id,
         student_name: `${s.first_name} ${s.last_name}`,
-        coefficient: existing?.coefficient ?? defaultCoef ?? 0,
+        coefficient: defaultCoef,
         grade_value: existing?.grade_value ?? null,
         detail: existing?.detail ?? '',
         grade_id: existing?.id ?? null,
       };
     });
-    return { teacher, default_coefficient: defaultCoef, rows };
+    return { teacher, default_coefficient: defaultCoef, bareme: defaultCoef, rows };
   }
 
   async hasExistingGrades(params: {
@@ -168,6 +170,23 @@ export class GradesService {
     period_id: string;
     grades: { student_id: string; coefficient: number; grade_value: number | null; detail?: string }[];
   }): Promise<{ ok: boolean }> {
+    let classBareme = await this.getCoefficient(
+      params.academic_year_id,
+      params.class_id,
+      params.subject_id,
+    );
+    if (classBareme == null || classBareme < 50) {
+      const fromPayload = params.grades.find((row) => Number(row.coefficient) >= 50);
+      classBareme = fromPayload ? Number(fromPayload.coefficient) : DEFAULT_BAREME;
+      await this.setCoefficient({
+        academic_year_id: params.academic_year_id,
+        class_id: params.class_id,
+        subject_id: params.subject_id,
+        coefficient: classBareme,
+      });
+    }
+    const coefficient = String(classBareme);
+
     for (const g of params.grades) {
       const existing = await this.gradeRepo.findOne({
         where: {
@@ -180,7 +199,6 @@ export class GradesService {
       });
       const student = await this.studentRepo.findOne({ where: { id: g.student_id }, relations: ['class'] });
       if (!student) throw new BadRequestException(`Élève ${g.student_id} introuvable.`);
-      const coefficient = String(g.coefficient);
       const grade_value = g.grade_value == null ? '0' : String(g.grade_value);
       if (existing) {
         existing.coefficient = coefficient;
@@ -291,7 +309,12 @@ export class GradesService {
       const pid = (g as any).period_id ?? g.period?.id;
       if (!sid || !pid) continue;
       const subjName = (g.subject as any)?.name ?? coefBySubject.get(sid)?.subjectName ?? '—';
-      const coef = (Number(g.coefficient) || coefBySubject.get(sid)?.coefficient) ?? 0;
+      const classBareme = coefBySubject.get(sid)?.coefficient ?? null;
+      const coef = resolveBareme({
+        gradeCoefficient: Number(g.coefficient),
+        classCoefficient: classBareme,
+        points: Number(g.grade_value),
+      });
       const val = Number(g.grade_value) || 0;
       const period = g.period as any;
       const orderIndex = period?.order_index ?? 0;

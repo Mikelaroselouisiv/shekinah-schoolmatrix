@@ -41,7 +41,7 @@ export class SchoolProfileController {
 
   /** Statistiques sensibles : rôles admin ou permission full_access. */
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'DIRECTEUR_GENERAL', 'SCHOOL_ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ADMINISTRATIF', 'ADMINISTRATEUR', 'SCHOOL_ADMIN')
   @Permissions('full_access')
   @Get('dashboard-stats')
   async getDashboardStats() {

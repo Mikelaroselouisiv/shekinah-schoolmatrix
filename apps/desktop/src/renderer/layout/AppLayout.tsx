@@ -8,6 +8,7 @@ import {
   DASHBOARD_NAV,
   canAccessPath,
   canAccessSchoolProfile,
+  isTeacherRole,
   SCHOOL_NAV,
   USERS_NAV,
   ROLES_FULL,
@@ -31,11 +32,7 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
   }
   if (permissionKey === 'rooms') return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
   if (permissionKey === 'stats-academiques') {
-    return (
-      rolePermissions.includes('stats-academiques') ||
-      rolePermissions.includes('grades') ||
-      rolePermissions.includes('classes')
-    );
+    return rolePermissions.includes('stats-academiques');
   }
   return rolePermissions.includes(permissionKey);
 }
@@ -50,9 +47,12 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
 
   for (const item of DASHBOARD_NAV) {
     if (item.href === '/dashboard') continue;
-    const canSee = usePermissions
-      ? canSeeByPermissions(item.permissionKey, rolePermissions)
-      : canSeeNavItem(roleName, item.allowedRoles);
+    const canSee =
+      item.permissionKey === 'stats-academiques' && isTeacherRole(roleName)
+        ? true
+        : usePermissions
+          ? canSeeByPermissions(item.permissionKey, rolePermissions)
+          : canSeeNavItem(roleName, item.allowedRoles);
     if (!canSee) continue;
     if (item.block === 'configuration') config.push(item);
     else if (item.block === 'management') management.push(item);

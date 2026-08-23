@@ -4,6 +4,7 @@ import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob, fetchStudentsForClassBadges } from "@/lib/badgeProduction";
+import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
 
 type ClassItem = {
   id: string;
@@ -64,7 +65,7 @@ export function DashboardClassesPage() {
       const body = {
         name: name.trim(),
         description: description.trim() || undefined,
-        level: level.trim() || undefined,
+        level: level || undefined,
         subject_ids: subjectIds,
       };
       if (editing) {
@@ -172,7 +173,20 @@ export function DashboardClassesPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Niveau</label>
-            <input type="text" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="ex: 1ère année, 6e" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
+            <select
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              required
+              className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 bg-white"
+            >
+              <option value="">Choisir le niveau…</option>
+              {EDUCATION_LEVELS.map((l) => (
+                <option key={l.key} value={l.key}>{l.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Le directeur pédagogique et le secrétaire de ce cycle ne voient que ces classes.
+            </p>
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -243,7 +257,7 @@ export function DashboardClassesPage() {
               classes.map((c) => (
                 <tr key={c.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.level || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{educationLevelLabel(c.level)}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {c.room_count
                       ? `${c.room_count} — ${(c.rooms ?? []).map((r) => r.name).join(", ")}`

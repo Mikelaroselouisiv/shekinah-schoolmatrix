@@ -4,6 +4,8 @@ node_modules/
 # Environment
 .env
 .env.dev
+.env.dev.cloud
+.env.dev.mirror
 .env.prod
 .env.local
 .env.*.local
@@ -41,6 +43,8 @@ secrets/
 
 # Uploads runtime locaux (ne pas versionner)
 parallele-schoolmatrix-backend/storage/
+shekinah-schoolmatrix-backend/storage/
+shekinah-schoolmatrix-backend/storage-cloud-twin/
 
 # Desktop build artifacts
 apps/desktop/next-runtime/

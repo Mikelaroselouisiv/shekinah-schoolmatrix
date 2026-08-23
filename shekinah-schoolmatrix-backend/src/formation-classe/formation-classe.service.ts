@@ -8,6 +8,7 @@ import { Class } from '../classes/class.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Grade } from '../grades/grade.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
+import { resolveBareme } from '../grades/grade-scale';
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
 import { isPreschoolClass } from '../utils/preschool';
 import {
@@ -162,7 +163,7 @@ export class FormationClasseService {
   }
 
   /**
-   * Logique Haïti : points avec coefficients (100, 200, 300…).
+   * Logique Haïti : points avec coefficients (100, 200, 300, 400, 500…).
    * Par période : moyenne période = (points obtenus / points possibles) * 10.
    * Moyenne générale = moyenne des moyennes des périodes (sur 10).
    */
@@ -176,15 +177,29 @@ export class FormationClasseService {
       relations: ['subject', 'period'],
     });
     if (grades.length === 0) return null;
+    const coefRows = await this.coefRepo.find({
+      where: { academic_year: { id: academicYearId }, class: { id: classId } },
+      relations: ['subject'],
+    });
+    const classBaremeBySubject = new Map<string, number>();
+    for (const c of coefRows) {
+      const sid = c.subject?.id ?? (c as { subject_id?: string }).subject_id;
+      if (sid) classBaremeBySubject.set(sid, Number(c.coefficient));
+    }
     const byPeriod = new Map<string, { obtained: number; possible: number }>();
     for (const g of grades) {
-      const pid = g.period?.id ?? (g as any).period_id;
+      const pid = g.period?.id ?? (g as { period_id?: string }).period_id;
       if (!pid) continue;
-      const coef = Number(g.coefficient) || 0;
+      const subId = g.subject?.id ?? (g as { subject_id?: string }).subject_id;
       const points = Number(g.grade_value) || 0;
+      const bareme = resolveBareme({
+        gradeCoefficient: Number(g.coefficient),
+        classCoefficient: subId ? classBaremeBySubject.get(subId) ?? null : null,
+        points,
+      });
       const cur = byPeriod.get(pid) ?? { obtained: 0, possible: 0 };
       cur.obtained += points;
-      cur.possible += coef;
+      cur.possible += bareme;
       byPeriod.set(pid, cur);
     }
     const periodAverages: number[] = [];

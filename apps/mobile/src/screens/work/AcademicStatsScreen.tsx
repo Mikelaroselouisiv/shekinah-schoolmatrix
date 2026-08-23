@@ -148,13 +148,15 @@ export function AcademicStatsScreen({}: Props) {
     if (!boot && yearId) void loadStats();
   }, [boot, yearId, loadStats]);
 
-  const dist = stats?.distribution;
-  const distTotal = dist
-    ? (dist.insuffisant || 0) +
-      (dist.passable || 0) +
-      (dist.bien || 0) +
-      (dist.excellent || 0)
-    : 0;
+  const decisions = stats?.overview?.decisions ?? stats?.decisions;
+  const decisionRows = [
+    { label: 'Admis', n: decisions?.admis || 0 },
+    { label: 'Admis ailleurs', n: decisions?.admis_ailleurs || 0 },
+    { label: 'Redoubler', n: decisions?.redoubler || 0 },
+    { label: 'Ajourné', n: decisions?.ajourne || 0 },
+    { label: 'Renvoyé', n: decisions?.renvoye || 0 },
+  ];
+  const decisionTotal = decisionRows.reduce((s, r) => s + r.n, 0);
 
   const pickerItems = useMemo(() => {
     if (picker === 'year') return years.map((y) => ({ id: y.id, label: y.name }));
@@ -197,55 +199,61 @@ export function AcademicStatsScreen({}: Props) {
           <EmptyState title="Aucune donnée" />
         ) : (
           <>
-            <View style={styles.kpiGrid}>
-              <Kpi
-                label="Moyenne école"
-                value={fmt(stats.overview?.school_average)}
-              />
-              <Kpi
-                label="Réussite"
-                value={
-                  stats.overview?.success_rate != null
-                    ? `${fmt(stats.overview.success_rate, 1)} %`
-                    : '—'
-                }
-              />
-              <Kpi label="Élèves notés" value={fmtInt(stats.overview?.graded_students)} />
-              <Kpi label="Notes" value={fmtInt(stats.overview?.grades)} />
-              <Kpi label="Classes" value={fmtInt(stats.overview?.classes)} />
-              <Kpi label="Profs" value={fmtInt(stats.overview?.teachers)} />
-            </View>
-
-            {dist && distTotal > 0 ? (
-              <View style={styles.block}>
-                <Text style={styles.blockTitle}>Répartition</Text>
-                <View style={styles.bar}>
-                  {(
-                    [
-                      { n: dist.insuffisant || 0, c: '#B91C1C' },
-                      { n: dist.passable || 0, c: '#D97706' },
-                      { n: dist.bien || 0, c: '#78716C' },
-                      { n: dist.excellent || 0, c: '#3F6212' },
-                    ] as const
-                  ).map((b, i) =>
-                    b.n > 0 ? (
-                      <View
-                        key={i}
-                        style={{
-                          flex: b.n,
-                          backgroundColor: b.c,
-                          height: 10,
-                        }}
-                      />
-                    ) : null,
-                  )}
-                </View>
-                <Muted>
-                  Insuf. {dist.insuffisant || 0} · Pass. {dist.passable || 0} · Bien{' '}
-                  {dist.bien || 0} · Exc. {dist.excellent || 0}
-                </Muted>
+            <View style={styles.pulse}>
+              <Text style={styles.pulseKicker}>Tableau de bord</Text>
+              <Text style={styles.pulseTitle}>
+                {stats.insights?.headline || 'Bilan académique de l’école'}
+              </Text>
+              <View style={styles.kpiGrid}>
+                <Kpi
+                  light
+                  label="Moyenne"
+                  value={`${fmt(stats.overview?.school_average)} /10`}
+                />
+                <Kpi
+                  light
+                  label="Admis"
+                  value={
+                    stats.overview?.success_rate != null
+                      ? `${fmt(stats.overview.success_rate, 0)} %`
+                      : '—'
+                  }
+                />
               </View>
-            ) : null}
+              {decisionTotal > 0 ? (
+                <View style={{ marginTop: 12 }}>
+                  <View style={styles.bar}>
+                    {decisionRows.map((b) =>
+                      b.n > 0 ? (
+                        <View
+                          key={b.label}
+                          style={{
+                            flex: b.n,
+                            backgroundColor:
+                              b.label === 'Admis'
+                                ? '#10B981'
+                                : b.label === 'Admis ailleurs'
+                                  ? '#0EA5E9'
+                                  : b.label === 'Redoubler'
+                                    ? '#F59E0B'
+                                    : b.label === 'Ajourné'
+                                      ? '#F97316'
+                                      : '#EF4444',
+                            height: 10,
+                          }}
+                        />
+                      ) : null,
+                    )}
+                  </View>
+                  <Text style={styles.pulseLegend}>
+                    {decisionRows
+                      .filter((r) => r.n > 0)
+                      .map((r) => `${r.label} ${r.n}`)
+                      .join(' · ')}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
 
             {stats.discipline ? (
               <View style={styles.block}>
@@ -267,9 +275,9 @@ export function AcademicStatsScreen({}: Props) {
               rows={(stats.by_class || []).map((c) => ({
                 id: c.class_id,
                 title: c.class_name,
-                subtitle: `Moy. ${fmt(c.average)} · Réussite ${
-                  c.success_rate != null ? `${fmt(c.success_rate, 1)} %` : '—'
-                } · ${fmtInt(c.graded_students)}/${fmtInt(c.students)} notés`,
+                subtitle: `Moy. ${fmt(c.average)} · Admis ${
+                  c.success_rate != null ? `${fmt(c.success_rate, 0)} %` : '—'
+                }`,
               }))}
             />
 
@@ -278,7 +286,7 @@ export function AcademicStatsScreen({}: Props) {
               rows={(stats.by_subject || []).map((s) => ({
                 id: s.subject_id,
                 title: s.subject_name,
-                subtitle: `Moy. ${fmt(s.average)} · ${fmtInt(s.grades_count)} notes`,
+                subtitle: `Moy. ${fmt(s.average)}`,
               }))}
             />
 
@@ -333,11 +341,11 @@ export function AcademicStatsScreen({}: Props) {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({ label, value, light }: { label: string; value: string; light?: boolean }) {
   return (
-    <View style={styles.kpi}>
-      <Text style={styles.kpiLabel}>{label}</Text>
-      <Text style={styles.kpiValue}>{value}</Text>
+    <View style={[styles.kpi, light && styles.kpiLight]}>
+      <Text style={[styles.kpiLabel, light && styles.kpiLabelLight]}>{label}</Text>
+      <Text style={[styles.kpiValue, light && styles.kpiValueLight]}>{value}</Text>
     </View>
   );
 }
@@ -396,6 +404,27 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
+  pulse: {
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.ink,
+  },
+  pulseKicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 6,
+  },
+  pulseTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  pulseLegend: { fontSize: 12, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   kpi: {
     width: '47%',
@@ -408,6 +437,12 @@ const styles = StyleSheet.create({
   },
   kpiLabel: { fontSize: 12, color: colors.textMuted, marginBottom: 4 },
   kpiValue: { fontSize: 20, fontWeight: '800', color: colors.text },
+  kpiLight: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'transparent',
+  },
+  kpiLabelLight: { color: 'rgba(255,255,255,0.7)' },
+  kpiValueLight: { color: '#fff' },
   block: {
     marginTop: 16,
     padding: 14,
@@ -422,6 +457,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 8,
   },
+  mutedLine: { fontSize: 13, color: colors.textMuted, lineHeight: 20, marginBottom: 4 },
   bar: {
     flexDirection: 'row',
     height: 10,

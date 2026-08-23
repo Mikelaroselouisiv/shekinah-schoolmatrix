@@ -13,6 +13,7 @@ import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { GradesController } from './grades.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
+import { LevelScopeModule } from '../auth/level-scope.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ParentScopeModule } from '../auth/parent-scope.module';
       Period,
     ]),
     ParentScopeModule,
+    LevelScopeModule,
   ],
   controllers: [GradesController],
   providers: [GradesService, PreschoolGradesService],

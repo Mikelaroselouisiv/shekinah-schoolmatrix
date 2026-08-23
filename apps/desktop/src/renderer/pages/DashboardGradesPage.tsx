@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
+import { BAREME_PRESETS, DEFAULT_BAREME, pointsToTen } from "@/lib/gradeScale";
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string; description?: string | null; level?: string | null; is_preschool: boolean };
@@ -72,7 +73,7 @@ export function DashboardGradesPage() {
   const [coefAcademicYearId, setCoefAcademicYearId] = useState("");
   const [coefFilterClass, setCoefFilterClass] = useState("");
   const [classSubjects, setClassSubjects] = useState<Subject[]>([]);
-  const [coefForm, setCoefForm] = useState({ class_id: "", subject_id: "", coefficient: "1" });
+  const [coefForm, setCoefForm] = useState({ class_id: "", subject_id: "", coefficient: String(DEFAULT_BAREME) });
   const [coefSaving, setCoefSaving] = useState(false);
   const [coefLoading, setCoefLoading] = useState(false);
 
@@ -420,7 +421,7 @@ export function DashboardGradesPage() {
             period_id: periodId,
             grades: rows.map((r) => ({
               student_id: r.student_id,
-              coefficient: r.coefficient ?? defaultCoefficient ?? 0,
+              coefficient: bareme,
               grade_value: r.grade_value,
               detail: r.detail?.trim() || undefined,
             })),
@@ -433,6 +434,30 @@ export function DashboardGradesPage() {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSaving(false);
+    }
+  }
+
+  const bareme = defaultCoefficient ?? DEFAULT_BAREME;
+
+  async function applyBareme(value: number) {
+    if (!academicYearId || !classId || !subjectId || !canEditGrades) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/grades/coefficients`, {
+        method: "POST",
+        body: JSON.stringify({
+          academic_year_id: academicYearId,
+          class_id: classId,
+          subject_id: subjectId,
+          coefficient: value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur barème");
+      setDefaultCoefficient(value);
+      setRows((prev) => prev.map((row) => ({ ...row, coefficient: value })));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur barème");
     }
   }
 
@@ -543,6 +568,30 @@ export function DashboardGradesPage() {
                 )}
               </div>
 
+              {!isPreschool && (
+                <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 border border-[var(--app-border)]">
+                  <span className="text-sm font-medium text-slate-800">Note sur</span>
+                  {BAREME_PRESETS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={!canEditGrades}
+                      onClick={() => applyBareme(n)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${
+                        bareme === n
+                          ? "bg-[var(--school-accent-1)] text-white border-transparent"
+                          : "bg-white text-slate-700 border-[var(--app-border)] hover:bg-slate-100"
+                      } disabled:opacity-50`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-sm text-slate-600">
+                    Saisir les points obtenus, ex. 180/{bareme} → {pointsToTen(180, bareme)?.toFixed(2)}/10
+                  </span>
+                </div>
+              )}
+
               {isPreschool ? (
                 <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
                   <table className="w-full text-left text-sm">
@@ -603,8 +652,8 @@ export function DashboardGradesPage() {
                     <thead className="bg-slate-50 border-b border-[var(--app-border)]">
                       <tr>
                         <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-24">Coef.</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-28">Points</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-48">Points obtenus / {bareme}</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-24">/10</th>
                         <th className="px-4 py-3 font-medium text-slate-900">Détail</th>
                       </tr>
                     </thead>
@@ -616,30 +665,25 @@ export function DashboardGradesPage() {
                           <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
                             <td className="px-4 py-2">
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={r.coefficient ?? defaultCoefficient ?? ""}
-                                onChange={(e) => setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, coefficient: parseFloat(e.target.value) || 0 } : row))}
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
-                                disabled={!canEditGrades}
-                              />
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={r.grade_value ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, grade_value: v === "" ? null : parseFloat(v) } : row));
+                                  }}
+                                  placeholder="ex. 180"
+                                  className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                  disabled={!canEditGrades}
+                                />
+                                <span className="text-slate-500 text-sm whitespace-nowrap">/ {bareme}</span>
+                              </div>
                             </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={r.grade_value ?? ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, grade_value: v === "" ? null : parseFloat(v) } : row));
-                                }}
-                                placeholder="Points obtenus"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
-                                disabled={!canEditGrades}
-                              />
+                            <td className="px-4 py-2 tabular-nums font-semibold text-slate-800">
+                              {pointsToTen(r.grade_value ?? null, bareme)?.toFixed(2) ?? "—"}
                             </td>
                             <td className="px-4 py-2">
                               <input
@@ -842,7 +886,10 @@ export function DashboardGradesPage() {
           </div>
 
           <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
-            <h3 className="font-semibold text-slate-900 mb-4">Définir les coefficients (hors préscolaire)</h3>
+            <h3 className="font-semibold text-slate-900 mb-1">Note sur laquelle les matières sont corrigées</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              100, 200, 300, 400 ou 500 selon la matière. Ex. 180/200 → 9,00/10.
+            </p>
             
             <form onSubmit={handleSaveCoefficient} className="flex flex-wrap gap-4 items-end mb-4">
               <div>
@@ -889,16 +936,32 @@ export function DashboardGradesPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Coefficient</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={coefForm.coefficient}
-                  onChange={(e) => setCoefForm((f) => ({ ...f, coefficient: e.target.value }))}
-                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-24"
-                  required
-                />
+                <label className="block text-sm font-medium text-slate-700 mb-1">Note sur</label>
+                <div className="flex items-center gap-2">
+                  {BAREME_PRESETS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setCoefForm((f) => ({ ...f, coefficient: String(n) }))}
+                      className={`px-2.5 py-1.5 rounded-lg text-sm font-semibold border ${
+                        coefForm.coefficient === String(n)
+                          ? "bg-[var(--school-accent-1)] text-white border-transparent"
+                          : "bg-white text-slate-700 border-[var(--app-border)]"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={coefForm.coefficient}
+                    onChange={(e) => setCoefForm((f) => ({ ...f, coefficient: e.target.value }))}
+                    className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-24"
+                    required
+                  />
+                </div>
               </div>
               <button type="submit" disabled={coefSaving || !coefAcademicYearId} className="app-btn-primary disabled:opacity-60">
                 {coefSaving ? "Enregistrement..." : "Enregistrer le coefficient"}
@@ -916,7 +979,7 @@ export function DashboardGradesPage() {
                         { header: "Année", key: "academic_year_name" },
                         { header: "Classe", key: "class_name" },
                         { header: "Matière", key: "subject_name" },
-                        { header: "Coef.", key: "coefficient" },
+                        { header: "Note sur", key: "coefficient" },
                       ],
                       rows: coefficients.map((c) => ({
                         academic_year_name: c.academic_year_name,
@@ -955,7 +1018,7 @@ export function DashboardGradesPage() {
                         <th className="px-4 py-2 font-medium text-slate-900">Année</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Coef.</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-24">Note sur</th>
                         <th className="px-4 py-2 font-medium text-slate-900 w-24">Actions</th>
                       </tr>
                     </thead>

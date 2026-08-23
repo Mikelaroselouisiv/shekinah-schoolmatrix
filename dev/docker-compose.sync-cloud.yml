@@ -1,0 +1,31 @@
+# Miroir « cloud » LOCAL pour tester la sync — JAMAIS la VM GCP.
+# Port hôte 5437 : à côté de shekinah-db-dev (5436).
+#
+#   npm run dev:db:cloud
+#   npm run dev:backend:cloud
+#   npm run dev:sync-lab
+
+name: schoolmatrix-dev-cloud
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: shekinah-db-cloud-dev
+    restart: unless-stopped
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_USER: schooluser
+      POSTGRES_PASSWORD: schoolpass
+      POSTGRES_DB: schoolmatrix
+    volumes:
+      - shekinah_pgdata_cloud_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schooluser -d schoolmatrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  shekinah_pgdata_cloud_dev:
+    name: shekinah_pgdata_cloud_dev

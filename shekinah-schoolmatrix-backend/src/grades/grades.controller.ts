@@ -8,6 +8,7 @@ import {
   ParentScopedStudent,
 } from '../auth/parent-scope.decorator';
 import { isTeacherRoleName } from '../roles/roles.constants';
+import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
 
 const STUDENT_QUERY = { in: 'query', key: 'student_id' } as const;
 
@@ -17,6 +18,7 @@ export class GradesController {
   constructor(
     private readonly gradesService: GradesService,
     private readonly preschoolGradesService: PreschoolGradesService,
+    private readonly levelScope: LevelScopeService,
   ) {}
 
   @DenyParents()
@@ -174,19 +176,25 @@ export class GradesController {
   @ParentScopedStudent(STUDENT_QUERY)
   @Get()
   async list(
+    @Req() req: { user?: RequestActor },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period_id') periodId?: string,
     @Query('student_id') studentId?: string,
   ) {
-    const list = await this.gradesService.findGrades({
-      academic_year_id: academicYearId,
-      class_id: classId,
-      subject_id: subjectId,
-      period_id: periodId,
-      student_id: studentId,
-    });
+    if (classId) await this.levelScope.assertClassAccess(req.user, classId);
+    const list = await this.levelScope.filterByClassId(
+      req.user,
+      await this.gradesService.findGrades({
+        academic_year_id: academicYearId,
+        class_id: classId,
+        subject_id: subjectId,
+        period_id: periodId,
+        student_id: studentId,
+      }),
+      (g) => g.class_id,
+    );
     return { ok: true, grades: list };
   }
 }

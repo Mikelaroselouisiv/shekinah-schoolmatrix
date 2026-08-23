@@ -14,6 +14,8 @@ import {
 export const ROLES_FULL: string[] = [
   'SUPER_ADMIN',
   'DIRECTEUR_GENERAL',
+  'DIRECTEUR_ADMINISTRATIF',
+  'ADMINISTRATEUR',
   'SCHOOL_ADMIN',
 ];
 
@@ -25,17 +27,46 @@ export const ROLES_STUDENT_EDIT: string[] = [
   'ADMIN_PRESCOLAIRE',
   'ADMIN_FONDAMENTAL',
   'ADMIN_SECONDAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
+  'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
+  'SECRETAIRE_GENERAL',
+  'SECRETAIRE_FORMATION_SUPERIEURE',
 ];
 
-const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
-const ROLES_HORAIRES_SEUL = [
+const TEACHER_ROLE_NAMES = [
+  'TEACHER',
+  'PROFESSEUR',
+  'PROFESSEURE',
+  'PROF',
+  'ENSEIGNANT',
+  'ENSEIGNANTE',
+];
+
+function isTeacherRole(role?: string | null): boolean {
+  return TEACHER_ROLE_NAMES.includes((role ?? '').toUpperCase().trim());
+}
+
+const ROLES_HORAIRES_ET_NOTES = [
+  'DIRECTEUR_PEDAGOGIQUE',
+  'CENSEUR',
   'ADMIN_PRESCOLAIRE',
   'ADMIN_FONDAMENTAL',
   'ADMIN_SECONDAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
+  'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
 ];
+const ROLES_SECRETAIRE = ['SECRETAIRE_GENERAL', 'SECRETAIRE_FORMATION_SUPERIEURE'];
 const ROLES_ECONOME = ['ECONOME'];
 const ROLES_COMPTABLE = ['COMPTABLE'];
-const ROLES_DISCIPLINE = ['DISCIPLINE'];
+const ROLES_DISCIPLINE = ['DISCIPLINE', 'SURVEILLANT_GENERAL'];
 const ROLES_PHOTOGRAPHY = ['PHOTOGRAPHER'];
 
 type NavItem = {
@@ -45,25 +76,25 @@ type NavItem = {
 
 const DESKTOP_NAV: NavItem[] = [
   { permissionKey: 'subjects', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
+  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
   { permissionKey: 'academic-years', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'teachers', allowedRoles: [...ROLES_FULL] },
   {
     permissionKey: 'schedule',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES],
   },
-  { permissionKey: 'students', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'students', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
   {
     permissionKey: 'grades',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, 'TEACHER'],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
   },
   { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE] },
-  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES] },
   { permissionKey: 'finance', allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME] },
   {
     permissionKey: 'stats-academiques',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
   },
   {
     permissionKey: 'stats-financieres',
@@ -74,7 +105,7 @@ const DESKTOP_NAV: NavItem[] = [
     allowedRoles: [
       ...ROLES_FULL,
       ...ROLES_HORAIRES_ET_NOTES,
-      ...ROLES_HORAIRES_SEUL,
+      ...ROLES_SECRETAIRE,
       ...ROLES_ECONOME,
       'PARENT',
     ],
@@ -101,11 +132,7 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
     return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
   }
   if (permissionKey === 'stats-academiques') {
-    return (
-      rolePermissions.includes('stats-academiques') ||
-      rolePermissions.includes('grades') ||
-      rolePermissions.includes('classes')
-    );
+    return rolePermissions.includes('stats-academiques');
   }
   return rolePermissions.includes(permissionKey);
 }
@@ -116,6 +143,7 @@ export function canAccessPermission(
   rolePermissions?: string[],
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
+  if (permissionKey === 'stats-academiques' && isTeacherRole(roleName)) return true;
   if (rolePermissions && rolePermissions.length > 0) {
     return canSeeByPermissions(permissionKey, rolePermissions);
   }

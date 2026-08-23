@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { StudentPhoto, StudentPhotoKind } from './student-photo.entity';
 import { Student } from './student.entity';
 import { SyncService } from '../sync/sync.service';
@@ -62,10 +62,12 @@ export class StudentPhotosService {
     const saved = await this.photoRepo.save(photo);
 
     if (kind === 'profile' || kind === 'identity') {
-      await this.studentRepo.update(params.student_id, {
-        photo_identity_student: url,
-      });
+      await this.studentRepo.update(
+        { id: params.student_id },
+        { photo_identity_student: url },
+      );
     }
+    this.syncKick.kick('student-photo');
     return saved;
   }
 
@@ -74,8 +76,28 @@ export class StudentPhotosService {
       where: { id: photoId, student_id: studentId },
     });
     if (!photo) throw new NotFoundException('Photo introuvable');
+    const wasIdentity = photo.kind === 'profile' || photo.kind === 'identity';
+    const removedUrl = photo.url;
     await this.syncService.recordDelete('StudentPhoto', photoId);
     await this.photoRepo.remove(photo);
+
+    if (wasIdentity) {
+      const student = await this.studentRepo.findOne({ where: { id: studentId } });
+      if (student && student.photo_identity_student === removedUrl) {
+        const remaining = await this.photoRepo.find({
+          where: {
+            student_id: studentId,
+            kind: In(['profile', 'identity']),
+          },
+          order: { created_at: 'DESC' },
+          take: 1,
+        });
+        await this.studentRepo.update(
+          { id: studentId },
+          { photo_identity_student: remaining[0]?.url ?? null },
+        );
+      }
+    }
     this.syncKick.kick('student-photo-delete');
   }
 

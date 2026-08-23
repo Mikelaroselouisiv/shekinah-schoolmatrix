@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
 import { ImageUpload } from "@/components/ImageUpload";
 
@@ -51,6 +51,8 @@ export function DashboardPhotographyPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selected?.id ?? null;
 
   async function loadRefs() {
     const [cRes, rRes] = await Promise.all([
@@ -63,7 +65,7 @@ export function DashboardPhotographyPage() {
     setRooms(rData.rooms ?? []);
   }
 
-  async function loadStudents() {
+  async function loadStudents(): Promise<Student[]> {
     setError("");
     try {
       const qs = new URLSearchParams();
@@ -72,15 +74,19 @@ export function DashboardPhotographyPage() {
       const res = await fetchWithAuth(`${API_BASE}/students?${qs}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      setStudents(data.students ?? []);
+      const list: Student[] = data.students ?? [];
+      setStudents(list);
+      return list;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
+      return [];
     }
   }
 
   async function loadPhotos(studentId: string) {
     const res = await fetchWithAuth(`${API_BASE}/students/${studentId}/photos`);
     const data = await res.json();
+    if (selectedIdRef.current !== studentId) return;
     setPhotos(data.photos ?? []);
   }
 
@@ -98,8 +104,28 @@ export function DashboardPhotographyPage() {
   }, [classFilter, roomFilter]);
 
   useEffect(() => {
-    if (selected) void loadPhotos(selected.id);
-    else setPhotos([]);
+    setUploadUrl("");
+    if (!selected) {
+      setPhotos([]);
+      return;
+    }
+    const studentId = selected.id;
+    let cancelled = false;
+    setPhotos([]);
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/students/${studentId}/photos`);
+        const data = await res.json();
+        if (!cancelled && selectedIdRef.current === studentId) {
+          setPhotos(data.photos ?? []);
+        }
+      } catch {
+        if (!cancelled) setPhotos([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [selected?.id]);
 
   const filtered = students.filter((s) => {
@@ -113,31 +139,43 @@ export function DashboardPhotographyPage() {
     ? rooms.filter((r) => r.class_id === classFilter)
     : rooms;
 
+  function selectStudent(s: Student) {
+    if (s.id === selected?.id) return;
+    setSelected(s);
+  }
+
+  function handlePendingUrlChange(studentId: string, url: string) {
+    if (selectedIdRef.current !== studentId) return;
+    setUploadUrl(url);
+  }
+
   async function handleSavePhoto() {
     if (!selected || !uploadUrl) return;
+    const studentId = selected.id;
+    const photoKind = kind;
+    const url = uploadUrl;
     setSaving(true);
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/students/${selected.id}/photos`, {
+      const res = await fetchWithAuth(`${API_BASE}/students/${studentId}/photos`, {
         method: "POST",
-        body: JSON.stringify({ kind, url: uploadUrl }),
+        body: JSON.stringify({ kind: photoKind, url }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      setUploadUrl("");
-      await loadPhotos(selected.id);
-      await loadStudents();
-      setSelected((prev) =>
-        prev
-          ? {
-              ...prev,
-              photo_identity_student:
-                kind === "profile" || kind === "identity"
-                  ? uploadUrl
-                  : prev.photo_identity_student,
-            }
-          : prev,
-      );
+      if (selectedIdRef.current === studentId) {
+        setUploadUrl("");
+        await loadPhotos(studentId);
+      }
+      const list = await loadStudents();
+      const fresh = list.find((s) => s.id === studentId);
+      if (selectedIdRef.current === studentId && fresh) {
+        setSelected(fresh);
+      } else if (photoKind === "profile" || photoKind === "identity") {
+        setStudents((prev) =>
+          prev.map((st) => (st.id === studentId ? { ...st, photo_identity_student: url } : st)),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -147,10 +185,18 @@ export function DashboardPhotographyPage() {
 
   async function handleDeletePhoto(photoId: string) {
     if (!selected || !confirm("Supprimer cette photo ?")) return;
-    await fetchWithAuth(`${API_BASE}/students/${selected.id}/photos/${photoId}`, {
+    const studentId = selected.id;
+    await fetchWithAuth(`${API_BASE}/students/${studentId}/photos/${photoId}`, {
       method: "DELETE",
     });
-    await loadPhotos(selected.id);
+    if (selectedIdRef.current === studentId) {
+      await loadPhotos(studentId);
+    }
+    const list = await loadStudents();
+    const fresh = list.find((s) => s.id === studentId);
+    if (selectedIdRef.current === studentId && fresh) {
+      setSelected(fresh);
+    }
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -217,14 +263,19 @@ export function DashboardPhotographyPage() {
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setSelected(s)}
+                onClick={() => selectStudent(s)}
                 className={`w-full text-left px-4 py-3 border-b border-[var(--app-border)] last:border-b-0 hover:bg-slate-50 flex items-center gap-3 ${
                   selected?.id === s.id ? "bg-slate-50 border-l-4 border-l-[var(--school-accent-1)]" : ""
                 }`}
               >
                 <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
                   {getImageUrl(s.photo_identity_student) ? (
-                    <img src={getImageUrl(s.photo_identity_student)!} alt="" className="w-full h-full object-cover" />
+                    <img
+                      key={`${s.id}-${s.photo_identity_student}`}
+                      src={getImageUrl(s.photo_identity_student)!}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   ) : null}
                 </div>
                 <div>
@@ -244,14 +295,26 @@ export function DashboardPhotographyPage() {
           {!selected ? (
             <p className="text-slate-500 text-sm">Sélectionnez un élève pour ajouter des photos.</p>
           ) : (
-            <>
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  {selected.last_name} {selected.first_name}
-                </h3>
-                <p className="text-sm text-slate-500">
-                  {[selected.class_name, selected.room_name].filter(Boolean).join(" · ")}
-                </p>
+            <div key={selected.id} className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0">
+                  {getImageUrl(selected.photo_identity_student) ? (
+                    <img
+                      key={`${selected.id}-${selected.photo_identity_student}`}
+                      src={getImageUrl(selected.photo_identity_student)!}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : null}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {selected.last_name} {selected.first_name}
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    {[selected.class_name, selected.room_name].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
               </div>
 
               <div className="p-4 rounded-xl border border-[var(--app-border)] bg-white space-y-3">
@@ -268,8 +331,9 @@ export function DashboardPhotographyPage() {
                   </select>
                 </div>
                 <ImageUpload
+                  key={selected.id}
                   value={uploadUrl || null}
-                  onChange={setUploadUrl}
+                  onChange={(url) => handlePendingUrlChange(selected.id, url)}
                   label="Nouvelle photo"
                   token={token}
                   crop="square"
@@ -286,7 +350,7 @@ export function DashboardPhotographyPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {photos.map((p) => (
-                  <div key={p.id} className="rounded-lg border border-[var(--app-border)] overflow-hidden bg-white">
+                  <div key={`${selected.id}-${p.id}`} className="rounded-lg border border-[var(--app-border)] overflow-hidden bg-white">
                     <div className="aspect-square bg-slate-100">
                       {getImageUrl(p.url) && (
                         <img src={getImageUrl(p.url)!} alt="" className="w-full h-full object-cover" />
@@ -307,7 +371,7 @@ export function DashboardPhotographyPage() {
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
         </section>
       </div>

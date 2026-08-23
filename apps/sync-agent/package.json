@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Metronome sync LOCAL (vérité) ↔ cloud GCP (miroir)",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "start:lab": "node scripts/start-lab.js"
   },
   "dependencies": {
     "axios": "^1.7.9"

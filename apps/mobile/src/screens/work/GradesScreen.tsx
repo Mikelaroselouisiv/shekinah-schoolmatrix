@@ -180,7 +180,7 @@ export function GradesScreen({}: Props) {
         setRows(
           (data.rows as GradeFormRow[]).map((r) => ({
             ...r,
-            coefficient: r.coefficient ?? data.default_coefficient ?? 1,
+            coefficient: r.coefficient ?? data.default_coefficient ?? 100,
             grade_value: r.grade_value ?? null,
           })),
         );
@@ -227,7 +227,7 @@ export function GradesScreen({}: Props) {
           period_id: periodId,
           grades: rows.map((r) => ({
             student_id: r.student_id,
-            coefficient: r.coefficient ?? defaultCoef ?? 1,
+            coefficient: r.coefficient ?? defaultCoef ?? 100,
             grade_value: r.grade_value,
             detail: r.detail?.trim() || undefined,
           })),
@@ -300,6 +300,11 @@ export function GradesScreen({}: Props) {
         </View>
 
         {teacherName ? <Muted>Professeur · {teacherName}</Muted> : null}
+        {!isPreschool && ready ? (
+          <Muted>
+            Note sur {defaultCoef ?? 100}. Saisir les points obtenus (ex. 180/200 = 9,00/10).
+          </Muted>
+        ) : null}
         {!canEdit ? (
           <View style={styles.lockBanner}>
             <Text style={styles.lockText}>
@@ -410,6 +415,11 @@ function SelectChip({
   );
 }
 
+function pointsToTen(obtained: number | null | undefined, bareme: number): number | null {
+  if (obtained == null || Number.isNaN(obtained) || !(bareme > 0)) return null;
+  return Math.round((obtained / bareme) * 10 * 100) / 100;
+}
+
 function StandardRow({
   row,
   editable,
@@ -421,12 +431,14 @@ function StandardRow({
   defaultCoef: number | null;
   onChange: (row: GradeFormRow) => void;
 }) {
+  const bareme = defaultCoef && defaultCoef >= 50 ? defaultCoef : 100;
+  const onTen = pointsToTen(row.grade_value, bareme);
   return (
     <View style={styles.card}>
       <Text style={styles.studentName}>{row.student_name}</Text>
       <View style={styles.fieldsRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Note</Text>
+          <Text style={styles.fieldLabel}>Points / {bareme}</Text>
           <TextInput
             editable={editable}
             keyboardType="decimal-pad"
@@ -436,29 +448,18 @@ function StandardRow({
               const num = cleaned.trim() === '' ? null : Number(cleaned);
               onChange({
                 ...row,
+                coefficient: bareme,
                 grade_value: num != null && !Number.isNaN(num) ? num : null,
               });
             }}
-            placeholder="—"
+            placeholder="ex. 180"
             placeholderTextColor={colors.textMuted}
             style={styles.input}
           />
         </View>
-        <View style={{ width: 90 }}>
-          <Text style={styles.fieldLabel}>Coef.</Text>
-          <TextInput
-            editable={editable}
-            keyboardType="decimal-pad"
-            value={String(row.coefficient ?? defaultCoef ?? 1)}
-            onChangeText={(t) => {
-              const num = Number(t.replace(',', '.'));
-              onChange({
-                ...row,
-                coefficient: Number.isNaN(num) ? defaultCoef ?? 1 : num,
-              });
-            }}
-            style={styles.input}
-          />
+        <View style={{ width: 72, justifyContent: 'flex-end', paddingBottom: 10 }}>
+          <Text style={styles.fieldLabel}>/10</Text>
+          <Text style={styles.studentName}>{onTen != null ? onTen.toFixed(2) : '—'}</Text>
         </View>
       </View>
       <Text style={styles.fieldLabel}>Détail</Text>

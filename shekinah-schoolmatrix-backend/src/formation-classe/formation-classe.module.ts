@@ -11,6 +11,7 @@ import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
 import { FormationClasseService } from './formation-classe.service';
 import { FormationClasseController } from './formation-classe.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
+import { LevelScopeModule } from '../auth/level-scope.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ParentScopeModule } from '../auth/parent-scope.module';
       DisciplinaryMeasure,
     ]),
     ParentScopeModule,
+    LevelScopeModule,
   ],
   controllers: [FormationClasseController],
   providers: [FormationClasseService],

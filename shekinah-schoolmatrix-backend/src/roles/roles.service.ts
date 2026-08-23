@@ -2,33 +2,149 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Role } from './role.entity';
+import {
+  DEFAULT_ROLE_EDUCATION_LEVELS,
+  PERMS_PEDAGOGIQUE,
+  PERMS_SECRETAIRE,
+  PERMS_SURVEILLANT,
+} from './roles.constants';
+import { normalizeEducationLevels } from './education-levels';
+
+const FULL = ['full_access'];
 
 const DEFAULT_ROLES: {
   name: string;
   description: string;
   permissions?: string[];
+  education_levels?: string[] | null;
 }[] = [
-  { name: 'SUPER_ADMIN', description: 'Technicien / maintenance — accès total (première personne enregistrée et techniciens)' },
-  { name: 'DIRECTEUR_GENERAL', description: 'Directeur général — propriétaire de l\'école, peut tout faire' },
-  { name: 'SCHOOL_ADMIN', description: 'Alias direction (rétrocompatibilité)' },
-  { name: 'DIRECTEUR_PEDAGOGIQUE', description: 'Directeur pédagogique — vie étudiante et études' },
-  { name: 'CENSEUR', description: 'Censeur(e) — horaires, examens, saisie des notes' },
-  { name: 'ADMIN_PRESCOLAIRE', description: 'Administrateur préscolaire — démarches admin, examens, parascolaire' },
-  { name: 'ADMIN_FONDAMENTAL', description: 'Administrateur fondamental — démarches admin, examens, parascolaire' },
-  { name: 'ADMIN_SECONDAIRE', description: 'Administrateur secondaire — démarches admin, examens, parascolaire' },
-  { name: 'ECONOME', description: 'Économe — enregistre les paiements uniquement (pas montants ni bourses)' },
+  {
+    name: 'SUPER_ADMIN',
+    description: 'Technicien / maintenance — accès total',
+    permissions: FULL,
+  },
+  {
+    name: 'DIRECTEUR_GENERAL',
+    description: 'Directeur général — accès total, tous les niveaux',
+    permissions: FULL,
+  },
+  {
+    name: 'DIRECTEUR_ADMINISTRATIF',
+    description: 'Directeur administratif — accès total, tous les niveaux',
+    permissions: FULL,
+  },
+  {
+    name: 'ADMINISTRATEUR',
+    description: 'Administrateur — accès total, tous les niveaux',
+    permissions: FULL,
+  },
+  {
+    name: 'SCHOOL_ADMIN',
+    description: 'Alias Administrateur (rétrocompatibilité)',
+    permissions: FULL,
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE',
+    description: 'Directeur / Directrice pédagogique — tous les cycles (école sans découpage)',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: null,
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
+    description: 'Directeur / Directrice pédagogique — préscolaire',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['PRESCOLAIRE'],
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
+    description: 'Directeur / Directrice pédagogique — 1er et 2e cycles fondamental',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
+    description: 'Directeur / Directrice pédagogique — 2e cycle fondamental seulement',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['FONDAMENTAL_2'],
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
+    description: 'Directeur / Directrice pédagogique — 3e cycle fondamental',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['FONDAMENTAL_3'],
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
+    description: 'Directeur / Directrice pédagogique — secondaire',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['SECONDAIRE'],
+  },
+  {
+    name: 'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
+    description: 'Directeur / Directrice pédagogique — formation supérieure',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['FORMATION_SUPERIEURE'],
+  },
+  {
+    name: 'ADMIN_PRESCOLAIRE',
+    description: 'Alias Directeur pédagogique préscolaire',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['PRESCOLAIRE'],
+  },
+  {
+    name: 'ADMIN_FONDAMENTAL',
+    description: 'Alias Directeur pédagogique 1er et 2e cycles fondamental',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
+  },
+  {
+    name: 'ADMIN_SECONDAIRE',
+    description: 'Alias Directeur pédagogique secondaire',
+    permissions: PERMS_PEDAGOGIQUE,
+    education_levels: ['SECONDAIRE'],
+  },
+  {
+    name: 'CENSEUR',
+    description: 'Censeur(e) — horaires, examens, notes (toute l’école par défaut)',
+    permissions: ['grades', 'schedule', 'stats-academiques', 'fiche-eleve'],
+  },
+  {
+    name: 'SECRETAIRE_GENERAL',
+    description: 'Secrétaire général(e) — dossiers élèves, classes (toute l’école)',
+    permissions: PERMS_SECRETAIRE,
+  },
+  {
+    name: 'SECRETAIRE_FORMATION_SUPERIEURE',
+    description: 'Secrétaire — formation supérieure',
+    permissions: PERMS_SECRETAIRE,
+    education_levels: ['FORMATION_SUPERIEURE'],
+  },
+  {
+    name: 'SURVEILLANT_GENERAL',
+    description: 'Surveillant / Surveillante général(e) — discipline',
+    permissions: PERMS_SURVEILLANT,
+  },
+  {
+    name: 'DISCIPLINE',
+    description: 'Alias Surveillant général (rétrocompatibilité)',
+    permissions: PERMS_SURVEILLANT,
+  },
+  {
+    name: 'ECONOME',
+    description: 'Économe — paiements (pas montants ni bourses)',
+    permissions: ['finance', 'economat'],
+  },
   {
     name: 'COMPTABLE',
-    description: 'Comptable — Stats financières (Moniteur, Banques, plan comptable, journaux, exercices)',
+    description: 'Comptable — Stats financières (Moniteur, Banques, plan comptable)',
     permissions: ['stats-financieres', 'comptabilite'],
   },
-  { name: 'DISCIPLINE', description: 'Responsable discipline (présence, retards, pointage)' },
   { name: 'STAFF', description: 'Staff administratif générique (rétrocompatibilité)' },
-  { name: 'TEACHER', description: 'Professeur' },
-  { name: 'PARENT', description: 'Parent — rôle par défaut à la création de compte' },
+  { name: 'TEACHER', description: 'Enseignant / Enseignante — notes et son périmètre' },
+  { name: 'PARENT', description: 'Parent — fiche de ses enfants' },
   {
     name: 'PHOTOGRAPHER',
-    description: 'Photographe — accès à l’onglet Photographie (ajout de photos élèves uniquement)',
+    description: 'Photographe — photos élèves',
     permissions: ['photography'],
   },
 ];
@@ -42,6 +158,10 @@ export class RolesService {
 
   async seedDefaults(): Promise<void> {
     for (const r of DEFAULT_ROLES) {
+      const levels =
+        r.education_levels !== undefined
+          ? r.education_levels
+          : (DEFAULT_ROLE_EDUCATION_LEVELS[r.name] ?? null);
       const exists = await this.rolesRepo.findOne({ where: { name: r.name } });
       if (!exists) {
         await this.rolesRepo.save(
@@ -49,9 +169,24 @@ export class RolesService {
             name: r.name,
             description: r.description,
             permissions: r.permissions ?? null,
+            education_levels: levels ?? null,
           }),
         );
+        continue;
       }
+      let changed = false;
+      if (
+        (exists.permissions == null || exists.permissions.length === 0) &&
+        r.permissions?.length
+      ) {
+        exists.permissions = r.permissions;
+        changed = true;
+      }
+      if (exists.education_levels == null && levels) {
+        exists.education_levels = levels;
+        changed = true;
+      }
+      if (changed) await this.rolesRepo.save(exists);
     }
   }
 
@@ -69,7 +204,12 @@ export class RolesService {
     return this.rolesRepo.findOne({ where: { name: name.toUpperCase().trim() } });
   }
 
-  async create(params: { name: string; description?: string; permissions?: string[] }): Promise<Role> {
+  async create(params: {
+    name: string;
+    description?: string;
+    permissions?: string[];
+    education_levels?: string[] | null;
+  }): Promise<Role> {
     const name = params.name.toUpperCase().trim();
     const exists = await this.rolesRepo.findOne({ where: { name } });
     if (exists) throw new BadRequestException('Role name already exists');
@@ -77,11 +217,20 @@ export class RolesService {
       name,
       description: params.description?.trim(),
       permissions: params.permissions && params.permissions.length > 0 ? params.permissions : null,
+      education_levels: normalizeEducationLevels(params.education_levels),
     });
     return this.rolesRepo.save(role);
   }
 
-  async update(id: number, params: { name?: string; description?: string; permissions?: string[] }): Promise<Role> {
+  async update(
+    id: number,
+    params: {
+      name?: string;
+      description?: string;
+      permissions?: string[];
+      education_levels?: string[] | null;
+    },
+  ): Promise<Role> {
     const role = await this.findOne(id);
     if (params.name !== undefined) {
       const name = params.name.toUpperCase().trim();
@@ -94,6 +243,9 @@ export class RolesService {
     }
     if (params.permissions !== undefined) {
       role.permissions = params.permissions && params.permissions.length > 0 ? params.permissions : null;
+    }
+    if (params.education_levels !== undefined) {
+      role.education_levels = normalizeEducationLevels(params.education_levels);
     }
     return this.rolesRepo.save(role);
   }

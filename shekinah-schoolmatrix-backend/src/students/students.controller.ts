@@ -11,6 +11,7 @@ import {
   BadRequestException,
   UseInterceptors,
   UploadedFile,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
@@ -21,23 +22,33 @@ import {
   ParentScopedStudent,
 } from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
+import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class StudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(
+    private readonly studentsService: StudentsService,
+    private readonly levelScope: LevelScopeService,
+  ) {}
 
   /** Liste de toute l'école : jamais accessible depuis un compte parent. */
   @DenyParents()
   @Get()
   async list(
+    @Req() req: { user?: RequestActor },
     @Query('class_id') classId?: string,
     @Query('room_id') roomId?: string,
   ) {
-    const students = await this.studentsService.findAll({
-      classId: classId || undefined,
-      roomId: roomId || undefined,
-    });
+    if (classId) await this.levelScope.assertClassAccess(req.user, classId);
+    const students = await this.levelScope.filterByClassId(
+      req.user,
+      await this.studentsService.findAll({
+        classId: classId || undefined,
+        roomId: roomId || undefined,
+      }),
+      (s) => s.class?.id,
+    );
     return {
       ok: true,
       students: students.map((s) => ({
@@ -76,11 +87,15 @@ export class StudentsController {
   /** Recherche par numéro d'ordre : permettrait à un parent d'énumérer l'école. */
   @DenyParents()
   @Get('by-order-number/:orderNumber')
-  async byOrderNumber(@Param('orderNumber') orderNumber: string) {
+  async byOrderNumber(
+    @Param('orderNumber') orderNumber: string,
+    @Req() req: { user?: RequestActor },
+  ) {
     const s = await this.studentsService.findByOrderNumber(decodeURIComponent(orderNumber));
     if (!s) {
       return { ok: false, student: null };
     }
+    await this.levelScope.assertClassAccess(req.user, s.class?.id);
     return {
       ok: true,
       student: {
@@ -97,8 +112,9 @@ export class StudentsController {
 
   @ParentScopedStudent({ in: 'param', key: 'id' })
   @Get(':id')
-  async one(@Param('id') id: string) {
+  async one(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
     const s = await this.studentsService.findOne(id);
+    await this.levelScope.assertClassAccess(req.user, s.class?.id);
     const c = s.class;
     const isPreschool = isPreschoolClass(c?.description, c?.level);
     return {
@@ -218,7 +234,11 @@ export class StudentsController {
 
   @DenyParents()
   @Post()
-  async create(@Body() body: Record<string, unknown>) {
+  async create(
+    @Req() req: { user?: RequestActor },
+    @Body() body: Record<string, unknown>,
+  ) {
+    await this.levelScope.assertClassAccess(req.user, body.class_id as string | undefined);
     const { student: s, parent_account } = await this.studentsService.create(body as any);
     return {
       ok: true,
@@ -265,7 +285,16 @@ export class StudentsController {
 
   @DenyParents()
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  async update(
+    @Param('id') id: string,
+    @Req() req: { user?: RequestActor },
+    @Body() body: Record<string, unknown>,
+  ) {
+    const current = await this.studentsService.findOne(id);
+    await this.levelScope.assertClassAccess(req.user, current.class?.id);
+    if (typeof body.class_id === 'string') {
+      await this.levelScope.assertClassAccess(req.user, body.class_id);
+    }
     const s = await this.studentsService.update(id, body as any);
     return {
       ok: true,

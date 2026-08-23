@@ -5,14 +5,22 @@
   "scripts": {
     "dev:db": "docker compose -f dev/docker-compose.postgres.yml up -d",
     "dev:db:down": "docker compose -f dev/docker-compose.postgres.yml down",
+    "dev:db:cloud": "docker compose -f dev/docker-compose.sync-cloud.yml up -d",
+    "dev:db:cloud:down": "docker compose -f dev/docker-compose.sync-cloud.yml down",
     "dev:free-port": "powershell -NoProfile -ExecutionPolicy Bypass -File ./dev/stop-local-server-stack.ps1",
+    "dev:free-lab": "powershell -NoProfile -ExecutionPolicy Bypass -File ./dev/free-dev-lab-ports.ps1",
     "dev:backend": "npm --prefix shekinah-schoolmatrix-backend run dev",
+    "dev:backend:mirror": "npm --prefix shekinah-schoolmatrix-backend run dev:mirror",
     "dev:desktop": "npm --prefix apps/desktop run dev",
+    "dev:desktop:mirror": "npm --prefix apps/desktop run dev:mirror",
     "dev:desktop:remote": "npm --prefix apps/desktop run dev:remote",
+    "dev:desktop:remote:lab": "npm --prefix apps/desktop run dev:mirror",
+    "dev:backend:cloud": "npm --prefix shekinah-schoolmatrix-backend run dev:cloud",
     "dev:mobile": "npm --prefix apps/mobile start",
     "dev:mobile:android": "npm --prefix apps/mobile run android",
     "dev:mobile:ios": "npm --prefix apps/mobile run ios",
     "dev:mobile:android:fresh": "npm --prefix apps/mobile run android:fresh",
-    "dev:sync-agent": "npm --prefix apps/sync-agent start"
+    "dev:sync-agent": "npm --prefix apps/sync-agent start",
+    "dev:sync-lab": "npm --prefix apps/sync-agent run start:lab"
   }
 }

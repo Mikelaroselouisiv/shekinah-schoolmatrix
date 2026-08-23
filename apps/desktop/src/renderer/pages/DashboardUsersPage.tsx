@@ -3,6 +3,7 @@ import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
 import { PasswordInput } from "@/components/PasswordInput";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PERMISSION_OPTIONS } from "@/lib/permissionKeys";
+import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
 
 type User = {
   id: number;
@@ -17,7 +18,13 @@ type User = {
   linked_student_ids?: string[];
 };
 
-type Role = { id: number; name: string; description?: string | null; permissions?: string[] };
+type Role = {
+  id: number;
+  name: string;
+  description?: string | null;
+  permissions?: string[];
+  education_levels?: string[];
+};
 
 type StudentOption = { id: string; order_number: string | null; student_code: string | null; first_name: string; last_name: string; class_name: string };
 
@@ -61,6 +68,7 @@ export function DashboardUsersPage() {
   const [roleNameInput, setRoleNameInput] = useState("");
   const [roleDescriptionInput, setRoleDescriptionInput] = useState("");
   const [rolePermissionsInput, setRolePermissionsInput] = useState<string[]>([]);
+  const [roleLevelsInput, setRoleLevelsInput] = useState<string[]>([]);
   const [savingRole, setSavingRole] = useState(false);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -350,11 +358,18 @@ export function DashboardUsersPage() {
     });
   }
 
+  function toggleRoleLevel(key: string) {
+    setRoleLevelsInput((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }
+
   function openCreateRole() {
     setEditingRole(null);
     setRoleNameInput("");
     setRoleDescriptionInput("");
     setRolePermissionsInput([]);
+    setRoleLevelsInput([]);
     setShowRoleForm(true);
   }
 
@@ -363,6 +378,7 @@ export function DashboardUsersPage() {
     setRoleNameInput(r.name);
     setRoleDescriptionInput(r.description ?? "");
     setRolePermissionsInput(r.permissions ?? []);
+    setRoleLevelsInput(r.education_levels ?? []);
     setShowRoleForm(true);
   }
 
@@ -378,6 +394,7 @@ export function DashboardUsersPage() {
             name: roleNameInput.trim(),
             description: roleDescriptionInput.trim() || undefined,
             permissions: rolePermissionsInput,
+            education_levels: roleLevelsInput,
           }),
         });
         const data = await res.json();
@@ -389,6 +406,7 @@ export function DashboardUsersPage() {
             name: roleNameInput.trim(),
             description: roleDescriptionInput.trim() || undefined,
             permissions: rolePermissionsInput.length ? rolePermissionsInput : undefined,
+            education_levels: roleLevelsInput.length ? roleLevelsInput : null,
           }),
         });
         const data = await res.json();
@@ -495,6 +513,25 @@ export function DashboardUsersPage() {
                   ))}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Périmètre (niveaux)</label>
+                <p className="text-xs text-slate-500 mb-2">
+                  Aucune case = toute l’école. Cocher pour limiter le rôle à ces cycles (directeur pédagogique, secrétaire de formation supérieure, etc.).
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border border-[var(--app-border)] rounded-lg bg-white">
+                  {EDUCATION_LEVELS.map((l) => (
+                    <label key={l.key} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-slate-50 rounded px-2">
+                      <input
+                        type="checkbox"
+                        checked={roleLevelsInput.includes(l.key)}
+                        onChange={() => toggleRoleLevel(l.key)}
+                        className="rounded border-slate-300 text-[var(--school-accent-1)]"
+                      />
+                      <span className="text-sm text-slate-700">{l.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-3">
                 <button type="submit" disabled={savingRole} className="app-btn-primary disabled:opacity-60">
@@ -530,6 +567,9 @@ export function DashboardUsersPage() {
                           : (r.permissions?.length ?? 0) > 0
                             ? r.permissions!.join(", ")
                             : "Par défaut (selon le rôle)"}
+                        {(r.education_levels?.length ?? 0) > 0
+                          ? ` · ${r.education_levels!.map((k) => educationLevelLabel(k)).join(", ")}`
+                          : ""}
                       </td>
                       <td className="px-4 py-3 flex gap-2">
                         <button onClick={() => openEditRole(r)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
