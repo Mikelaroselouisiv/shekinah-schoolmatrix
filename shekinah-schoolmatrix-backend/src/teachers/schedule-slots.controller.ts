@@ -45,7 +45,7 @@ export class ScheduleSlotsController {
       academic_year?: string;
       class_id: string;
       subject_id: string;
-      teacher_id: number;
+      teacher_id?: number;
       room_id: string;
       day_of_week: number;
       start_time: string;

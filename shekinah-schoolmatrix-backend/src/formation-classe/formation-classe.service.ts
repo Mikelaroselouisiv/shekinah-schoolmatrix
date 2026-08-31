@@ -10,6 +10,10 @@ import { Grade } from '../grades/grade.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { resolveBareme } from '../grades/grade-scale';
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
+import { Period } from '../period/period.entity';
+import { ScheduleSlot } from '../teachers/schedule-slot.entity';
+import { Room } from '../rooms/room.entity';
+import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { isPreschoolClass } from '../utils/preschool';
 import {
   DECISION_ADMIS,
@@ -39,6 +43,14 @@ export class FormationClasseService {
     private readonly coefRepo: Repository<ClassSubjectCoefficient>,
     @InjectRepository(DisciplinaryMeasure)
     private readonly measureRepo: Repository<DisciplinaryMeasure>,
+    @InjectRepository(Period)
+    private readonly periodRepo: Repository<Period>,
+    @InjectRepository(ScheduleSlot)
+    private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
+    @InjectRepository(Room)
+    private readonly roomRepo: Repository<Room>,
+    @InjectRepository(SchoolProfile)
+    private readonly schoolProfileRepo: Repository<SchoolProfile>,
   ) {}
 
   async getStudentsByClassAndYear(academicYearId: string, classId: string): Promise<any[]> {
@@ -69,7 +81,7 @@ export class FormationClasseService {
         academic_year: { id: academicYearId },
         class: { id: classId },
       },
-      relations: ['student', 'class', 'academic_year'],
+      relations: ['student', 'student.room', 'class', 'academic_year'],
       order: { student: { last_name: 'ASC', first_name: 'ASC' } as any },
     });
     if (assignments.length > 0) {
@@ -79,6 +91,8 @@ export class FormationClasseService {
         last_name: a.student?.last_name,
         order_number: (a.student as Student)?.order_number,
         student_code: (a.student as Student)?.student_code ?? null,
+        room_id: a.student?.room?.id ?? null,
+        room_name: a.student?.room?.name ?? null,
         decision: a.decision,
         average: a.average ? Number(a.average) : null,
         assignment_id: a.id,
@@ -87,7 +101,7 @@ export class FormationClasseService {
     // Fallback: étudiants avec class_id actuel (pour première année ou compatibilité)
     const students = await this.studentRepo.find({
       where: { class: { id: classId } },
-      relations: ['class'],
+      relations: ['class', 'room'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
     return students.map((s) => ({
@@ -96,6 +110,8 @@ export class FormationClasseService {
       last_name: s.last_name,
       order_number: s.order_number,
       student_code: s.student_code ?? null,
+      room_id: s.room?.id ?? null,
+      room_name: s.room?.name ?? null,
       decision: null,
       average: null,
       assignment_id: null,
@@ -313,41 +329,55 @@ export class FormationClasseService {
     return { created };
   }
 
-  async runFormationForNextYear(currentYearId: string, nextYearId: string): Promise<{ created: number; promoted: number }> {
+  async runFormationForNextYear(
+    currentYearId: string,
+    nextYearId: string,
+  ): Promise<{ created: number; promoted: number; skipped: number }> {
     const currentYear = await this.academicYearRepo.findOne({ where: { id: currentYearId } });
     const nextYear = await this.academicYearRepo.findOne({ where: { id: nextYearId } });
     if (!currentYear || !nextYear) throw new BadRequestException('Année académique introuvable');
 
     const classes = await this.classRepo.find({ order: { name: 'ASC' } });
-    const classByName = new Map(classes.map((c) => [c.name, c]));
+    const rooms = await this.roomRepo.find({ relations: ['class'] });
 
     let created = 0;
     let promoted = 0;
+    let skipped = 0;
+
+    const expelled = new Set([
+      DECISION_RENVOYE_DEFINITIVEMENT,
+      DECISION_EXPELLED,
+      'RENVOYE',
+    ]);
 
     const assignments = await this.assignmentRepo.find({
       where: { academic_year: { id: currentYearId } },
-      relations: ['student', 'class', 'academic_year'],
+      relations: ['student', 'student.room', 'class', 'academic_year'],
     });
 
     for (const a of assignments) {
-      const sid = a.student?.id;
+      const student = a.student;
+      const sid = student?.id;
       if (!sid) continue;
+
+      if (a.decision && expelled.has(a.decision)) {
+        skipped++;
+        continue;
+      }
 
       const existingNext = await this.assignmentRepo.findOne({
         where: { student: { id: sid }, academic_year: { id: nextYearId } },
       });
       if (existingNext) continue;
 
-      let nextClassId: string;
       const promotes = [DECISION_ADMIS, DECISION_ADMIS_AILLEURS];
+      let nextClass = a.class;
       if (a.decision && promotes.includes(a.decision)) {
-        const currentClass = a.class;
-        const nextClass = this.findNextLevelClass(currentClass, classes);
-        nextClassId = nextClass?.id ?? currentClass?.id;
+        nextClass = this.findNextLevelClass(a.class, classes) ?? a.class;
         promoted++;
-      } else {
-        nextClassId = a.class?.id;
       }
+      const nextClassId = nextClass?.id;
+      if (!nextClassId) continue;
 
       const nextA = this.assignmentRepo.create({
         student: { id: sid },
@@ -358,22 +388,188 @@ export class FormationClasseService {
       });
       await this.assignmentRepo.save(nextA);
       created++;
+
+      const nextRoomId = this.matchRoomInClass(
+        student.room?.name,
+        nextClassId,
+        rooms,
+      );
+      const st = await this.studentRepo.findOne({ where: { id: sid } });
+      if (st) {
+        st.class = { id: nextClassId } as Class;
+        st.room = nextRoomId ? ({ id: nextRoomId } as Room) : null;
+        await this.studentRepo.save(st);
+      }
     }
 
-    const { created: extra } = await this.ensureAssignmentsFromCurrentStudents(nextYearId);
-    created += extra;
+    return { created, promoted, skipped };
+  }
 
-    return { created, promoted };
+  /**
+   * Lance l’année suivante : décisions, année, périodes, horaires (mêmes profs),
+   * formation des classes selon les moyennes.
+   */
+  async launchNextYear(currentYearId: string): Promise<{
+    next_year: { id: string; name: string };
+    decisions_updated: number;
+    periods_copied: number;
+    slots_copied: number;
+    created: number;
+    promoted: number;
+    skipped: number;
+  }> {
+    const currentYear = await this.academicYearRepo.findOne({
+      where: { id: currentYearId },
+    });
+    if (!currentYear) throw new BadRequestException('Année académique introuvable');
+
+    const classes = await this.classRepo.find();
+    let decisionsUpdated = 0;
+    for (const cls of classes) {
+      if (isPreschoolClass(cls.description, cls.level)) continue;
+      const result = await this.computeAndSetDecisions(currentYearId, cls.id);
+      decisionsUpdated += result.updated ?? 0;
+    }
+
+    const nextName = nextAcademicYearName(currentYear.name);
+    let nextYear = await this.academicYearRepo.findOne({ where: { name: nextName } });
+    if (!nextYear) {
+      nextYear = await this.academicYearRepo.save(
+        this.academicYearRepo.create({
+          name: nextName,
+          start_date: addOneCalendarYear(currentYear.start_date) || undefined,
+          end_date: addOneCalendarYear(currentYear.end_date) || undefined,
+          active: true,
+        }),
+      );
+    }
+
+    const currentPeriods = await this.periodRepo.find({
+      where: { academic_year: { id: currentYearId } },
+      order: { order_index: 'ASC', name: 'ASC' },
+    });
+    const existingPeriods = await this.periodRepo.find({
+      where: { academic_year: { id: nextYear.id } },
+    });
+    let periodsCopied = 0;
+    if (existingPeriods.length === 0) {
+      for (const p of currentPeriods) {
+        await this.periodRepo.save(
+          this.periodRepo.create({
+            academic_year: { id: nextYear.id },
+            name: p.name,
+            order_index: p.order_index,
+          }),
+        );
+        periodsCopied++;
+      }
+    }
+
+    const currentSlots = await this.scheduleSlotRepo.find({
+      where: { academic_year: currentYear.name },
+      relations: ['class', 'subject', 'teacher', 'room'],
+    });
+    const existingSlots = await this.scheduleSlotRepo.find({
+      where: { academic_year: nextYear.name },
+    });
+    let slotsCopied = 0;
+    if (existingSlots.length === 0) {
+      for (const slot of currentSlots) {
+        const classId = slot.class?.id;
+        const subjectId = slot.subject?.id;
+        const teacherId = slot.teacher?.id;
+        const roomId = slot.room?.id;
+        if (!classId || !subjectId || !teacherId || !roomId) continue;
+        await this.scheduleSlotRepo.save(
+          this.scheduleSlotRepo.create({
+            academic_year: nextYear.name,
+            class: { id: classId },
+            subject: { id: subjectId },
+            teacher: { id: teacherId },
+            room: { id: roomId },
+            day_of_week: slot.day_of_week,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          }),
+        );
+        slotsCopied++;
+      }
+    }
+
+    const currentThresholds = await this.thresholdRepo.find({
+      where: { academic_year: { id: currentYearId } },
+      relations: ['class'],
+    });
+    for (const t of currentThresholds) {
+      const classId = t.class?.id;
+      if (!classId) continue;
+      const exists = await this.thresholdRepo.findOne({
+        where: { class: { id: classId }, academic_year: { id: nextYear.id } },
+      });
+      if (exists) continue;
+      await this.thresholdRepo.save(
+        this.thresholdRepo.create({
+          class: { id: classId },
+          academic_year: { id: nextYear.id },
+          min_average_admis: t.min_average_admis,
+          min_average_admis_ailleurs: t.min_average_admis_ailleurs,
+          min_average_redoubler: t.min_average_redoubler,
+          min_average_ajourne: t.min_average_ajourne,
+        }),
+      );
+    }
+
+    const formation = await this.runFormationForNextYear(currentYearId, nextYear.id);
+
+    const nextPeriods = await this.periodRepo.find({
+      where: { academic_year: { id: nextYear.id } },
+      order: { order_index: 'ASC' },
+    });
+    const profile = await this.schoolProfileRepo.find({ take: 1 });
+    if (profile[0]) {
+      profile[0].current_academic_year_id = nextYear.id;
+      profile[0].current_period_id = nextPeriods[0]?.id ?? profile[0].current_period_id;
+      await this.schoolProfileRepo.save(profile[0]);
+    }
+
+    return {
+      next_year: { id: nextYear.id, name: nextYear.name },
+      decisions_updated: decisionsUpdated,
+      periods_copied: periodsCopied,
+      slots_copied: slotsCopied,
+      created: formation.created,
+      promoted: formation.promoted,
+      skipped: formation.skipped,
+    };
   }
 
   private findNextLevelClass(current: Class, classes: Class[]): Class | null {
-    const name = current?.name ?? '';
-    const match = name.match(/^(\d+)([A-Za-z]*)$/);
+    const name = (current?.name ?? '').trim();
+    if (!name) return null;
+    const compact = name.replace(/\s+/g, '');
+    const match = compact.match(/^(\d+)(.*)$/);
     if (!match) return null;
-    const level = parseInt(match[1], 10);
-    const suffix = match[2] || '';
-    const nextName = `${level + 1}${suffix}`;
-    return classes.find((c) => c.name === nextName) ?? null;
+    const nextCompact = `${parseInt(match[1], 10) + 1}${match[2]}`;
+    return (
+      classes.find((c) => c.name.replace(/\s+/g, '') === nextCompact) ??
+      classes.find((c) => c.name === `${parseInt(match[1], 10) + 1}${match[2]}`) ??
+      null
+    );
+  }
+
+  private matchRoomInClass(
+    currentRoomName: string | undefined,
+    nextClassId: string,
+    rooms: Room[],
+  ): string | null {
+    const inClass = rooms.filter(
+      (r) => (r.class?.id ?? (r as any).class_id) === nextClassId && r.active !== false,
+    );
+    if (currentRoomName) {
+      const sameName = inClass.find((r) => r.name === currentRoomName);
+      if (sameName) return sameName.id;
+    }
+    return inClass[0]?.id ?? null;
   }
 
   async addStudentToClass(studentId: string, academicYearId: string, classId: string): Promise<StudentClassAssignment> {
@@ -399,4 +595,29 @@ export class FormationClasseService {
     if (!a) throw new NotFoundException('Assignment not found');
     await this.assignmentRepo.remove(a);
   }
+}
+
+function nextAcademicYearName(name: string): string {
+  const range = name.match(/(\d{4})\s*[-–/]\s*(\d{4})/);
+  if (range) {
+    const a = Number.parseInt(range[1], 10);
+    const b = Number.parseInt(range[2], 10);
+    return name.replace(range[0], `${a + 1}-${b + 1}`);
+  }
+  const year = name.match(/(\d{4})/);
+  if (year) {
+    return name.replace(year[1], String(Number.parseInt(year[1], 10) + 1));
+  }
+  return `${name.trim()} (suivant)`;
+}
+
+function addOneCalendarYear(iso?: string | null): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return undefined;
+  d.setFullYear(d.getFullYear() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }

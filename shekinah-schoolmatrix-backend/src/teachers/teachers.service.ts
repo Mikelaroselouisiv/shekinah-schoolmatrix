@@ -274,6 +274,103 @@ export class TeachersService {
     return this.teacherClassSubjectRepo.save(assignment);
   }
 
+  async addTeacherClassSubjects(
+    teacherId: number,
+    classId: string,
+    roomId: string,
+    subjectIds: string[],
+  ) {
+    const unique = [...new Set(subjectIds.filter(Boolean))];
+    if (unique.length === 0) {
+      throw new BadRequestException('Au moins une matière est requise');
+    }
+    const created: TeacherClassSubject[] = [];
+    const skipped: string[] = [];
+    for (const subjectId of unique) {
+      try {
+        created.push(
+          await this.addTeacherClassSubject(teacherId, classId, subjectId, roomId),
+        );
+      } catch (e) {
+        if (
+          e instanceof BadRequestException &&
+          String(e.message).includes('déjà')
+        ) {
+          skipped.push(subjectId);
+          continue;
+        }
+        throw e;
+      }
+    }
+    return { created, skipped };
+  }
+
+  /** Assignations (professeur × matière) pour une classe / salle — grille horaire. */
+  async findClassSubjectAssignments(filters: {
+    classId?: string;
+    roomId?: string;
+  }) {
+    const qb = this.teacherClassSubjectRepo
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.teacher', 'teacher')
+      .leftJoinAndSelect('a.class', 'class')
+      .leftJoinAndSelect('a.subject', 'subject')
+      .leftJoinAndSelect('a.room', 'room')
+      .orderBy('teacher.last_name', 'ASC')
+      .addOrderBy('subject.name', 'ASC');
+    if (filters.classId) {
+      qb.andWhere('a.class_id = :classId', { classId: filters.classId });
+    }
+    if (filters.roomId) {
+      qb.andWhere('a.room_id = :roomId', { roomId: filters.roomId });
+    }
+    const list = await qb.getMany();
+    return list.map((a) => ({
+      id: a.id,
+      teacher_id: a.teacher?.id,
+      teacher_name: a.teacher
+        ? `${a.teacher.first_name ?? ''} ${a.teacher.last_name ?? ''}`.trim()
+        : '',
+      class_id: a.class?.id ?? a.class_id,
+      class_name: a.class?.name ?? '',
+      subject_id: a.subject?.id ?? a.subject_id,
+      subject_name: a.subject?.name ?? '',
+      room_id: a.room?.id ?? a.room_id ?? null,
+      room_name: a.room?.name ?? '',
+    }));
+  }
+
+  async resolveTeacherIdForSlot(
+    classId: string,
+    subjectId: string,
+    roomId: string,
+    teacherId?: number,
+  ): Promise<number> {
+    if (teacherId) return teacherId;
+    const list = await this.teacherClassSubjectRepo.find({
+      where: {
+        class: { id: classId },
+        subject: { id: subjectId },
+        room: { id: roomId },
+      },
+      relations: ['teacher'],
+    });
+    const ids = [
+      ...new Set(list.map((a) => a.teacher?.id).filter((id): id is number => !!id)),
+    ];
+    if (ids.length === 0) {
+      throw new BadRequestException(
+        'Aucun professeur n’est assigné à cette matière dans cette salle.',
+      );
+    }
+    if (ids.length > 1) {
+      throw new BadRequestException(
+        'Plusieurs professeurs enseignent cette matière dans cette salle. Précisez le professeur.',
+      );
+    }
+    return ids[0];
+  }
+
   async removeTeacherClassSubject(
     teacherId: number,
     assignmentId: string,
@@ -414,18 +511,24 @@ export class TeachersService {
     academic_year?: string;
     class_id: string;
     subject_id: string;
-    teacher_id: number;
+    teacher_id?: number;
     room_id: string;
     day_of_week: number;
     start_time: string;
     end_time: string;
   }): Promise<ScheduleSlot> {
     const room = await this.resolveRoomForClass(params.class_id, params.room_id);
+    const teacherId = await this.resolveTeacherIdForSlot(
+      params.class_id,
+      params.subject_id,
+      room.id,
+      params.teacher_id,
+    );
     const slot = this.scheduleSlotRepo.create({
       academic_year: params.academic_year?.trim() || undefined,
       class: { id: params.class_id },
       subject: { id: params.subject_id },
-      teacher: { id: params.teacher_id },
+      teacher: { id: teacherId },
       room,
       day_of_week: params.day_of_week,
       start_time: params.start_time,

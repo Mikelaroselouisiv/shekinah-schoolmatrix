@@ -146,9 +146,15 @@ async function main() {
 
     await client.query(
       `INSERT INTO academic_year (name, start_date, end_date, active)
-       VALUES ($1, '2025-09-01', '2026-07-31', true)
+       VALUES ($1, '2025-09-01', '2026-07-31', false)
        ON CONFLICT (name) DO NOTHING`,
       [YEAR_PREV],
+    );
+    await client.query(
+      `INSERT INTO academic_year (name, start_date, end_date, active)
+       VALUES ($1, '2026-09-01', '2027-07-31', true)
+       ON CONFLICT (name) DO NOTHING`,
+      [YEAR],
     );
     await client.query(
       `UPDATE academic_year

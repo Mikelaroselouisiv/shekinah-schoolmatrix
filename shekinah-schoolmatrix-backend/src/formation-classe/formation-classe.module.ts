@@ -8,6 +8,10 @@ import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Grade } from '../grades/grade.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
+import { Period } from '../period/period.entity';
+import { ScheduleSlot } from '../teachers/schedule-slot.entity';
+import { Room } from '../rooms/room.entity';
+import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { FormationClasseService } from './formation-classe.service';
 import { FormationClasseController } from './formation-classe.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
@@ -24,6 +28,10 @@ import { LevelScopeModule } from '../auth/level-scope.module';
       Grade,
       ClassSubjectCoefficient,
       DisciplinaryMeasure,
+      Period,
+      ScheduleSlot,
+      Room,
+      SchoolProfile,
     ]),
     ParentScopeModule,
     LevelScopeModule,

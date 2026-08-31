@@ -98,7 +98,7 @@ export async function fetchStudentsForClassBadges(classId: string): Promise<Badg
   const list = (studentsData.students ?? []) as Array<{
     first_name: string;
     last_name: string;
-    order_number?: string | null;
+    student_code?: string | null;
     class_name?: string | null;
     room_name?: string | null;
     photo_identity_student?: string | null;
@@ -111,7 +111,7 @@ export async function fetchStudentsForClassBadges(classId: string): Promise<Badg
     .map((s) => ({
       first_name: s.first_name,
       last_name: s.last_name,
-      order_number: s.order_number,
+      student_code: s.student_code,
       class_name: s.class_name,
       room_name: s.room_name ?? null,
       photo_url: s.photo_identity_student,
@@ -139,7 +139,7 @@ export async function fetchStudentsForRoomBadges(roomId: string): Promise<{
   const students = ((studentsData.students ?? []) as Array<{
     first_name: string;
     last_name: string;
-    order_number?: string | null;
+    student_code?: string | null;
     class_name?: string | null;
     room_name?: string | null;
     photo_identity_student?: string | null;
@@ -147,7 +147,7 @@ export async function fetchStudentsForRoomBadges(roomId: string): Promise<{
     .map((s) => ({
       first_name: s.first_name,
       last_name: s.last_name,
-      order_number: s.order_number,
+      student_code: s.student_code,
       class_name: s.class_name,
       room_name: s.room_name || roomName,
       photo_url: s.photo_identity_student,

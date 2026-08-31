@@ -3,10 +3,11 @@
 #   - apps/desktop/server-stack/docker-compose.yml  (école / installateur)
 #   - infra/docker/docker-compose.gcp.yml           (cloud GCP)
 #
-# Port hôte 5435 : évite les collisions avec d'autres Postgres locaux (5432–5434).
+# Port hôte 5436 : Shekinah uniquement. Eureka DEV = 5435. Ne pas fusionner les projets Compose.
 # Aligné avec shekinah-schoolmatrix-backend/.env.dev
 
-name: schoolmatrix-dev
+# Projet Compose isolé — ne jamais réutiliser le nom Eureka (`eureka-schoolmatrix-dev`).
+name: shekinah-schoolmatrix-dev
 
 services:
   postgres:

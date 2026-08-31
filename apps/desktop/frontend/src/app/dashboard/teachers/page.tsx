@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/src/lib/api";
 import Link from "next/link";
+import { isHomeroomCycle } from "@/src/lib/educationLevels";
 
 type Teacher = {
   id: number;
@@ -36,7 +37,7 @@ type TeacherDetail = Teacher & {
   class_subjects?: ClassSubjectAssignment[];
 };
 
-type ClassItem = { id: string; name: string };
+type ClassItem = { id: string; name: string; level?: string | null };
 type Subject = { id: string; name: string };
 type User = { id: number; first_name: string | null; last_name: string | null; email: string; role: string | null };
 
@@ -61,7 +62,7 @@ export default function TeachersPage() {
   const [addingAssignment, setAddingAssignment] = useState(false);
   const [newAssignmentClassId, setNewAssignmentClassId] = useState("");
   const [newAssignmentRoomId, setNewAssignmentRoomId] = useState("");
-  const [newAssignmentSubjectId, setNewAssignmentSubjectId] = useState("");
+  const [newAssignmentSubjectIds, setNewAssignmentSubjectIds] = useState<string[]>([]);
   const [classSubjectsForAssignment, setClassSubjectsForAssignment] = useState<Subject[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -255,7 +256,7 @@ export default function TeachersPage() {
 
   async function handleAddAssignment(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedTeacher || !newAssignmentClassId || !newAssignmentRoomId || !newAssignmentSubjectId) return;
+    if (!selectedTeacher || !newAssignmentClassId || !newAssignmentRoomId || newAssignmentSubjectIds.length === 0) return;
     setSaving(true);
     setError("");
     try {
@@ -264,7 +265,7 @@ export default function TeachersPage() {
         body: JSON.stringify({
           class_id: newAssignmentClassId,
           room_id: newAssignmentRoomId,
-          subject_id: newAssignmentSubjectId,
+          subject_ids: newAssignmentSubjectIds,
         }),
       });
       const data = await res.json();
@@ -272,7 +273,7 @@ export default function TeachersPage() {
       setAddingAssignment(false);
       setNewAssignmentClassId("");
       setNewAssignmentRoomId("");
-      setNewAssignmentSubjectId("");
+      setNewAssignmentSubjectIds([]);
       await loadTeacherDetail(selectedTeacher.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -306,6 +307,8 @@ export default function TeachersPage() {
   const roomsForAssignment = newAssignmentClassId
     ? rooms.filter((r) => r.class_id === newAssignmentClassId && r.active !== false)
     : [];
+  const selectedAssignmentClass = classes.find((c) => c.id === newAssignmentClassId);
+  const assignmentIsHomeroom = isHomeroomCycle(selectedAssignmentClass?.level);
   const availableSubjectsForNewRoom =
     newAssignmentClassId && newAssignmentRoomId
       ? classSubjectsForAssignment.filter(
@@ -318,6 +321,31 @@ export default function TeachersPage() {
             ),
         )
       : [];
+
+  useEffect(() => {
+    if (!newAssignmentClassId || !newAssignmentRoomId) {
+      setNewAssignmentSubjectIds([]);
+      return;
+    }
+    const availableIds = availableSubjectsForNewRoom.map((s) => s.id);
+    if (assignmentIsHomeroom) {
+      setNewAssignmentSubjectIds(availableIds);
+    } else {
+      setNewAssignmentSubjectIds((prev) => prev.filter((id) => availableIds.includes(id)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-apply defaults when class/room/subjects change
+  }, [newAssignmentClassId, newAssignmentRoomId, classSubjectsForAssignment, assignmentIsHomeroom]);
+
+  function toggleAssignmentSubject(subjectId: string) {
+    setNewAssignmentSubjectIds((prev) =>
+      prev.includes(subjectId) ? prev.filter((id) => id !== subjectId) : [...prev, subjectId],
+    );
+  }
+
+  function toggleAllAssignmentSubjects() {
+    const ids = availableSubjectsForNewRoom.map((s) => s.id);
+    setNewAssignmentSubjectIds((prev) => (prev.length === ids.length ? [] : ids));
+  }
 
   function teacherName(t: Teacher) {
     return [t.first_name, t.last_name].filter(Boolean).join(" ") || t.email;
@@ -419,64 +447,94 @@ export default function TeachersPage() {
                   )}
                 </div>
                 {addingAssignment && (
-                  <form onSubmit={handleAddAssignment} className="flex flex-wrap gap-2 mb-3 p-3 bg-slate-50 rounded-lg">
-                    <select
-                      value={newAssignmentClassId}
-                      onChange={(e) => {
-                        setNewAssignmentClassId(e.target.value);
-                        setNewAssignmentRoomId("");
-                        setNewAssignmentSubjectId("");
-                      }}
-                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
-                      required
-                    >
-                      <option value="">Classe...</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={newAssignmentRoomId}
-                      onChange={(e) => {
-                        setNewAssignmentRoomId(e.target.value);
-                        setNewAssignmentSubjectId("");
-                      }}
-                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
-                      required
-                      disabled={!newAssignmentClassId}
-                    >
-                      <option value="">Salle...</option>
-                      {roomsForAssignment.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={newAssignmentSubjectId}
-                      onChange={(e) => setNewAssignmentSubjectId(e.target.value)}
-                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
-                      required
-                      disabled={!newAssignmentRoomId}
-                    >
-                      <option value="">Matière...</option>
-                      {availableSubjectsForNewRoom.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <button type="submit" disabled={saving || !newAssignmentClassId || !newAssignmentRoomId || !newAssignmentSubjectId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
-                      {saving ? "..." : "Ajouter"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddingAssignment(false);
-                        setNewAssignmentClassId("");
-                        setNewAssignmentRoomId("");
-                        setNewAssignmentSubjectId("");
-                      }}
-                      className="app-btn-secondary text-sm py-2"
-                    >
-                      Annuler
-                    </button>
+                  <form onSubmit={handleAddAssignment} className="mb-3 p-3 bg-slate-50 rounded-lg space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <select
+                        value={newAssignmentClassId}
+                        onChange={(e) => {
+                          setNewAssignmentClassId(e.target.value);
+                          setNewAssignmentRoomId("");
+                          setNewAssignmentSubjectIds([]);
+                        }}
+                        className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
+                        required
+                      >
+                        <option value="">Classe...</option>
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={newAssignmentRoomId}
+                        onChange={(e) => setNewAssignmentRoomId(e.target.value)}
+                        className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
+                        required
+                        disabled={!newAssignmentClassId}
+                      >
+                        <option value="">Salle...</option>
+                        {roomsForAssignment.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {newAssignmentRoomId && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-sm font-medium text-slate-700">
+                            Matières
+                            {assignmentIsHomeroom
+                              ? " — toutes cochées (décocher anglais, espagnol, informatique…)"
+                              : " — cocher les matières enseignées"}
+                          </p>
+                          {availableSubjectsForNewRoom.length > 0 && (
+                            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  availableSubjectsForNewRoom.length > 0 &&
+                                  newAssignmentSubjectIds.length === availableSubjectsForNewRoom.length
+                                }
+                                onChange={toggleAllAssignmentSubjects}
+                              />
+                              Tout cocher
+                            </label>
+                          )}
+                        </div>
+                        {availableSubjectsForNewRoom.length === 0 ? (
+                          <p className="text-xs text-slate-500">Toutes les matières de cette salle sont déjà assignées à ce professeur.</p>
+                        ) : (
+                          <div className="max-h-40 overflow-y-auto rounded-lg border border-[var(--app-border)] bg-white p-3 space-y-2">
+                            {availableSubjectsForNewRoom.map((s) => (
+                              <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={newAssignmentSubjectIds.includes(s.id)}
+                                  onChange={() => toggleAssignmentSubject(s.id)}
+                                />
+                                {s.name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="submit" disabled={saving || !newAssignmentClassId || !newAssignmentRoomId || newAssignmentSubjectIds.length === 0} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                        {saving ? "..." : "Ajouter"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingAssignment(false);
+                          setNewAssignmentClassId("");
+                          setNewAssignmentRoomId("");
+                          setNewAssignmentSubjectIds([]);
+                        }}
+                        className="app-btn-secondary text-sm py-2"
+                      >
+                        Annuler
+                      </button>
+                    </div>
                   </form>
                 )}
                 <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">

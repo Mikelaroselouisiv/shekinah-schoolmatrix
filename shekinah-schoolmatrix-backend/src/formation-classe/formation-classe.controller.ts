@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { FormationClasseService } from './formation-classe.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -141,6 +142,17 @@ export class FormationClasseController {
         body.current_year_id,
         body.next_year_id,
       );
+    return { ok: true, ...result };
+  }
+
+  @Post('launch-next-year')
+  async launchNextYear(@Body() body: { current_year_id: string }) {
+    if (!body?.current_year_id) {
+      throw new BadRequestException('current_year_id requis');
+    }
+    const result = await this.formationClasseService.launchNextYear(
+      body.current_year_id,
+    );
     return { ok: true, ...result };
   }
 

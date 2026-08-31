@@ -5,7 +5,7 @@
 #   npm run dev:backend:cloud
 #   npm run dev:sync-lab
 
-name: schoolmatrix-dev-cloud
+name: shekinah-schoolmatrix-dev-cloud
 
 services:
   postgres:

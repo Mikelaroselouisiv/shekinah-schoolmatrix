@@ -1,10 +1,55 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
+import { ExportPdfButton } from "@/components/ExportPdfButton";
+import { ScheduleGridModal } from "@/components/ScheduleGridModal";
+import type { PdfColumn, PdfSection } from "@/lib/pdfExport";
+import {
+  cellKey,
+  examCellKey,
+  mondayOf,
+  todayIso,
+} from "@/lib/scheduleGrid";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+/** Semaine de classe : lundi d'abord, dimanche en dernier. */
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+const SLOT_COLUMNS: PdfColumn[] = [
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Matière", key: "matiere" },
+  { header: "Professeur", key: "professeur" },
+  { header: "Salle", key: "salle" },
+];
+
+const EXAM_COLUMNS: PdfColumn[] = [
+  { header: "Date", key: "date" },
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Matière", key: "matiere" },
+  { header: "Période", key: "periode" },
+];
+
+const ACTIVITY_COLUMNS: PdfColumn[] = [
+  { header: "Date", key: "date" },
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Occasion", key: "occasion" },
+  { header: "Frais", key: "frais" },
+  { header: "Tenue", key: "tenue" },
+];
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
 type ScheduleSlot = {
   id: string;
@@ -50,10 +95,11 @@ type ExtracurricularActivity = {
 
 type ClassItem = { id: string; name: string };
 type Subject = { id: string; name: string };
-type Teacher = { id: number; first_name: string | null; last_name: string | null; email: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
+type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
+type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 
 export function DashboardSchedulePage() {
   const [tab, setTab] = useState<"cours" | "examens" | "parascolaires">("cours");
@@ -65,12 +111,9 @@ export function DashboardSchedulePage() {
   const [activities, setActivities] = useState<ExtracurricularActivity[]>([]);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [periods, setPeriods] = useState<Period[]>([]);
-  const [slotClassSubjects, setSlotClassSubjects] = useState<Subject[]>([]);
-  const [examClassSubjects, setExamClassSubjects] = useState<Subject[]>([]);
 
   const [academicYearFilter, setAcademicYearFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
@@ -81,28 +124,13 @@ export function DashboardSchedulePage() {
   const [defaultPeriodId, setDefaultPeriodId] = useState("");
   const [defaultPeriodName, setDefaultPeriodName] = useState("");
 
-  const [showSlotForm, setShowSlotForm] = useState(false);
-  const [slotForm, setSlotForm] = useState({
-    academic_year: "",
-    class_id: "",
-    subject_id: "",
-    teacher_id: "",
-    room_id: "",
-    day_of_week: 1,
-    start_time: "08:00",
-    end_time: "09:00",
-  });
-
-  const [showExamForm, setShowExamForm] = useState(false);
-  const [examForm, setExamForm] = useState({
-    academic_year_id: "",
-    class_id: "",
-    subject_id: "",
-    period: "",
-    exam_date: "",
-    start_time: "08:00",
-    end_time: "09:00",
-  });
+  const [gridRoom, setGridRoom] = useState<Room | null>(null);
+  const [gridSubjects, setGridSubjects] = useState<Subject[]>([]);
+  const [gridAssignments, setGridAssignments] = useState<RoomAssignment[]>([]);
+  const [gridError, setGridError] = useState("");
+  const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [examWeekStart, setExamWeekStart] = useState(mondayOf(todayIso()));
+  const [examGridPeriod, setExamGridPeriod] = useState("");
 
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [activityForm, setActivityForm] = useState({
@@ -120,22 +148,18 @@ export function DashboardSchedulePage() {
 
   async function loadRefs() {
     try {
-      const [cRes, tRes, rRes, ayRes] = await Promise.all([
+      const [cRes, rRes, ayRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
-        fetchWithAuth(`${API_BASE}/teachers`),
         fetchWithAuth(`${API_BASE}/rooms`),
         fetchWithAuth(`${API_BASE}/academic-years`),
       ]);
       const cData = await cRes.json();
-      const tData = await tRes.json();
       const rData = await rRes.json();
       const ayData = await ayRes.json();
       if (!cRes.ok) throw new Error(cData.message || "Erreur classes");
-      if (!tRes.ok) throw new Error(tData.message || "Erreur professeurs");
       if (!rRes.ok) throw new Error(rData.message || "Erreur salles");
       if (!ayRes.ok) throw new Error(ayData.message || "Erreur années scolaires");
       setClasses(cData.classes ?? []);
-      setTeachers(tData.teachers ?? []);
       setRooms(rData.rooms ?? []);
       setAcademicYears(ayData.academic_years ?? []);
     } catch (e) {
@@ -154,23 +178,6 @@ export function DashboardSchedulePage() {
       setPeriods(data.periods ?? []);
     } catch {
       setPeriods([]);
-    }
-  }
-
-  async function loadClassSubjects(
-    classId: string,
-    setter: (subjects: Subject[]) => void,
-  ) {
-    if (!classId) {
-      setter([]);
-      return;
-    }
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/classes/${classId}/subjects`);
-      const data = await res.json();
-      setter(data.subjects ?? []);
-    } catch {
-      setter([]);
     }
   }
 
@@ -257,91 +264,132 @@ export function DashboardSchedulePage() {
   }, [academicYearFilter, classFilter, roomFilter]);
 
   useEffect(() => {
-    loadPeriods(examForm.academic_year_id);
-  }, [examForm.academic_year_id]);
+    loadPeriods(academicYearFilter || defaultYearId);
+  }, [academicYearFilter, defaultYearId]);
 
-  useEffect(() => {
-    loadClassSubjects(slotForm.class_id, setSlotClassSubjects);
-  }, [slotForm.class_id]);
-
-  useEffect(() => {
-    loadClassSubjects(examForm.class_id, setExamClassSubjects);
-  }, [examForm.class_id]);
-
-  async function handleAddSlot(e: React.FormEvent) {
-    e.preventDefault();
-    if (!slotForm.class_id || !slotForm.subject_id || !slotForm.teacher_id || !slotForm.room_id) return;
-    setSaving(true);
-    setError("");
+  async function openRoomGrid(room: Room) {
+    setGridRoom(room);
+    setGridError("");
+    setGridSubjects([]);
+    setGridAssignments([]);
+    if (tab === "examens") {
+      setExamGridPeriod((prev) => prev || defaultPeriodName);
+    }
+    if (!room.class_id) return;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/schedule-slots`, {
-        method: "POST",
-        body: JSON.stringify({
-          academic_year: slotForm.academic_year || undefined,
-          class_id: slotForm.class_id,
-          subject_id: slotForm.subject_id,
-          teacher_id: parseInt(slotForm.teacher_id, 10),
-          room_id: slotForm.room_id,
-          day_of_week: slotForm.day_of_week,
-          start_time: slotForm.start_time,
-          end_time: slotForm.end_time,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
-      setShowSlotForm(false);
-      setSlotForm({ academic_year: "", class_id: "", subject_id: "", teacher_id: "", room_id: "", day_of_week: 1, start_time: "08:00", end_time: "09:00" });
-      loadSlots();
+      const [subjRes, assignRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/classes/${room.class_id}/subjects`),
+        fetchWithAuth(`${API_BASE}/teachers/assignments?class_id=${room.class_id}&room_id=${room.id}`),
+      ]);
+      const subjData = await subjRes.json();
+      const assignData = await assignRes.json();
+      setGridSubjects(subjData.subjects ?? []);
+      setGridAssignments(assignData.assignments ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setGridError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function handleCourseCell(dayIndex: number, start: string, end: string, subjectId: string) {
+    if (!gridRoom?.class_id) return;
+    const key = cellKey(dayIndex, start);
+    const existing = slots.find(
+      (s) =>
+        s.room_id === gridRoom.id &&
+        s.day_of_week === dayIndex &&
+        cellKey(s.day_of_week, s.start_time) === key,
+    );
+    setSavingCell(key);
+    setGridError("");
+    try {
+      const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+      if (!subjectId) {
+        if (existing) {
+          const res = await fetchWithAuth(`${API_BASE}/schedule-slots/${existing.id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+        }
+      } else if (existing) {
+        const teacherId = gridAssignments.find((a) => a.subject_id === subjectId)?.teacher_id;
+        const res = await fetchWithAuth(`${API_BASE}/schedule-slots/${existing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ subject_id: subjectId, teacher_id: teacherId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      } else {
+        const teacherId = gridAssignments.find((a) => a.subject_id === subjectId)?.teacher_id;
+        const res = await fetchWithAuth(`${API_BASE}/schedule-slots`, {
+          method: "POST",
+          body: JSON.stringify({
+            academic_year: yearName || undefined,
+            class_id: gridRoom.class_id,
+            subject_id: subjectId,
+            teacher_id: teacherId,
+            room_id: gridRoom.id,
+            day_of_week: dayIndex,
+            start_time: start,
+            end_time: end,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      await loadSlots();
+    } catch (e) {
+      setGridError(e instanceof Error ? e.message : "Erreur");
     } finally {
-      setSaving(false);
+      setSavingCell(null);
     }
   }
 
-  async function handleDeleteSlot(id: string) {
-    if (!confirm("Supprimer ce créneau ?")) return;
-    setError("");
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/schedule-slots/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
-      loadSlots();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+  async function handleExamCell(date: string, start: string, end: string, subjectId: string) {
+    if (!gridRoom?.class_id) return;
+    if (!examGridPeriod) {
+      setGridError("Choisissez d’abord une période.");
+      return;
     }
-  }
-
-  async function handleAddExam(e: React.FormEvent) {
-    e.preventDefault();
-    if (!examForm.class_id || !examForm.subject_id || !examForm.period || !examForm.exam_date) return;
-    setSaving(true);
-    setError("");
+    const key = examCellKey(date, start);
+    const existing = exams.find(
+      (ex) =>
+        ex.class_id === gridRoom.class_id &&
+        (ex.exam_date || "").slice(0, 10) === date &&
+        examCellKey(ex.exam_date, ex.start_time) === key,
+    );
+    setSavingCell(key);
+    setGridError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/exam-schedules`, {
-        method: "POST",
-        body: JSON.stringify(examForm),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
-      setShowExamForm(false);
-      setExamForm({ academic_year_id: "", class_id: "", subject_id: "", period: "", exam_date: "", start_time: "08:00", end_time: "09:00" });
-      loadExams();
+      if (!subjectId) {
+        if (existing) {
+          const res = await fetchWithAuth(`${API_BASE}/exam-schedules/${existing.id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+        }
+      } else if (existing) {
+        const res = await fetchWithAuth(`${API_BASE}/exam-schedules/${existing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ subject_id: subjectId, period: examGridPeriod }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/exam-schedules`, {
+          method: "POST",
+          body: JSON.stringify({
+            class_id: gridRoom.class_id,
+            subject_id: subjectId,
+            period: examGridPeriod,
+            exam_date: date,
+            start_time: start,
+            end_time: end,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      await loadExams();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setGridError(e instanceof Error ? e.message : "Erreur");
     } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDeleteExam(id: string) {
-    if (!confirm("Supprimer cet examen ?")) return;
-    setError("");
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/exam-schedules/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
-      loadExams();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
+      setSavingCell(null);
     }
   }
 
@@ -421,15 +469,169 @@ export function DashboardSchedulePage() {
     }
   }
 
-  function teacherName(t: Teacher) {
-    return [t.first_name, t.last_name].filter(Boolean).join(" ") || t.email;
+  const filterLabels = useMemo(() => {
+    const year = academicYears.find((ay) => ay.id === academicYearFilter)?.name;
+    const klass = classes.find((c) => c.id === classFilter)?.name;
+    const room = rooms.find((r) => r.id === roomFilter)?.name;
+    return { year, klass, room };
+  }, [academicYearFilter, classFilter, roomFilter, academicYears, classes, rooms]);
+
+  const pdfSubtitle = useMemo(() => {
+    const parts = [`Année : ${filterLabels.year ?? "toutes"}`];
+    if (filterLabels.klass) parts.push(`Classe : ${filterLabels.klass}`);
+    if (filterLabels.room) parts.push(`Salle : ${filterLabels.room}`);
+    return parts.join("  ·  ");
+  }, [filterLabels]);
+
+  const pdfFileSuffix = useMemo(() => {
+    const slug = [filterLabels.year, filterLabels.klass, filterLabels.room]
+      .filter((v): v is string => !!v)
+      .map(slugify)
+      .join("-");
+    return slug ? `-${slug}` : "";
+  }, [filterLabels]);
+
+  const slotSectionsByDay = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    for (const day of DAY_ORDER) {
+      const rows = slots
+        .filter((s) => s.day_of_week === day)
+        .sort(
+          (a, b) =>
+            a.start_time.localeCompare(b.start_time) ||
+            a.class_name.localeCompare(b.class_name),
+        )
+        .map((s) => ({
+          horaire: `${s.start_time} - ${s.end_time}`,
+          classe: s.class_name,
+          matiere: s.subject_name,
+          professeur: s.teacher_name ?? "—",
+          salle: s.room_name ?? "—",
+        }));
+      if (rows.length === 0) continue;
+      sections.push({ title: DAYS[day], table: { columns: SLOT_COLUMNS, rows } });
+    }
+    return sections;
+  }, [slots]);
+
+  const examRows = useMemo(
+    () =>
+      [...exams]
+        .sort(
+          (a, b) =>
+            a.exam_date.localeCompare(b.exam_date) ||
+            a.start_time.localeCompare(b.start_time),
+        )
+        .map((e) => ({
+          date: formatDateJJMMAAAA(e.exam_date),
+          horaire: `${e.start_time} - ${e.end_time}`,
+          classe: e.class_name,
+          matiere: e.subject_name,
+          periode: e.period,
+        })),
+    [exams],
+  );
+
+  const activityRows = useMemo(
+    () =>
+      [...activities]
+        .sort(
+          (a, b) =>
+            a.activity_date.localeCompare(b.activity_date) ||
+            a.start_time.localeCompare(b.start_time),
+        )
+        .map((a) => ({
+          date: formatDateJJMMAAAA(a.activity_date),
+          horaire: `${a.start_time} - ${a.end_time}`,
+          classe: a.class_name,
+          occasion: a.occasion,
+          frais: a.participation_fee ?? "—",
+          tenue: a.dress_code ?? "—",
+        })),
+    [activities],
+  );
+
+  const allSchedulesSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [{ lines: [pdfSubtitle] }];
+    if (slotSectionsByDay.length > 0) {
+      sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
+    }
+    if (examRows.length > 0) {
+      sections.push({
+        title: "Horaire des examens",
+        table: { columns: EXAM_COLUMNS, rows: examRows },
+      });
+    }
+    if (activityRows.length > 0) {
+      sections.push({
+        title: "Activités parascolaires",
+        table: { columns: ACTIVITY_COLUMNS, rows: activityRows },
+      });
+    }
+    return sections;
+  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows]);
+
+  const hasAnySchedule =
+    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
+
+  const roomsToShow = rooms.filter(
+    (r) =>
+      r.active !== false &&
+      (!classFilter || r.class_id === classFilter) &&
+      (!roomFilter || r.id === roomFilter),
+  );
+
+  const courseCells = useMemo(() => {
+    const map: Record<string, { id: string; subject_id: string; teacher_name?: string | null }> = {};
+    if (!gridRoom) return map;
+    for (const s of slots) {
+      if (s.room_id !== gridRoom.id) continue;
+      map[cellKey(s.day_of_week, s.start_time)] = {
+        id: s.id,
+        subject_id: s.subject_id,
+        teacher_name: s.teacher_name,
+      };
+    }
+    return map;
+  }, [slots, gridRoom]);
+
+  const examCells = useMemo(() => {
+    const map: Record<string, { id: string; subject_id: string }> = {};
+    if (!gridRoom?.class_id) return map;
+    for (const ex of exams) {
+      if (ex.class_id !== gridRoom.class_id) continue;
+      const date = (ex.exam_date || "").slice(0, 10);
+      map[examCellKey(date, ex.start_time)] = { id: ex.id, subject_id: ex.subject_id };
+    }
+    return map;
+  }, [exams, gridRoom]);
+
+  function roomClassName(room: Room) {
+    return classes.find((c) => c.id === room.class_id)?.name ?? "";
+  }
+
+  function roomSlotCount(room: Room) {
+    return slots.filter((s) => s.room_id === room.id).length;
+  }
+
+  function roomExamCount(room: Room) {
+    return exams.filter((e) => e.class_id === room.class_id).length;
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Horaires</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-2xl font-bold text-slate-900">Horaires</h2>
+        <ExportPdfButton
+          sections={allSchedulesSections}
+          mainTitle="Horaires de l'école"
+          filename={`horaires${pdfFileSuffix}`}
+          label="Tout exporter en PDF"
+          disabled={!hasAnySchedule}
+        />
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-[var(--app-border)]">
@@ -506,144 +708,40 @@ export function DashboardSchedulePage() {
       {tab === "cours" && (
         <section className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold text-slate-900">Créneaux de cours</h3>
-            <button onClick={() => { setSlotForm((f) => ({ ...f, academic_year: defaultYearName })); setShowSlotForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un créneau</button>
+            <h3 className="text-lg font-semibold text-slate-900">Salles</h3>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                sections={[{ lines: [pdfSubtitle] }, ...slotSectionsByDay]}
+                mainTitle="Horaire des cours"
+                filename={`horaire-cours${pdfFileSuffix}`}
+                disabled={slotSectionsByDay.length === 0}
+              />
+              <Link to="/dashboard/rooms" className="text-sm text-[var(--school-accent-1)] hover:underline">
+                Gérer les salles
+              </Link>
+            </div>
           </div>
-          {showSlotForm && (
-            <form onSubmit={handleAddSlot} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-2xl">
-              <h4 className="font-semibold text-slate-900">Nouveau créneau</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Année</label>
-                  <select value={slotForm.academic_year} onChange={(e) => setSlotForm((f) => ({ ...f, academic_year: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm">
-                    <option value="">—</option>
-                    {academicYears.map((ay) => <option key={ay.id} value={ay.name}>{ay.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-                  <select
-                    value={slotForm.class_id}
-                    onChange={(e) =>
-                      setSlotForm((f) => ({
-                        ...f,
-                        class_id: e.target.value,
-                        room_id: "",
-                        subject_id: "",
-                      }))
-                    }
-                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-                    required
-                  >
-                    <option value="">Sélectionner</option>
-                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Salle *</label>
-                  <select
-                    value={slotForm.room_id}
-                    onChange={(e) => setSlotForm((f) => ({ ...f, room_id: e.target.value }))}
-                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-                    required
-                    disabled={!slotForm.class_id}
-                  >
-                    <option value="">Sélectionner</option>
-                    {rooms
-                      .filter(
-                        (r) =>
-                          r.class_id === slotForm.class_id &&
-                          (r.active !== false || r.id === slotForm.room_id),
-                      )
-                      .map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                  {slotForm.class_id &&
-                    rooms.filter((r) => r.class_id === slotForm.class_id).length === 0 && (
-                    <p className="mt-1 text-xs text-amber-700">
-                      Aucune salle pour cette classe.{" "}
-                      <Link to="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer une salle</Link>
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
-                  <select
-                    value={slotForm.subject_id}
-                    onChange={(e) => setSlotForm((f) => ({ ...f, subject_id: e.target.value }))}
-                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-                    required
-                    disabled={!slotForm.class_id}
-                  >
-                    <option value="">
-                      {slotForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}
-                    </option>
-                    {slotClassSubjects.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Professeur *</label>
-                  <select value={slotForm.teacher_id} onChange={(e) => setSlotForm((f) => ({ ...f, teacher_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {teachers.map((t) => <option key={t.id} value={t.id}>{teacherName(t)}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Jour *</label>
-                  <select value={slotForm.day_of_week} onChange={(e) => setSlotForm((f) => ({ ...f, day_of_week: parseInt(e.target.value, 10) }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm">
-                    {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Début *</label>
-                  <input type="time" value={slotForm.start_time} onChange={(e) => setSlotForm((f) => ({ ...f, start_time: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Fin *</label>
-                  <input type="time" value={slotForm.end_time} onChange={(e) => setSlotForm((f) => ({ ...f, end_time: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">{saving ? "Enregistrement..." : "Enregistrer"}</button>
-                <button type="button" onClick={() => setShowSlotForm(false)} className="app-btn-secondary text-sm py-2">Annuler</button>
-              </div>
-            </form>
+          {roomsToShow.length === 0 ? (
+            <div className="rounded-xl border border-[var(--app-border)] px-4 py-8 text-center text-slate-500">
+              Aucune salle.{" "}
+              <Link to="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer une salle</Link>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {roomsToShow.map((room) => (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => openRoomGrid(room)}
+                  className="rounded-xl border border-[var(--app-border)] bg-white p-4 text-left transition-colors hover:border-[var(--school-accent-1)] hover:bg-slate-50"
+                >
+                  <div className="font-semibold text-slate-900">{room.name}</div>
+                  <div className="mt-0.5 text-sm text-slate-500">{roomClassName(room) || "Classe non liée"}</div>
+                  <div className="mt-2 text-xs text-slate-400">{roomSlotCount(room)} créneau{roomSlotCount(room) === 1 ? "" : "x"}</div>
+                </button>
+              ))}
+            </div>
           )}
-          <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                <tr>
-                  <th className="px-4 py-2 font-medium text-slate-900">Année</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Professeur</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Salle</th>
-                  <th className="px-4 py-2 font-medium text-slate-900 w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {slots.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Aucun créneau</td></tr>
-                ) : (
-                  slots.map((s) => (
-                    <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                      <td className="px-4 py-2 text-slate-600">{s.academic_year ?? "—"}</td>
-                      <td className="px-4 py-2 text-slate-600">{DAYS[s.day_of_week] ?? s.day_of_week}</td>
-                      <td className="px-4 py-2 text-slate-600">{s.start_time} - {s.end_time}</td>
-                      <td className="px-4 py-2 font-medium text-slate-900">{s.class_name}</td>
-                      <td className="px-4 py-2 text-slate-700">{s.subject_name}</td>
-                      <td className="px-4 py-2 text-slate-700">{s.teacher_name ?? "—"}</td>
-                      <td className="px-4 py-2 text-slate-600">{s.room_name ?? "—"}</td>
-                      <td className="px-4 py-2"><button onClick={() => handleDeleteSlot(s.id)} className="text-red-600 hover:underline text-xs">Supprimer</button></td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
         </section>
       )}
 
@@ -651,90 +749,44 @@ export function DashboardSchedulePage() {
       {tab === "examens" && (
         <section className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold text-slate-900">Examens</h3>
-            <button onClick={() => { setExamForm((f) => ({ ...f, academic_year_id: defaultYearId, period: defaultPeriodName })); setShowExamForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un examen</button>
+            <h3 className="text-lg font-semibold text-slate-900">Salles</h3>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Horaire des examens",
+                  subtitle: pdfSubtitle,
+                  columns: EXAM_COLUMNS,
+                  rows: examRows,
+                }}
+                filename={`horaire-examens${pdfFileSuffix}`}
+                disabled={examRows.length === 0}
+              />
+              <Link to="/dashboard/rooms" className="text-sm text-[var(--school-accent-1)] hover:underline">
+                Gérer les salles
+              </Link>
+            </div>
           </div>
-          {showExamForm && (
-            <form onSubmit={handleAddExam} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
-              <h4 className="font-semibold text-slate-900">Nouvel examen</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Année scolaire *</label>
-                  <select value={examForm.academic_year_id} onChange={(e) => setExamForm((f) => ({ ...f, academic_year_id: e.target.value, period: "" }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {academicYears.map((ay) => <option key={ay.id} value={ay.id}>{ay.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Période *</label>
-                  <select value={examForm.period} onChange={(e) => setExamForm((f) => ({ ...f, period: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-                  <select value={examForm.class_id} onChange={(e) => setExamForm((f) => ({ ...f, class_id: e.target.value, subject_id: "" }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
-                  <select value={examForm.subject_id} onChange={(e) => setExamForm((f) => ({ ...f, subject_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required disabled={!examForm.class_id}>
-                    <option value="">{examForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}</option>
-                    {examClassSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-                  <DateInputJJMMAAAA value={examForm.exam_date} onChange={(exam_date) => setExamForm((f) => ({ ...f, exam_date }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Début *</label>
-                  <input type="time" value={examForm.start_time} onChange={(e) => setExamForm((f) => ({ ...f, start_time: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Fin *</label>
-                  <input type="time" value={examForm.end_time} onChange={(e) => setExamForm((f) => ({ ...f, end_time: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">{saving ? "Enregistrement..." : "Enregistrer"}</button>
-                <button type="button" onClick={() => setShowExamForm(false)} className="app-btn-secondary text-sm py-2">Annuler</button>
-              </div>
-            </form>
+          {roomsToShow.length === 0 ? (
+            <div className="rounded-xl border border-[var(--app-border)] px-4 py-8 text-center text-slate-500">
+              Aucune salle.{" "}
+              <Link to="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer une salle</Link>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {roomsToShow.map((room) => (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => openRoomGrid(room)}
+                  className="rounded-xl border border-[var(--app-border)] bg-white p-4 text-left transition-colors hover:border-[var(--school-accent-1)] hover:bg-slate-50"
+                >
+                  <div className="font-semibold text-slate-900">{room.name}</div>
+                  <div className="mt-0.5 text-sm text-slate-500">{roomClassName(room) || "Classe non liée"}</div>
+                  <div className="mt-2 text-xs text-slate-400">{roomExamCount(room)} examen{roomExamCount(room) === 1 ? "" : "s"}</div>
+                </button>
+              ))}
+            </div>
           )}
-          <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                <tr>
-                  <th className="px-4 py-2 font-medium text-slate-900">Date</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                  <th className="px-4 py-2 font-medium text-slate-900">Période</th>
-                  <th className="px-4 py-2 font-medium text-slate-900 w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exams.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucun examen</td></tr>
-                ) : (
-                  exams.map((e) => (
-                    <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                      <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
-                      <td className="px-4 py-2 text-slate-600">{e.start_time} - {e.end_time}</td>
-                      <td className="px-4 py-2 font-medium text-slate-900">{e.class_name}</td>
-                      <td className="px-4 py-2 text-slate-700">{e.subject_name}</td>
-                      <td className="px-4 py-2 text-slate-600">{e.period}</td>
-                      <td className="px-4 py-2"><button onClick={() => handleDeleteExam(e.id)} className="text-red-600 hover:underline text-xs">Supprimer</button></td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
         </section>
       )}
 
@@ -743,7 +795,19 @@ export function DashboardSchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Activités parascolaires</h3>
-            <button onClick={() => { setActivityForm((f) => ({ ...f, academic_year_id: defaultYearId })); setShowActivityForm(true); }} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Activités parascolaires",
+                  subtitle: pdfSubtitle,
+                  columns: ACTIVITY_COLUMNS,
+                  rows: activityRows,
+                }}
+                filename={`activites-parascolaires${pdfFileSuffix}`}
+                disabled={activityRows.length === 0}
+              />
+              <button onClick={() => { setActivityForm((f) => ({ ...f, academic_year_id: defaultYearId })); setShowActivityForm(true); }} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
+            </div>
           </div>
           {showActivityForm && (
             <form onSubmit={handleAddActivity} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
@@ -846,6 +910,35 @@ export function DashboardSchedulePage() {
             </table>
           </div>
         </section>
+      )}
+
+      {gridRoom && (
+        <ScheduleGridModal
+          title={`${gridRoom.name}${roomClassName(gridRoom) ? ` — ${roomClassName(gridRoom)}` : ""}`}
+          subtitle={
+            tab === "examens"
+              ? "Cliquez une case pour placer un examen (07:00 – 19:00)."
+              : "Cliquez une case pour placer un cours (07:00 – 19:00)."
+          }
+          mode={tab === "examens" ? "examens" : "cours"}
+          subjects={gridSubjects}
+          courseCells={courseCells}
+          examCells={examCells}
+          examWeekStart={examWeekStart}
+          onExamWeekStart={setExamWeekStart}
+          examPeriod={examGridPeriod}
+          onExamPeriod={setExamGridPeriod}
+          periods={periods}
+          savingKey={savingCell}
+          error={gridError}
+          onClose={() => {
+            setGridRoom(null);
+            setGridError("");
+            setSavingCell(null);
+          }}
+          onSelectCourse={handleCourseCell}
+          onSelectExam={handleExamCell}
+        />
       )}
     </div>
   );

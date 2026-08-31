@@ -14,6 +14,7 @@ import { formatDateJJMMAAAA } from "@/src/lib/format";
 type Student = {
   id: string;
   order_number: string | null;
+  student_code: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;
@@ -472,7 +473,7 @@ export default function FicheElevePage() {
                       {
                         first_name: student.first_name,
                         last_name: student.last_name,
-                        order_number: student.order_number,
+                        student_code: student.student_code,
                         class_name: student.class_name,
                         room_name,
                         photo_url: student.photo_identity_student,
