@@ -1,25 +1,21 @@
 ﻿import { useState } from "react";
-import type { PdfTableConfig, PdfSection } from "@/lib/pdfExport";
+import type { PdfTableConfig, PdfSection, PdfBuildOptions } from "@/lib/pdfExport";
 import { getTablePdfBlob, getSectionsPdfBlob } from "@/lib/pdfExport";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
+import { useSchoolProfileOptional, getImageUrl } from "@/context/SchoolProfileContext";
 
 type ExportPdfButtonProps = {
-  /** Export simple : un seul tableau */
   table?: PdfTableConfig;
-  /** Export multi-sections (fiche, rapport) */
   sections?: PdfSection[];
-  /** Générateur personnalisé (listes imprimables, etc.). */
   getBlob?: () => Promise<Blob>;
   mainTitle?: string;
   filename: string;
   label?: string;
   className?: string;
   disabled?: boolean;
+  orientation?: PdfBuildOptions["orientation"];
 };
 
-/**
- * Bouton "Exporter en PDF" : ouvre un modal avec aperçu du PDF, téléchargement et impression.
- */
 export function ExportPdfButton({
   table,
   sections,
@@ -29,7 +25,10 @@ export function ExportPdfButton({
   label = "Exporter en PDF",
   className = "",
   disabled = false,
+  orientation,
 }: ExportPdfButtonProps) {
+  const ctx = useSchoolProfileOptional();
+  const school = ctx?.school ?? null;
   const [loading, setLoading] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
@@ -40,13 +39,25 @@ export function ExportPdfButton({
     setLoading(true);
     setPdfBlob(null);
     try {
+      const options: PdfBuildOptions = {
+        orientation,
+        school: school
+          ? {
+              name: school.name,
+              email: school.email,
+              phone: school.phone,
+              address: school.address,
+              logo_url: getImageUrl(school.logo_url) ?? school.logo_url,
+            }
+          : undefined,
+      };
       let blob: Blob;
       if (getBlob) {
         blob = await getBlob();
       } else if (table) {
-        blob = await getTablePdfBlob(table);
+        blob = await getTablePdfBlob(table, options);
       } else if (sections?.length) {
-        blob = await getSectionsPdfBlob(sections, mainTitle);
+        blob = await getSectionsPdfBlob(sections, mainTitle, options);
       } else {
         return;
       }

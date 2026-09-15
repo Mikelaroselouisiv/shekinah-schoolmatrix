@@ -1,19 +1,27 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { AppAccordion } from "@/components/AppAccordion";
+import {
+  SUBJECT_AUDIENCES,
+  isSubjectAudience,
+  type SubjectAudience,
+} from "@/lib/educationLevels";
 
 type Subject = {
   id: string;
   name: string;
   code: string | null;
   active: boolean;
+  audience?: string;
+  section?: string | null;
   preschool_eval?: "LEVEL" | "FREQUENCY";
 };
 
 type BringItem = { id: string; label: string };
+type OpenBlock = SubjectAudience | "materials";
 
 export function DashboardSubjectsPage() {
-  const [openBlock, setOpenBlock] = useState<"subjects" | "materials">("subjects");
+  const [openBlock, setOpenBlock] = useState<OpenBlock>("PRESCOLAIRE");
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [materials, setMaterials] = useState<BringItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +30,8 @@ export function DashboardSubjectsPage() {
   const [editing, setEditing] = useState<Subject | null>(null);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [audience, setAudience] = useState<SubjectAudience>("PRIMAIRE");
+  const [section, setSection] = useState("");
   const [preschoolEval, setPreschoolEval] = useState<"LEVEL" | "FREQUENCY">("LEVEL");
   const [saving, setSaving] = useState(false);
 
@@ -59,25 +69,24 @@ export function DashboardSubjectsPage() {
     setSaving(true);
     setError("");
     try {
+      const body = {
+        name: name.trim(),
+        code: code.trim() || undefined,
+        audience,
+        section: audience === "PRESCOLAIRE" ? section.trim() || null : null,
+        preschool_eval: audience === "PRESCOLAIRE" ? preschoolEval : "LEVEL",
+      };
       if (editing) {
         const res = await fetchWithAuth(`${API_BASE}/subjects/${editing.id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            name: name.trim(),
-            code: code.trim() || undefined,
-            preschool_eval: preschoolEval,
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
       } else {
         const res = await fetchWithAuth(`${API_BASE}/subjects`, {
           method: "POST",
-          body: JSON.stringify({
-            name: name.trim(),
-            code: code.trim() || undefined,
-            preschool_eval: preschoolEval,
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
@@ -86,6 +95,7 @@ export function DashboardSubjectsPage() {
       setEditing(null);
       setName("");
       setCode("");
+      setSection("");
       setPreschoolEval("LEVEL");
       load();
     } catch (e) {
@@ -111,19 +121,24 @@ export function DashboardSubjectsPage() {
   }
 
   function openEdit(s: Subject) {
-    setOpenBlock("subjects");
+    const group = isSubjectAudience(s.audience) ? s.audience : "PRIMAIRE";
+    setOpenBlock(group);
     setEditing(s);
     setName(s.name);
     setCode(s.code ?? "");
+    setAudience(group);
+    setSection(s.section ?? "");
     setPreschoolEval(s.preschool_eval === "FREQUENCY" ? "FREQUENCY" : "LEVEL");
     setShowForm(true);
   }
 
-  function openCreate() {
-    setOpenBlock("subjects");
+  function openCreate(group: SubjectAudience) {
+    setOpenBlock(group);
     setEditing(null);
     setName("");
     setCode("");
+    setAudience(group);
+    setSection("");
     setPreschoolEval("LEVEL");
     setShowForm(true);
   }
@@ -197,55 +212,100 @@ export function DashboardSubjectsPage() {
         <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>
       ) : null}
 
-      <AppAccordion
-        title="Catalogue des matières"
-        summary={`${subjects.length}`}
-        open={openBlock === "subjects"}
-        onToggle={() => setOpenBlock("subjects")}
-        headerRight={
-          <button type="button" onClick={openCreate} className="app-btn-primary text-sm py-1.5">
-            Ajouter
-          </button>
-        }
-      >
-        <div className="overflow-x-auto rounded-xl border border-[var(--app-border)] bg-white">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-              <tr>
-                <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
-                <th className="px-4 py-3 font-medium text-slate-900">Code</th>
-                <th className="px-4 py-3 font-medium text-slate-900">Préscolaire</th>
-                <th className="px-4 py-3 font-medium text-slate-900">Statut</th>
-                <th className="px-4 py-3 font-medium text-slate-900 w-48">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {subjects.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucune matière</td></tr>
-              ) : (
-                subjects.map((s) => (
-                  <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.code ?? "-"}</td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.preschool_eval === "FREQUENCY" ? "Fréquence" : "Niveau"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.active ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"}`}>
-                        {s.active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button type="button" onClick={() => openEdit(s)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
-                      <button type="button" onClick={() => handleDelete(s.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
-                    </td>
+      {SUBJECT_AUDIENCES.map((group) => {
+        const rows = subjects.filter(
+          (s) => (isSubjectAudience(s.audience) ? s.audience : "PRIMAIRE") === group.key,
+        );
+        const preschool = group.key === "PRESCOLAIRE";
+        return (
+          <AppAccordion
+            key={group.key}
+            title={group.label}
+            summary={`${rows.length}`}
+            open={openBlock === group.key}
+            onToggle={() => setOpenBlock(group.key)}
+            headerRight={
+              <button
+                type="button"
+                onClick={() => openCreate(group.key)}
+                className="app-btn-primary text-sm py-1.5"
+              >
+                Ajouter
+              </button>
+            }
+          >
+            <div className="overflow-x-auto rounded-xl border border-[var(--app-border)] bg-white">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                  <tr>
+                    <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
+                    {preschool ? (
+                      <>
+                        <th className="px-4 py-3 font-medium text-slate-900">Rubrique</th>
+                        <th className="px-4 py-3 font-medium text-slate-900">Évaluation</th>
+                      </>
+                    ) : (
+                      <th className="px-4 py-3 font-medium text-slate-900">Code</th>
+                    )}
+                    <th className="px-4 py-3 font-medium text-slate-900">Statut</th>
+                    <th className="px-4 py-3 font-medium text-slate-900 w-48">Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </AppAccordion>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={preschool ? 5 : 4} className="px-4 py-8 text-center text-slate-500">
+                        Aucune matière
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((s) => (
+                      <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
+                        {preschool ? (
+                          <>
+                            <td className="px-4 py-3 text-slate-600">{s.section ?? "—"}</td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {s.preschool_eval === "FREQUENCY" ? "Fréquence" : "Niveau"}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-4 py-3 text-slate-600">{s.code ?? "-"}</td>
+                        )}
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              s.active ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {s.active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(s)}
+                            className="text-sm text-[var(--school-accent-1)] hover:underline"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(s.id)}
+                            className="text-sm text-red-600 hover:underline"
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </AppAccordion>
+        );
+      })}
 
       <AppAccordion
         title="Matériel à apporter"
@@ -268,14 +328,30 @@ export function DashboardSubjectsPage() {
             </thead>
             <tbody>
               {materials.length === 0 ? (
-                <tr><td colSpan={2} className="px-4 py-8 text-center text-slate-500">Aucun matériel</td></tr>
+                <tr>
+                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
+                    Aucun matériel
+                  </td>
+                </tr>
               ) : (
                 materials.map((item) => (
                   <tr key={item.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                     <td className="px-4 py-3 font-medium text-slate-900">{item.label}</td>
                     <td className="px-4 py-3 flex gap-2">
-                      <button type="button" onClick={() => openMatEdit(item)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
-                      <button type="button" onClick={() => handleMatDelete(item.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
+                      <button
+                        type="button"
+                        onClick={() => openMatEdit(item)}
+                        className="text-sm text-[var(--school-accent-1)] hover:underline"
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMatDelete(item.id)}
+                        className="text-sm text-red-600 hover:underline"
+                      >
+                        Supprimer
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -302,6 +378,22 @@ export function DashboardSubjectsPage() {
           >
             <h3 className="font-semibold text-slate-900">{editing ? "Modifier" : "Nouvelle matière"}</h3>
             <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Groupe</label>
+              <select
+                value={audience}
+                onChange={(e) =>
+                  setAudience(isSubjectAudience(e.target.value) ? e.target.value : "PRIMAIRE")
+                }
+                className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5"
+              >
+                {SUBJECT_AUDIENCES.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Nom</label>
               <input
                 type="text"
@@ -312,26 +404,42 @@ export function DashboardSubjectsPage() {
                 autoFocus
               />
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Préscolaire</label>
-              <select
-                value={preschoolEval}
-                onChange={(e) => setPreschoolEval(e.target.value === "FREQUENCY" ? "FREQUENCY" : "LEVEL")}
-                className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5"
-              >
-                <option value="LEVEL">Niveau (Moins bien, Bien, Très bien, Excellent)</option>
-                <option value="FREQUENCY">Fréquence (Jamais, Parfois, Toujours)</option>
-              </select>
-            </div>
+            {audience === "PRESCOLAIRE" ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Rubrique</label>
+                  <input
+                    type="text"
+                    value={section}
+                    onChange={(e) => setSection(e.target.value)}
+                    className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Évaluation</label>
+                  <select
+                    value={preschoolEval}
+                    onChange={(e) =>
+                      setPreschoolEval(e.target.value === "FREQUENCY" ? "FREQUENCY" : "LEVEL")
+                    }
+                    className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5"
+                  >
+                    <option value="LEVEL">Niveau</option>
+                    <option value="FREQUENCY">Fréquence</option>
+                  </select>
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--app-border)] px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                />
+              </div>
+            )}
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
             <div className="flex gap-3">
               <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">

@@ -10,7 +10,7 @@ import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
-import { learnerNoun, learnerNounCap, isHigherEducationLevel } from "@/lib/educationLevels";
+import { learnerNoun, learnerNounCap, isHigherEducationLevel, isMaterialsCycle } from "@/lib/educationLevels";
 import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
@@ -687,14 +687,20 @@ export function DashboardFicheElevePage() {
       });
     }
     if (dayLists.some((d) => d.subject_names.length || d.materials.length)) {
+      const withMat = isMaterialsCycle(student?.class_level);
       sections.unshift({
-        title: "Matières et matériel",
+        title: withMat ? "Matières et matériel" : "Emploi du temps",
         table: {
-          columns: [
-            { header: "Jour", key: "jour" },
-            { header: "Matières", key: "matieres" },
-            { header: "Matériel à apporter", key: "materiel" },
-          ],
+          columns: withMat
+            ? [
+                { header: "Jour", key: "jour" },
+                { header: "Matières", key: "matieres" },
+                { header: "Matériel à apporter", key: "materiel" },
+              ]
+            : [
+                { header: "Jour", key: "jour" },
+                { header: "Matières", key: "matieres" },
+              ],
           rows: [1, 2, 3, 4, 5].map((day) => {
             const slot = dayLists.find((d) => d.day_of_week === day);
             return {
@@ -707,7 +713,7 @@ export function DashboardFicheElevePage() {
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, extracurricularActivities, dayLists]);
+  }, [scheduleSlots, examSchedules, extracurricularActivities, dayLists, student?.class_level]);
 
   const ficheLevel =
     student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
@@ -1195,7 +1201,9 @@ export function DashboardFicheElevePage() {
                           <tr>
                             <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
                             <th className="px-4 py-2 font-medium text-slate-900">Matières</th>
-                            <th className="px-4 py-2 font-medium text-slate-900">Matériel à apporter</th>
+                            {isMaterialsCycle(ficheLevel) ? (
+                              <th className="px-4 py-2 font-medium text-slate-900">Matériel à apporter</th>
+                            ) : null}
                           </tr>
                         </thead>
                         <tbody>
@@ -1207,9 +1215,11 @@ export function DashboardFicheElevePage() {
                                 <td className="px-4 py-2 text-slate-800">
                                   {namesJoin(slot?.subject_names ?? [])}
                                 </td>
+                                {isMaterialsCycle(ficheLevel) ? (
                                 <td className="px-4 py-2 text-slate-800">
                                   {namesJoin(slot?.materials ?? [])}
                                 </td>
+                                ) : null}
                               </tr>
                             );
                           })}

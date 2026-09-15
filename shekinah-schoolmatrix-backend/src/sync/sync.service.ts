@@ -34,14 +34,21 @@ import { Account } from '../finance/account.entity';
 import { Exercice } from '../finance/exercice.entity';
 import { User } from '../users/user.entity';
 
-/** Entités dont la FK prof est un id serial User (pas un UUID). */
-const TEACHER_USER_FK_ENTITIES = new Set<SyncEntityName>([
-  'TeacherClassSubject',
-  'ClassTeacher',
-  'TeacherSubject',
-  'ScheduleSlot',
-  'HomeworkAssignment',
-]);
+/** Entités dont la FK personne est un id serial User (pas un UUID). */
+const USER_FK_SPECS: Partial<
+  Record<SyncEntityName, { rel: string; col: string; emailKey: string }>
+> = {
+  TeacherClassSubject: { rel: 'teacher', col: 'teacher_id', emailKey: 'teacher_email' },
+  ClassTeacher: { rel: 'teacher', col: 'user_id', emailKey: 'teacher_email' },
+  TeacherSubject: { rel: 'teacher', col: 'teacher_id', emailKey: 'teacher_email' },
+  ScheduleSlot: { rel: 'teacher', col: 'teacher_id', emailKey: 'teacher_email' },
+  HomeworkAssignment: { rel: 'teacher', col: 'teacher_id', emailKey: 'teacher_email' },
+  SchoolWeekDuty: {
+    rel: 'responsible',
+    col: 'responsible_user_id',
+    emailKey: 'responsible_email',
+  },
+};
 
 export type SyncWireRecord = {
   uuid: string;
@@ -290,8 +297,8 @@ export class SyncService implements OnModuleInit {
     if (entityName === 'User') {
       await this.attachUserRoleNames(records);
     }
-    if (TEACHER_USER_FK_ENTITIES.has(entityName as SyncEntityName)) {
-      await this.attachTeacherEmails(records);
+    if (USER_FK_SPECS[entityName as SyncEntityName]) {
+      await this.attachTeacherEmails(entityName as SyncEntityName, records);
     }
     if (entityName === 'JournalEntry') {
       await this.attachJournalEntryExerciceKeys(records);
@@ -867,7 +874,7 @@ export class SyncService implements OnModuleInit {
         });
       }
     }
-    if (TEACHER_USER_FK_ENTITIES.has(entityName)) {
+    if (USER_FK_SPECS[entityName]) {
       data = await this.mapTeacherUserFkForLocal(entityName, data);
     }
     if (entityName === 'JournalEntry') {
@@ -1357,12 +1364,15 @@ export class SyncService implements OnModuleInit {
     return local.id;
   }
 
-  private async attachTeacherEmails(records: SyncWireRecord[]): Promise<void> {
+  private async attachTeacherEmails(
+    entityName: SyncEntityName,
+    records: SyncWireRecord[],
+  ): Promise<void> {
+    const spec = USER_FK_SPECS[entityName];
+    if (!spec) return;
     const ids = new Set<number>();
     for (const rec of records) {
-      const id = this.coerceRelationId(
-        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
-      );
+      const id = this.coerceRelationId(rec.data[spec.rel] ?? rec.data[spec.col]);
       if (typeof id === 'number') ids.add(id);
     }
     if (ids.size === 0) return;
@@ -1373,12 +1383,10 @@ export class SyncService implements OnModuleInit {
       );
     const byId = new Map(rows.map((r) => [Number(r.id), r.email]));
     for (const rec of records) {
-      const id = this.coerceRelationId(
-        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
-      );
+      const id = this.coerceRelationId(rec.data[spec.rel] ?? rec.data[spec.col]);
       if (typeof id !== 'number') continue;
       const email = byId.get(id);
-      if (email) rec.data.teacher_email = email;
+      if (email) rec.data[spec.emailKey] = email;
     }
   }
 
@@ -1386,15 +1394,16 @@ export class SyncService implements OnModuleInit {
     entityName: SyncEntityName,
     data: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const colKey = entityName === 'ClassTeacher' ? 'user_id' : 'teacher_id';
-    let incoming = this.coerceRelationId(
-      data.teacher ?? data[colKey],
-    );
+    const spec = USER_FK_SPECS[entityName];
+    if (!spec) return data;
+    let incoming = this.coerceRelationId(data[spec.rel] ?? data[spec.col]);
     if (typeof incoming === 'number' && this.userIdAlias.has(incoming)) {
       incoming = this.userIdAlias.get(incoming) ?? incoming;
     }
     const email =
-      typeof data.teacher_email === 'string' ? data.teacher_email.trim() : '';
+      typeof data[spec.emailKey] === 'string'
+        ? String(data[spec.emailKey]).trim()
+        : '';
 
     let localId: number | null = null;
     if (typeof incoming === 'number') {
@@ -1414,7 +1423,7 @@ export class SyncService implements OnModuleInit {
       }
     }
     if (localId == null) return data;
-    return { ...data, teacher: localId, [colKey]: localId };
+    return { ...data, [spec.rel]: localId, [spec.col]: localId };
   }
 
   private async resolveSyncedRoleId(name: string): Promise<number | null> {

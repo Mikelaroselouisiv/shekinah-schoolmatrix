@@ -35,6 +35,12 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import {
+  SUBJECT_AUDIENCES,
+  isSubjectAudience,
+  subjectAudienceLabel,
+  type SubjectAudience,
+} from '../../lib/educationLevels';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'OrgSubjects'>;
 type TabId = 'subjects' | 'materials';
@@ -52,6 +58,9 @@ export function OrgSubjectsScreen({}: Props) {
   const [editingMat, setEditingMat] = useState<BringCatalogItem | null>(null);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [audience, setAudience] = useState<SubjectAudience>('PRIMAIRE');
+  const [section, setSection] = useState('');
+  const [preschoolEval, setPreschoolEval] = useState<'LEVEL' | 'FREQUENCY'>('LEVEL');
   const [matLabel, setMatLabel] = useState('');
 
   const load = useCallback(async () => {
@@ -80,6 +89,10 @@ export function OrgSubjectsScreen({}: Props) {
     setEditing(s || null);
     setName(s?.name || '');
     setCode(s?.code || '');
+    const nextAudience = s?.audience;
+    setAudience(isSubjectAudience(nextAudience) ? nextAudience : 'PRIMAIRE');
+    setSection(s?.section || '');
+    setPreschoolEval(s?.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL');
     setFormOpen(true);
   }
 
@@ -101,9 +114,18 @@ export function OrgSubjectsScreen({}: Props) {
         await updateSubject(editing.id, {
           name: name.trim(),
           code: code.trim() || undefined,
+          audience,
+          section: audience === 'PRESCOLAIRE' ? section.trim() || null : null,
+          preschool_eval: audience === 'PRESCOLAIRE' ? preschoolEval : 'LEVEL',
         });
       } else {
-        await createSubject({ name: name.trim(), code: code.trim() || undefined });
+        await createSubject({
+          name: name.trim(),
+          code: code.trim() || undefined,
+          audience,
+          section: audience === 'PRESCOLAIRE' ? section.trim() || null : null,
+          preschool_eval: audience === 'PRESCOLAIRE' ? preschoolEval : 'LEVEL',
+        });
       }
       setFormOpen(false);
       await load();
@@ -236,7 +258,16 @@ export function OrgSubjectsScreen({}: Props) {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>{item.name}</Text>
               <Muted>
-                {[item.code, item.active === false ? 'Inactive' : null]
+                {[
+                  subjectAudienceLabel(item.audience),
+                  item.section,
+                  item.audience === 'PRESCOLAIRE'
+                    ? item.preschool_eval === 'FREQUENCY'
+                      ? 'Fréquence'
+                      : 'Niveau'
+                    : item.code,
+                  item.active === false ? 'Inactive' : null,
+                ]
                   .filter(Boolean)
                   .join(' · ') || '—'}
               </Muted>
@@ -272,7 +303,55 @@ export function OrgSubjectsScreen({}: Props) {
               {editing ? 'Modifier' : 'Nouvelle matière'}
             </Text>
             <TextField label="Nom *" value={name} onChangeText={setName} />
-            <TextField label="Code" value={code} onChangeText={setCode} />
+            <View style={{ gap: 6, marginBottom: 8 }}>
+              {SUBJECT_AUDIENCES.map((g) => (
+                <Pressable
+                  key={g.key}
+                  onPress={() => setAudience(g.key)}
+                  style={{ paddingVertical: 6 }}
+                >
+                  <Text
+                    style={{
+                      fontWeight: audience === g.key ? '800' : '500',
+                      color: audience === g.key ? colors.primaryFallback : colors.text,
+                    }}
+                  >
+                    {g.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {audience === 'PRESCOLAIRE' ? (
+              <>
+                <TextField label="Rubrique" value={section} onChangeText={setSection} />
+                <View style={{ flexDirection: 'row', gap: 16, marginBottom: 8 }}>
+                  <Pressable onPress={() => setPreschoolEval('LEVEL')}>
+                    <Text
+                      style={{
+                        fontWeight: preschoolEval === 'LEVEL' ? '800' : '500',
+                        color:
+                          preschoolEval === 'LEVEL' ? colors.primaryFallback : colors.text,
+                      }}
+                    >
+                      Niveau
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={() => setPreschoolEval('FREQUENCY')}>
+                    <Text
+                      style={{
+                        fontWeight: preschoolEval === 'FREQUENCY' ? '800' : '500',
+                        color:
+                          preschoolEval === 'FREQUENCY' ? colors.primaryFallback : colors.text,
+                      }}
+                    >
+                      Fréquence
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <TextField label="Code" value={code} onChangeText={setCode} />
+            )}
             <Button
               title={saving ? '…' : 'Enregistrer'}
               onPress={() => void saveSubject()}

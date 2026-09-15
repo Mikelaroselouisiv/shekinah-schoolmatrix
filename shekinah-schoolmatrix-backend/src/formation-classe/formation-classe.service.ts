@@ -481,6 +481,7 @@ export class FormationClasseService {
             academic_year: { id: nextYear.id },
             name: p.name,
             order_index: p.order_index,
+            scope: p.scope === 'PRESCOLAIRE' ? 'PRESCOLAIRE' : 'ECOLE',
           }),
         );
         periodsCopied++;
@@ -603,7 +604,12 @@ export class FormationClasseService {
     const profile = await this.schoolProfileRepo.find({ take: 1 });
     if (profile[0]) {
       profile[0].current_academic_year_id = nextYear.id;
-      profile[0].current_period_id = nextPeriods[0]?.id ?? profile[0].current_period_id;
+      const schoolPeriod =
+        nextPeriods.find((p) => (p.scope || 'ECOLE') !== 'PRESCOLAIRE') ?? nextPeriods[0];
+      const preschoolPeriod = nextPeriods.find((p) => p.scope === 'PRESCOLAIRE');
+      profile[0].current_period_id = schoolPeriod?.id ?? profile[0].current_period_id;
+      profile[0].current_preschool_period_id =
+        preschoolPeriod?.id ?? profile[0].current_preschool_period_id;
       await this.schoolProfileRepo.save(profile[0]);
     }
 

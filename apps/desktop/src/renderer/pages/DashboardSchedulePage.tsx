@@ -13,7 +13,6 @@ import {
   emptyWeekProgram,
   emptyDayProgram,
   isListScheduleLevel,
-  morningCycleFromLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
   namesJoin,
@@ -33,6 +32,7 @@ import {
   examCellKey,
   defaultExamRange,
 } from "@/lib/scheduleGrid";
+import { isMaterialsCycle, periodScopeFromLevel } from "@/lib/educationLevels";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 /** Semaine de classe : lundi → vendredi. */
@@ -75,6 +75,11 @@ const LIST_DAY_COLUMNS: PdfColumn[] = [
   { header: "Jour", key: "jour" },
   { header: "Matières", key: "matieres" },
   { header: "Matériel à apporter", key: "materiel" },
+];
+
+const LIST_DAY_COLUMNS_NO_MAT: PdfColumn[] = [
+  { header: "Jour", key: "jour" },
+  { header: "Matières", key: "matieres" },
 ];
 
 const ACTIVITY_COLUMNS: PdfColumn[] = [
@@ -141,7 +146,7 @@ type ClassItem = { id: string; name: string; level?: string | null };
 type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
-type Period = { id: string; name: string };
+type Period = { id: string; name: string; scope?: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {
@@ -397,8 +402,8 @@ export function DashboardSchedulePage() {
 
   const [defaultYearId, setDefaultYearId] = useState("");
   const [defaultYearName, setDefaultYearName] = useState("");
-  const [defaultPeriodId, setDefaultPeriodId] = useState("");
   const [defaultPeriodName, setDefaultPeriodName] = useState("");
+  const [defaultPreschoolPeriodName, setDefaultPreschoolPeriodName] = useState("");
 
   const [gridRoom, setGridRoom] = useState<Room | null>(null);
   const [gridSubjects, setGridSubjects] = useState<Subject[]>([]);
@@ -580,8 +585,8 @@ export function DashboardSchedulePage() {
         defaultYearId = ctxData.current_academic_year_id;
         setDefaultYearId(ctxData.current_academic_year_id);
         setDefaultYearName(ctxData.current_academic_year_name ?? "");
-        setDefaultPeriodId(ctxData.current_period_id ?? "");
         setDefaultPeriodName(ctxData.current_period_name ?? "");
+        setDefaultPreschoolPeriodName(ctxData.current_preschool_period_name ?? "");
         setAcademicYearFilter((prev) => (prev === "" ? defaultYearId! : prev));
       }
     } catch {
@@ -657,7 +662,15 @@ export function DashboardSchedulePage() {
     setGridSubjects([]);
     setGridAssignments([]);
     if (tab === "examens") {
-      setExamGridPeriod((prev) => prev || defaultPeriodName);
+      const scope = periodScopeFromLevel(level);
+      const scoped = periods.filter((p) => (p.scope || "ECOLE") === scope);
+      const preferred =
+        scope === "PRESCOLAIRE" ? defaultPreschoolPeriodName : defaultPeriodName;
+      setExamGridPeriod((prev) => {
+        if (prev && scoped.some((p) => p.name === prev)) return prev;
+        if (preferred && scoped.some((p) => p.name === preferred)) return preferred;
+        return scoped[0]?.name ?? "";
+      });
     }
     if (!room.class_id) return;
     try {
@@ -1187,27 +1200,44 @@ export function DashboardSchedulePage() {
     [duties],
   );
 
-  const preschoolPdfSection = useMemo<PdfSection>(
-    () => ({
-      title: "Rentrée préscolaire",
-      lines: preschoolInstructions.length ? preschoolInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+  const preschoolPdfSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    if (filterLabels.year) {
+      sections.push({ lines: [`Année scolaire : ${filterLabels.year}`] });
+    }
+    if (preschoolInstructions.length) {
+      sections.push({
+        title: "Consignes",
+        lines: preschoolInstructions.map((l, i) => `${i + 1}. ${l}`),
+      });
+    }
+    sections.push({
+      title: "Organisation de la semaine",
       table: { columns: PRESCHOOL_MORNING_COLUMNS, rows: preschoolPdfRows },
-    }),
-    [preschoolPdfRows, preschoolInstructions],
-  );
-  const primaryPdfSection = useMemo<PdfSection>(
-    () => ({
-      title: "Rentrée primaire",
-      lines: primaryInstructions.length ? primaryInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+    });
+    return sections;
+  }, [filterLabels.year, preschoolPdfRows, preschoolInstructions]);
+  const primaryPdfSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    if (filterLabels.year) {
+      sections.push({ lines: [`Année scolaire : ${filterLabels.year}`] });
+    }
+    if (primaryInstructions.length) {
+      sections.push({
+        title: "Consignes",
+        lines: primaryInstructions.map((l, i) => `${i + 1}. ${l}`),
+      });
+    }
+    sections.push({
+      title: "Organisation de la semaine",
       table: { columns: PRIMARY_MORNING_COLUMNS, rows: primaryPdfRows },
-    }),
-    [primaryPdfRows, primaryInstructions],
-  );
+    });
+    return sections;
+  }, [filterLabels.year, primaryPdfRows, primaryInstructions]);
 
   const allSchedulesSections = useMemo<PdfSection[]>(() => {
-    const sections: PdfSection[] = [{ lines: [pdfSubtitle] }];
-    if (duties.length > 0 || preschoolInstructions.length) sections.push(preschoolPdfSection);
-    if (duties.length > 0 || primaryInstructions.length) sections.push(primaryPdfSection);
+    const sections: PdfSection[] = [];
+    if (pdfSubtitle) sections.push({ lines: [pdfSubtitle] });
     if (slotSectionsByDay.length > 0) {
       sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
     }
@@ -1224,21 +1254,10 @@ export function DashboardSchedulePage() {
       });
     }
     return sections;
-  }, [
-    pdfSubtitle,
-    slotSectionsByDay,
-    examRows,
-    activityRows,
-    duties.length,
-    preschoolPdfSection,
-    primaryPdfSection,
-    preschoolInstructions.length,
-    primaryInstructions.length,
-  ]);
+  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows]);
 
   const hasAnySchedule =
-    duties.length > 0 || slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0
-    || preschoolInstructions.length > 0 || primaryInstructions.length > 0;
+    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
 
   const roomsToShow = rooms.filter(
     (r) =>
@@ -1311,28 +1330,47 @@ export function DashboardSchedulePage() {
   }
 
   function listClassPdfSections(classId: string): PdfSection[] {
-    const cls = classes.find((c) => c.id === classId);
-    const cycle = morningCycleFromLevel(cls?.level);
     const lists = dayListsByClass[classId] ?? emptyClassDayLists();
     const options = classSubjectOptions(classId);
     const nameOf = (id: string) => options.find((s) => s.id === id)?.name ?? id;
-    const sections: PdfSection[] = [];
-    if (cycle === "PRESCOLAIRE") sections.push(preschoolPdfSection);
-    if (cycle === "PRIMAIRE") sections.push(primaryPdfSection);
-    sections.push({
-      title: "Matières et matériel",
-      table: {
-        columns: LIST_DAY_COLUMNS,
-        rows: WEEKDAYS.map((d) => {
-          const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
-          return {
-            jour: d.label,
-            matieres: namesJoin(slot.subjectIds.map(nameOf).filter(Boolean)),
-            materiel: namesJoin(slot.materials),
-          };
-        }),
+    const level = classes.find((c) => c.id === classId)?.level;
+    const withMaterials = isMaterialsCycle(level);
+    const sections: PdfSection[] = [
+      {
+        title: "Emploi du temps",
+        table: {
+          columns: withMaterials ? LIST_DAY_COLUMNS : LIST_DAY_COLUMNS_NO_MAT,
+          rows: WEEKDAYS.map((d) => {
+            const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
+            return {
+              jour: d.label,
+              matieres: namesJoin(slot.subjectIds.map(nameOf).filter(Boolean)),
+              materiel: namesJoin(slot.materials),
+            };
+          }),
+        },
       },
-    });
+    ];
+    const recess = moments
+      .filter((m) => m.class_id === classId && m.kind === "RECESS")
+      .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time));
+    if (recess.length) {
+      sections.push({
+        title: "Récréations",
+        table: {
+          columns: [
+            { header: "Jour", key: "jour" },
+            { header: "Horaire", key: "horaire" },
+            { header: "Libellé", key: "label" },
+          ],
+          rows: recess.map((m) => ({
+            jour: DAYS[m.day_of_week] ?? String(m.day_of_week),
+            horaire: `${m.start_time} - ${m.end_time}`,
+            label: m.label || m.title || "Récréation",
+          })),
+        },
+      });
+    }
     return sections;
   }
 
@@ -1590,10 +1628,11 @@ export function DashboardSchedulePage() {
             onToggle={() => setOpenCours("preschool")}
             headerRight={
               <ExportPdfButton
-                sections={[{ lines: [pdfSubtitle] }, preschoolPdfSection]}
-                mainTitle="Rentrée préscolaire"
+                sections={preschoolPdfSections}
+                mainTitle="Programme de rentrée — Préscolaire"
                 filename={`rentree-prescolaire${pdfFileSuffix}`}
                 disabled={preschoolDaysCount === 0 && preschoolInstructions.length === 0}
+                orientation="landscape"
               />
             }
           >
@@ -1687,10 +1726,11 @@ export function DashboardSchedulePage() {
             onToggle={() => setOpenCours("primary")}
             headerRight={
               <ExportPdfButton
-                sections={[{ lines: [pdfSubtitle] }, primaryPdfSection]}
-                mainTitle="Rentrée primaire"
+                sections={primaryPdfSections}
+                mainTitle="Programme de rentrée — Primaire"
                 filename={`rentree-primaire${pdfFileSuffix}`}
                 disabled={primaryDaysCount === 0 && primaryInstructions.length === 0}
+                orientation="landscape"
               />
             }
           >
@@ -2277,6 +2317,7 @@ export function DashboardSchedulePage() {
                         </div>
                       )}
                     </div>
+                    {isMaterialsCycle(listClass.level) ? (
                     <div>
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                         Matériel à apporter
@@ -2302,6 +2343,7 @@ export function DashboardSchedulePage() {
                         }}
                       />
                     </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -2331,7 +2373,11 @@ export function DashboardSchedulePage() {
           onExamRangeEnd={setExamRangeEnd}
           examPeriod={examGridPeriod}
           onExamPeriod={setExamGridPeriod}
-          periods={periods}
+          periods={periods.filter(
+            (p) =>
+              (p.scope || "ECOLE") ===
+              periodScopeFromLevel(classes.find((c) => c.id === gridRoom?.class_id)?.level),
+          )}
           savingKey={savingCell}
           error={gridError}
           onClose={() => {

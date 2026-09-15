@@ -62,6 +62,8 @@ export class ClassesService {
       id: a.subject.id,
       name: a.subject.name,
       code: a.subject.code,
+      audience: a.subject.audience ?? 'PRIMAIRE',
+      section: a.subject.section ?? null,
       preschool_eval: a.subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     }));
   }

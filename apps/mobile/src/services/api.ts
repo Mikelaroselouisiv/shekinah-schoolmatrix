@@ -163,6 +163,8 @@ export type SchoolContext = {
   current_academic_year_name?: string | null;
   current_period_id?: string | null;
   current_period_name?: string | null;
+  current_preschool_period_id?: string | null;
+  current_preschool_period_name?: string | null;
   academic_year?: { id?: string; name?: string } | null;
   period?: { id?: string; name?: string } | null;
   school?: SchoolHome | null;
@@ -197,7 +199,7 @@ export async function getCurrentContext(): Promise<SchoolContext | null> {
 }
 
 const GCS_PUBLIC_UPLOADS =
-  'https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads';
+  'https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads';
 
 function extractUploadFilename(stored: string): string | null {
   const s = stored.trim();
@@ -1020,7 +1022,7 @@ export async function saveAttendanceBulk(
 }
 
 export type AcademicYear = { id: string; name: string };
-export type PeriodItem = { id: string; name: string; order_index?: number };
+export type PeriodItem = { id: string; name: string; order_index?: number; scope?: string };
 export type SubjectItem = { id: string; name: string };
 
 export type GradeFormRow = {
@@ -1711,6 +1713,9 @@ export type SubjectOrg = {
   name: string;
   code?: string | null;
   active?: boolean;
+  audience?: string;
+  section?: string | null;
+  preschool_eval?: 'LEVEL' | 'FREQUENCY';
 };
 
 export type ClassOrg = ClassItem & {
@@ -1783,6 +1788,9 @@ export async function listSubjects(): Promise<SubjectOrg[]> {
 export async function createSubject(body: {
   name: string;
   code?: string;
+  audience?: string;
+  section?: string | null;
+  preschool_eval?: 'LEVEL' | 'FREQUENCY';
 }): Promise<SubjectOrg> {
   const { data } = await api.post<{ subject?: SubjectOrg }>('/subjects', body);
   if (!data?.subject) throw new Error('Matière non créée');
@@ -1791,7 +1799,14 @@ export async function createSubject(body: {
 
 export async function updateSubject(
   id: string,
-  body: { name?: string; code?: string; active?: boolean },
+  body: {
+    name?: string;
+    code?: string;
+    active?: boolean;
+    audience?: string;
+    section?: string | null;
+    preschool_eval?: 'LEVEL' | 'FREQUENCY';
+  },
 ): Promise<void> {
   await api.patch(`/subjects/${id}`, body);
 }
@@ -1922,13 +1937,14 @@ export async function createPeriod(body: {
   academic_year_id: string;
   name: string;
   order_index?: number;
+  scope?: string;
 }): Promise<void> {
   await api.post('/periods', body);
 }
 
 export async function updatePeriod(
   id: string,
-  body: { name?: string; order_index?: number },
+  body: { name?: string; order_index?: number; scope?: string },
 ): Promise<void> {
   await api.patch(`/periods/${id}`, body);
 }
@@ -1940,6 +1956,7 @@ export async function deletePeriod(id: string): Promise<void> {
 export async function patchSchoolProfile(body: {
   current_academic_year_id?: string | null;
   current_period_id?: string | null;
+  current_preschool_period_id?: string | null;
   name?: string;
   slogan?: string | null;
   domain?: string | null;

@@ -121,7 +121,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   /** Comptes login Server → Remote (PK int). `role_id` est local ; le filaire porte `role_name`. */
   { name: 'User', target: User, timeField: 'updated_at' },
   { name: 'AcademicYear', target: AcademicYear, timeField: 'updated_at' },
-  { name: 'Period', target: Period, timeField: 'created_at' },
+  { name: 'Period', target: Period, timeField: 'updated_at' },
   { name: 'Subject', target: Subject, timeField: 'updated_at' },
   /** Class avant Room : room.class_id → class (plusieurs salles / classe). */
   { name: 'Class', target: Class, timeField: 'updated_at' },

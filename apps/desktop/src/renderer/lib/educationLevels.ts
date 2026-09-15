@@ -42,9 +42,55 @@ export function isHomeroomCycle(level?: string | null): boolean {
   return !!level && (HOMEROOM_LEVELS as string[]).includes(level);
 }
 
-/** Matériel à apporter (préscolaire + 1er / 2e cycle). */
+export const SUBJECT_AUDIENCES = [
+  { key: "PRESCOLAIRE", label: "Préscolaire" },
+  { key: "PRIMAIRE", label: "Primaire" },
+  { key: "SECONDAIRE", label: "Secondaire" },
+  { key: "FORMATION_SUPERIEURE", label: "Formation supérieure" },
+] as const;
+
+export type SubjectAudience = (typeof SUBJECT_AUDIENCES)[number]["key"];
+
+export function isSubjectAudience(value?: string | null): value is SubjectAudience {
+  return !!value && SUBJECT_AUDIENCES.some((a) => a.key === value);
+}
+
+export function subjectAudienceFromLevel(level?: string | null): SubjectAudience {
+  const key = (level ?? "").toUpperCase().trim();
+  if (key === "PRESCOLAIRE") return "PRESCOLAIRE";
+  if (key === "FONDAMENTAL_1" || key === "FONDAMENTAL_2") return "PRIMAIRE";
+  if (key === "FONDAMENTAL_3" || key === "SECONDAIRE") return "SECONDAIRE";
+  if (key === "FORMATION_SUPERIEURE") return "FORMATION_SUPERIEURE";
+  return "PRIMAIRE";
+}
+
+export function subjectAudienceLabel(key?: string | null): string {
+  if (!key) return "—";
+  return SUBJECT_AUDIENCES.find((a) => a.key === key)?.label ?? key;
+}
+
+export const PERIOD_SCOPES = [
+  { key: "PRESCOLAIRE", label: "Préscolaire" },
+  { key: "ECOLE", label: "École" },
+] as const;
+
+export type PeriodScope = (typeof PERIOD_SCOPES)[number]["key"];
+
+export function isPeriodScope(value?: string | null): value is PeriodScope {
+  return !!value && PERIOD_SCOPES.some((s) => s.key === value);
+}
+
+export function periodScopeFromLevel(level?: string | null): PeriodScope {
+  return (level ?? "").toUpperCase().trim() === "PRESCOLAIRE" ? "PRESCOLAIRE" : "ECOLE";
+}
+
+export function periodScopeLabel(key?: string | null): string {
+  if (!key) return "—";
+  return PERIOD_SCOPES.find((s) => s.key === key)?.label ?? key;
+}
+
+/** Matériel à apporter : 1er / 2e cycle (pas le préscolaire). */
 export const MATERIALS_LEVELS: EducationLevelKey[] = [
-  "PRESCOLAIRE",
   "FONDAMENTAL_1",
   "FONDAMENTAL_2",
 ];

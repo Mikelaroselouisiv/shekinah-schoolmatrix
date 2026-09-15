@@ -22,6 +22,7 @@ import {
   isHomeroomCycle,
   learnerNoun,
   learnerNounCap,
+  subjectAudienceFromLevel,
 } from '../../lib/educationLevels';
 import {
   addTeacherClassSubject,
@@ -216,6 +217,11 @@ export function ClassConfigSheet({
 
   const selectedRoom = rooms.find((r) => r.id === selectedRoomId) ?? null;
   const homeroom = isHomeroomCycle(level);
+  const catalogSubjects = useMemo(() => {
+    if (!level) return subjects;
+    const audience = subjectAudienceFromLevel(level);
+    return subjects.filter((s) => (s.audience || 'PRIMAIRE') === audience);
+  }, [subjects, level]);
   const classSubjects = subjects.filter((s) => subjectIds.includes(s.id));
 
   const roomTeachers = useMemo(() => {
@@ -380,7 +386,10 @@ export function ClassConfigSheet({
     setAddingSubject(true);
     setError('');
     try {
-      const created = await createSubject({ name: newSubjectName.trim() });
+      const created = await createSubject({
+        name: newSubjectName.trim(),
+        audience: subjectAudienceFromLevel(level),
+      });
       setSubjects((prev) => [...prev, created]);
       const next = [...subjectIds, created.id];
       setSubjectIds(next);
@@ -633,26 +642,26 @@ export function ClassConfigSheet({
       </Panel>
 
       <Panel kicker="Programme" title="Matières" tone="slate">
-        {subjects.length > 0 ? (
+        {catalogSubjects.length > 0 ? (
           <Pressable
             onPress={() => {
               const next =
-                subjectIds.length === subjects.length ? [] : subjects.map((s) => s.id);
+                subjectIds.length === catalogSubjects.length ? [] : catalogSubjects.map((s) => s.id);
               setSubjectIds(next);
               if (classId) void persistSubjects(next);
             }}
             style={styles.tout}
           >
             <Text style={styles.toutText}>
-              {subjectIds.length === subjects.length ? 'Tout décocher' : 'Tout cocher'}
+              {subjectIds.length === catalogSubjects.length ? 'Tout décocher' : 'Tout cocher'}
             </Text>
           </Pressable>
         ) : null}
         <View style={styles.chipWrap}>
-          {subjects.length === 0 ? (
+          {catalogSubjects.length === 0 ? (
             <Text style={styles.muted}>Aucune matière. Ajoutez-en ci-dessous.</Text>
           ) : (
-            subjects.map((s) => (
+            catalogSubjects.map((s) => (
               <Chip
                 key={s.id}
                 label={s.name}

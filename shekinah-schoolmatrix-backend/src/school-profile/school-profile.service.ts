@@ -27,6 +27,8 @@ export type CurrentContext = {
   current_academic_year_name: string | null;
   current_period_id: string | null;
   current_period_name: string | null;
+  current_preschool_period_id: string | null;
+  current_preschool_period_name: string | null;
 };
 
 export type SignatureInput = {
@@ -103,6 +105,8 @@ export class SchoolProfileService implements OnModuleInit {
     keep.current_academic_year_id =
       newest.current_academic_year_id ?? keep.current_academic_year_id;
     keep.current_period_id = newest.current_period_id ?? keep.current_period_id;
+    keep.current_preschool_period_id =
+      newest.current_preschool_period_id ?? keep.current_preschool_period_id;
     keep.updated_at = newest.updated_at;
     await this.profileRepo.save(keep);
 
@@ -160,6 +164,7 @@ export class SchoolProfileService implements OnModuleInit {
       active: profile.active,
       current_academic_year_id: profile.current_academic_year_id ?? null,
       current_period_id: profile.current_period_id ?? null,
+      current_preschool_period_id: profile.current_preschool_period_id ?? null,
     };
   }
 
@@ -176,6 +181,7 @@ export class SchoolProfileService implements OnModuleInit {
     active?: boolean;
     current_academic_year_id?: string | null;
     current_period_id?: string | null;
+    current_preschool_period_id?: string | null;
   }): Promise<SchoolProfile> {
     const profile = await this.ensureProfile();
     if (params.name !== undefined) profile.name = params.name;
@@ -201,6 +207,9 @@ export class SchoolProfileService implements OnModuleInit {
     }
     if (params.current_period_id !== undefined) {
       profile.current_period_id = params.current_period_id || null;
+    }
+    if (params.current_preschool_period_id !== undefined) {
+      profile.current_preschool_period_id = params.current_preschool_period_id || null;
     }
     const saved = await this.profileRepo.save(profile);
     this.syncKick.kick('school-profile');
@@ -335,8 +344,10 @@ export class SchoolProfileService implements OnModuleInit {
     const profile = await this.getProfile();
     const yearId = profile?.current_academic_year_id ?? null;
     const periodId = profile?.current_period_id ?? null;
+    const preschoolPeriodId = profile?.current_preschool_period_id ?? null;
     let yearName: string | null = null;
     let periodName: string | null = null;
+    let preschoolPeriodName: string | null = null;
     if (yearId) {
       const ay = await this.academicYearRepo.findOne({ where: { id: yearId } });
       yearName = ay?.name ?? null;
@@ -345,11 +356,17 @@ export class SchoolProfileService implements OnModuleInit {
       const p = await this.periodRepo.findOne({ where: { id: periodId } });
       periodName = p?.name ?? null;
     }
+    if (preschoolPeriodId) {
+      const p = await this.periodRepo.findOne({ where: { id: preschoolPeriodId } });
+      preschoolPeriodName = p?.name ?? null;
+    }
     return {
       current_academic_year_id: yearId,
       current_academic_year_name: yearName,
       current_period_id: periodId,
       current_period_name: periodName,
+      current_preschool_period_id: preschoolPeriodId,
+      current_preschool_period_name: preschoolPeriodName,
     };
   }
 

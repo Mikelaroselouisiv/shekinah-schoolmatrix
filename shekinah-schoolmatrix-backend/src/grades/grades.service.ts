@@ -8,6 +8,7 @@ import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { Period } from '../period/period.entity';
 import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { DEFAULT_BAREME, resolveBareme } from './grade-scale';
+import { periodScopeFromLevel } from '../roles/education-levels';
 
 @Injectable()
 export class GradesService {
@@ -282,18 +283,21 @@ export class GradesService {
     });
     if (!student) throw new NotFoundException('Student not found');
     let classId = classIdOverride || undefined;
+    const assignment = await this.assignmentRepo.findOne({
+      where: { student: { id: studentId }, academic_year: { id: academicYearId } },
+      relations: ['class'],
+    });
     if (!classId) {
-      const assignment = await this.assignmentRepo.findOne({
-        where: { student: { id: studentId }, academic_year: { id: academicYearId } },
-        relations: ['class'],
-      });
       classId = assignment?.class?.id ?? student.class?.id;
     }
     if (!classId) return { periods: [], subjects: [], academic_year_name: null };
 
+    const scope = periodScopeFromLevel(
+      assignment?.class?.level ?? student.class?.level,
+    );
     const [periods, coefficients, grades] = await Promise.all([
       this.periodRepo.find({
-        where: { academic_year: { id: academicYearId } },
+        where: { academic_year: { id: academicYearId }, scope },
         relations: ['academic_year'],
         order: { order_index: 'ASC', name: 'ASC' },
       }),

@@ -9,9 +9,25 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SubjectsService } from './subjects.service';
+import { Subject } from './subject.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
+import { isSubjectAudience } from '../roles/education-levels';
+
+function toDto(s: Subject) {
+  return {
+    id: s.id,
+    name: s.name,
+    code: s.code,
+    active: s.active,
+    audience: isSubjectAudience(s.audience) ? s.audience : 'PRIMAIRE',
+    section: s.section ?? null,
+    preschool_eval: s.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
+    created_at: s.created_at,
+    updated_at: s.updated_at,
+  };
+}
 
 @Controller('subjects')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
@@ -23,15 +39,7 @@ export class SubjectsController {
     const subjects = await this.subjectsService.findAll();
     return {
       ok: true,
-      subjects: subjects.map((s) => ({
-        id: s.id,
-        name: s.name,
-        code: s.code,
-        active: s.active,
-        preschool_eval: s.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-      })),
+      subjects: subjects.map(toDto),
     };
   }
 
@@ -40,37 +48,26 @@ export class SubjectsController {
     const subject = await this.subjectsService.findOne(id);
     return {
       ok: true,
-      subject: {
-        id: subject.id,
-        name: subject.name,
-        code: subject.code,
-        active: subject.active,
-        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
-        created_at: subject.created_at,
-        updated_at: subject.updated_at,
-      },
+      subject: toDto(subject),
     };
   }
 
   @DenyParents()
   @Post()
-  async create(@Body() body: { name: string; code?: string; preschool_eval?: string }) {
-    const subject = await this.subjectsService.create({
-      name: body.name,
-      code: body.code,
-      preschool_eval: body.preschool_eval,
-    });
+  async create(
+    @Body()
+    body: {
+      name: string;
+      code?: string;
+      audience?: string;
+      section?: string | null;
+      preschool_eval?: string;
+    },
+  ) {
+    const subject = await this.subjectsService.create(body);
     return {
       ok: true,
-      subject: {
-        id: subject.id,
-        name: subject.name,
-        code: subject.code,
-        active: subject.active,
-        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
-        created_at: subject.created_at,
-        updated_at: subject.updated_at,
-      },
+      subject: toDto(subject),
     };
   }
 
@@ -78,20 +75,20 @@ export class SubjectsController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; code?: string; active?: boolean; preschool_eval?: string },
+    @Body()
+    body: {
+      name?: string;
+      code?: string;
+      active?: boolean;
+      audience?: string;
+      section?: string | null;
+      preschool_eval?: string;
+    },
   ) {
     const subject = await this.subjectsService.update(id, body);
     return {
       ok: true,
-      subject: {
-        id: subject.id,
-        name: subject.name,
-        code: subject.code,
-        active: subject.active,
-        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
-        created_at: subject.created_at,
-        updated_at: subject.updated_at,
-      },
+      subject: toDto(subject),
     };
   }
 

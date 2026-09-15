@@ -44,6 +44,7 @@ import {
   uniqueTeachersFromAssignments,
   type DayMorningProgram,
 } from '../../lib/morningOpening';
+import { isMaterialsCycle } from '../../lib/educationLevels';
 import { colors } from '../../theme/tokens';
 import {
   createExamSchedule,
@@ -1013,6 +1014,8 @@ export function ScheduleScreen({}: Props) {
                             })
                           }
                         />
+                        {isMaterialsCycle(selectedClass?.level) ? (
+                          <>
                         <Text style={styles.chipLabel}>Matériel à apporter</Text>
                         <MaterialCatalogField
                           catalog={mergeMaterialCatalog(
@@ -1047,6 +1050,8 @@ export function ScheduleScreen({}: Props) {
                             });
                           }}
                         />
+                          </>
+                        ) : null}
                       </View>
                     );
                   })}

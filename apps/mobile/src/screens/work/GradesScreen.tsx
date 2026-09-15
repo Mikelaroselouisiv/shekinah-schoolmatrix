@@ -50,6 +50,7 @@ import {
   PRESCHOOL_LEVELS,
   YEAR_END_DECISIONS,
 } from '../../lib/preschoolScale';
+import { periodScopeFromLevel } from '../../lib/educationLevels';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Grades'>;
 
@@ -129,10 +130,22 @@ export function GradesScreen({}: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const list = await getPeriods(yearId);
+        const list = (await getPeriods(yearId)).filter(
+          (p) => (p.scope || 'ECOLE') === periodScopeFromLevel(selectedClass?.level),
+        );
         if (cancelled) return;
         setPeriods(list);
-        setPeriodId((prev) => (list.some((p) => p.id === prev) ? prev : list[0]?.id || ''));
+        const preferred =
+          periodScopeFromLevel(selectedClass?.level) === 'PRESCOLAIRE'
+            ? context?.current_preschool_period_id
+            : context?.current_period_id;
+        setPeriodId((prev) =>
+          list.some((p) => p.id === prev)
+            ? prev
+            : preferred && list.some((p) => p.id === preferred)
+              ? preferred
+              : list[0]?.id || '',
+        );
       } catch {
         if (!cancelled) setPeriods([]);
       }
@@ -140,7 +153,7 @@ export function GradesScreen({}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [yearId]);
+  }, [yearId, classId, selectedClass?.level, context?.current_period_id, context?.current_preschool_period_id]);
 
   useEffect(() => {
     setSubjectId('');

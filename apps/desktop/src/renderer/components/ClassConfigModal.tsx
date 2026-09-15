@@ -9,6 +9,7 @@ import {
   isHomeroomCycle,
   learnerNoun,
   learnerNounCap,
+  subjectAudienceFromLevel,
 } from "@/lib/educationLevels";
 
 export type ClassListItem = {
@@ -21,7 +22,7 @@ export type ClassListItem = {
   student_count?: number;
 };
 
-type Subject = { id: string; name: string; code?: string | null };
+type Subject = { id: string; name: string; code?: string | null; audience?: string; section?: string | null };
 type RoomItem = {
   id: string;
   name: string;
@@ -275,6 +276,11 @@ export function ClassConfigModal({
 
   const selectedRoom = rooms.find((r) => r.id === selectedRoomId) ?? null;
   const homeroom = isHomeroomCycle(level);
+  const catalogSubjects = useMemo(() => {
+    if (!level) return subjects;
+    const audience = subjectAudienceFromLevel(level);
+    return subjects.filter((s) => (s.audience || "PRIMAIRE") === audience);
+  }, [subjects, level]);
   const roomDetailRef = useRevealScroll<HTMLElement>(!!selectedRoomId, selectedRoomId);
   const teacherFormRef = useRevealScroll<HTMLFormElement>(!!teacherSource, teacherSource);
 
@@ -487,7 +493,10 @@ export function ClassConfigModal({
     try {
       const res = await fetchWithAuth(`${API_BASE}/subjects`, {
         method: "POST",
-        body: JSON.stringify({ name: newSubjectName.trim() }),
+        body: JSON.stringify({
+          name: newSubjectName.trim(),
+          audience: subjectAudienceFromLevel(level),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
@@ -812,36 +821,56 @@ export function ClassConfigModal({
                 kicker="Programme"
                 title="Matières"
                 action={
-                  subjects.length > 0 ? (
+                  catalogSubjects.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => {
                         const next =
-                          subjectIds.length === subjects.length ? [] : subjects.map((s) => s.id);
+                          subjectIds.length === catalogSubjects.length
+                            ? []
+                            : catalogSubjects.map((s) => s.id);
                         setSubjectIds(next);
                         if (classId) void persistSubjects(next);
                       }}
                       className="whitespace-nowrap text-[11px] font-medium text-slate-600 hover:text-teal-800"
                     >
-                      {subjectIds.length === subjects.length ? "Aucun" : "Tout"}
+                      {subjectIds.length === catalogSubjects.length ? "Aucun" : "Tout"}
                     </button>
                   ) : null
                 }
               >
-                <div className="max-h-44 overflow-y-auto rounded-xl bg-white p-2 ring-1 ring-slate-200">
-                  {subjects.length === 0 ? (
+                <div className="max-h-72 overflow-y-auto rounded-xl bg-white p-2 ring-1 ring-slate-200">
+                  {catalogSubjects.length === 0 ? (
                     <p className="px-1 py-2 text-sm text-slate-500">Aucune matière. Ajoutez-en ci-dessous.</p>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {subjects.map((s) => (
-                        <SubjectChip
-                          key={s.id}
-                          name={s.name}
-                          on={subjectIds.includes(s.id)}
-                          onToggle={() => toggleSubject(s.id)}
-                        />
-                      ))}
-                    </div>
+                    (() => {
+                      const groups = new Map<string, Subject[]>();
+                      for (const s of catalogSubjects) {
+                        const key = s.section?.trim() || "";
+                        const list = groups.get(key) ?? [];
+                        list.push(s);
+                        groups.set(key, list);
+                      }
+                      return [...groups.entries()].map(([rubrique, rows]) => (
+                        <div key={rubrique || "x"} className="mb-2 last:mb-0">
+                          {rubrique ? (
+                            <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              {rubrique}
+                            </p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-1.5">
+                            {rows.map((s) => (
+                              <SubjectChip
+                                key={s.id}
+                                name={s.name}
+                                on={subjectIds.includes(s.id)}
+                                onToggle={() => toggleSubject(s.id)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ));
+                    })()
                   )}
                 </div>
                 <form onSubmit={createSubjectInline} className="mt-3 flex flex-wrap items-center gap-2">

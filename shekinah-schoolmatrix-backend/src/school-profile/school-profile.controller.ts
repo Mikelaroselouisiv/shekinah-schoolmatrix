@@ -105,6 +105,7 @@ export class SchoolProfileController {
       active?: boolean;
       current_academic_year_id?: string | null;
       current_period_id?: string | null;
+      current_preschool_period_id?: string | null;
       /** Optionnel : enregistre les signatures dans le même appel. */
       signatures?: Array<{
         id?: string;

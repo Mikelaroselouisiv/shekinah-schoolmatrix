@@ -44,8 +44,10 @@ export class PreschoolGradesService {
   }
 
   async isLastPeriod(academicYearId: string, periodId: string): Promise<boolean> {
+    const current = await this.periodRepo.findOne({ where: { id: periodId } });
+    const scope = current?.scope === 'PRESCOLAIRE' ? 'PRESCOLAIRE' : 'ECOLE';
     const periods = await this.periodRepo.find({
-      where: { academic_year: { id: academicYearId } },
+      where: { academic_year: { id: academicYearId }, scope },
       order: { order_index: 'ASC' },
     });
     if (!periods.length) return false;

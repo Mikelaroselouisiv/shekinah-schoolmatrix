@@ -3,6 +3,12 @@ import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 import { useRevealScroll } from "@/lib/useRevealScroll";
+import {
+  PERIOD_SCOPES,
+  isPeriodScope,
+  periodScopeLabel,
+  type PeriodScope,
+} from "@/lib/educationLevels";
 
 type AcademicYear = {
   id: string;
@@ -16,6 +22,7 @@ type Period = {
   id: string;
   name: string;
   order_index: number;
+  scope?: string;
   academic_year_id: string;
   academic_year_name?: string;
 };
@@ -39,29 +46,42 @@ export function DashboardAcademicYearsPage() {
   const [editingPeriod, setEditingPeriod] = useState<Period | null>(null);
   const [periodName, setPeriodName] = useState("");
   const [periodOrder, setPeriodOrder] = useState(0);
+  const [periodScope, setPeriodScope] = useState<PeriodScope>("ECOLE");
   const [savingPeriod, setSavingPeriod] = useState(false);
   const yearFormRef = useRevealScroll<HTMLFormElement>(showYearForm, editingYear?.id ?? "new");
   const periodFormRef = useRevealScroll<HTMLFormElement>(showPeriodForm, editingPeriod?.id ?? "new");
 
   const [currentYearId, setCurrentYearId] = useState<string | null>(null);
   const [currentPeriodId, setCurrentPeriodId] = useState<string | null>(null);
+  const [currentPreschoolPeriodId, setCurrentPreschoolPeriodId] = useState<string | null>(null);
   const [savingCurrent, setSavingCurrent] = useState(false);
 
 
-  async function loadCurrentContext(): Promise<{ current_academic_year_id: string | null; current_period_id: string | null } | null> {
+  async function loadCurrentContext(): Promise<{
+    current_academic_year_id: string | null;
+    current_period_id: string | null;
+    current_preschool_period_id: string | null;
+  } | null> {
     try {
       const res = await fetchWithAuth(`${API_BASE}/school/current-context`);
       const data = await res.json();
       if (res.ok) {
         const yearId = data.current_academic_year_id ?? null;
         const periodId = data.current_period_id ?? null;
+        const preschoolPeriodId = data.current_preschool_period_id ?? null;
         setCurrentYearId(yearId);
         setCurrentPeriodId(periodId);
-        return { current_academic_year_id: yearId, current_period_id: periodId };
+        setCurrentPreschoolPeriodId(preschoolPeriodId);
+        return {
+          current_academic_year_id: yearId,
+          current_period_id: periodId,
+          current_preschool_period_id: preschoolPeriodId,
+        };
       }
     } catch {
       setCurrentYearId(null);
       setCurrentPeriodId(null);
+      setCurrentPreschoolPeriodId(null);
     }
     return null;
   }
@@ -83,16 +103,22 @@ export function DashboardAcademicYearsPage() {
     }
   }
 
-  async function setAsCurrentPeriod(periodId: string) {
+  async function setAsCurrentPeriod(p: Period) {
     setSavingCurrent(true);
     setError("");
+    const preschool = p.scope === "PRESCOLAIRE";
     try {
       const res = await fetchWithAuth(`${API_BASE}/school/profile`, {
         method: "PATCH",
-        body: JSON.stringify({ current_period_id: periodId }),
+        body: JSON.stringify(
+          preschool
+            ? { current_preschool_period_id: p.id }
+            : { current_period_id: p.id },
+        ),
       });
       if (!res.ok) throw new Error((await res.json()).message || "Erreur");
-      setCurrentPeriodId(periodId);
+      if (preschool) setCurrentPreschoolPeriodId(p.id);
+      else setCurrentPeriodId(p.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -143,8 +169,10 @@ export function DashboardAcademicYearsPage() {
       setYears(years);
       const yearId = ctxRes.ok ? (ctxData.current_academic_year_id ?? null) : null;
       const periodId = ctxRes.ok ? (ctxData.current_period_id ?? null) : null;
+      const preschoolPeriodId = ctxRes.ok ? (ctxData.current_preschool_period_id ?? null) : null;
       setCurrentYearId(yearId);
       setCurrentPeriodId(periodId);
+      setCurrentPreschoolPeriodId(preschoolPeriodId);
       if (years.length > 0) {
         const defaultYearId = yearId && years.some((y: AcademicYear) => y.id === yearId)
           ? yearId
@@ -229,8 +257,13 @@ export function DashboardAcademicYearsPage() {
     setError("");
     try {
       const body = editingPeriod
-        ? { name: periodName.trim(), order_index: periodOrder }
-        : { academic_year_id: selectedYearId, name: periodName.trim(), order_index: periodOrder };
+        ? { name: periodName.trim(), order_index: periodOrder, scope: periodScope }
+        : {
+            academic_year_id: selectedYearId,
+            name: periodName.trim(),
+            order_index: periodOrder,
+            scope: periodScope,
+          };
       if (editingPeriod) {
         const res = await fetchWithAuth(`${API_BASE}/periods/${editingPeriod.id}`, {
           method: "PATCH",
@@ -250,6 +283,7 @@ export function DashboardAcademicYearsPage() {
       setEditingPeriod(null);
       setPeriodName("");
       setPeriodOrder(periods.length);
+      setPeriodScope("ECOLE");
       await loadPeriods();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -295,6 +329,7 @@ export function DashboardAcademicYearsPage() {
     setEditingPeriod(p);
     setPeriodName(p.name);
     setPeriodOrder(p.order_index);
+    setPeriodScope(isPeriodScope(p.scope) ? p.scope : "ECOLE");
     setShowPeriodForm(true);
   }
 
@@ -302,6 +337,7 @@ export function DashboardAcademicYearsPage() {
     setEditingPeriod(null);
     setPeriodName("");
     setPeriodOrder(periods.length);
+    setPeriodScope("ECOLE");
     setShowPeriodForm(true);
   }
 
@@ -458,6 +494,22 @@ export function DashboardAcademicYearsPage() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                  <select
+                    value={periodScope}
+                    onChange={(e) =>
+                      setPeriodScope(isPeriodScope(e.target.value) ? e.target.value : "ECOLE")
+                    }
+                    className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                  >
+                    {PERIOD_SCOPES.map((s) => (
+                      <option key={s.key} value={s.key}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Ordre</label>
                   <input
                     type="number"
@@ -482,25 +534,36 @@ export function DashboardAcademicYearsPage() {
                   <tr>
                     <th className="px-4 py-3 font-medium text-slate-900">Ordre</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
+                    <th className="px-4 py-3 font-medium text-slate-900">Type</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Période en cours</th>
                     <th className="px-4 py-3 font-medium text-slate-900 w-36">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {periods.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucune période</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucune période</td></tr>
                   ) : (
                     [...periods]
-                      .sort((a, b) => a.order_index - b.order_index)
-                      .map((p) => (
+                      .sort((a, b) => {
+                        const sa = a.scope === "PRESCOLAIRE" ? 0 : 1;
+                        const sb = b.scope === "PRESCOLAIRE" ? 0 : 1;
+                        return sa - sb || a.order_index - b.order_index;
+                      })
+                      .map((p) => {
+                        const current =
+                          p.scope === "PRESCOLAIRE"
+                            ? currentPreschoolPeriodId === p.id
+                            : currentPeriodId === p.id;
+                        return (
                         <tr key={p.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                           <td className="px-4 py-3 text-slate-600">{p.order_index}</td>
                           <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{periodScopeLabel(p.scope)}</td>
                           <td className="px-4 py-3">
-                            {currentPeriodId === p.id ? (
+                            {current ? (
                               <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Par défaut</span>
                             ) : (
-                              <button type="button" onClick={() => setAsCurrentPeriod(p.id)} disabled={savingCurrent} className="text-sm text-[var(--school-accent-1)] hover:underline disabled:opacity-50">
+                              <button type="button" onClick={() => setAsCurrentPeriod(p)} disabled={savingCurrent} className="text-sm text-[var(--school-accent-1)] hover:underline disabled:opacity-50">
                                 Définir par défaut
                               </button>
                             )}
@@ -510,7 +573,8 @@ export function DashboardAcademicYearsPage() {
                             <button onClick={() => handlePeriodDelete(p.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                   )}
                 </tbody>
               </table>

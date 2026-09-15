@@ -37,6 +37,12 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import {
+  PERIOD_SCOPES,
+  isPeriodScope,
+  periodScopeLabel,
+  type PeriodScope,
+} from '../../lib/educationLevels';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'OrgAcademicYears'>;
 
@@ -60,11 +66,13 @@ export function OrgAcademicYearsScreen({}: Props) {
   const [editingPeriod, setEditingPeriod] = useState<PeriodOrg | null>(null);
   const [periodName, setPeriodName] = useState('');
   const [periodOrder, setPeriodOrder] = useState('0');
+  const [periodScope, setPeriodScope] = useState<PeriodScope>('ECOLE');
 
   const currentYearId =
     context?.academic_year?.id || context?.current_academic_year_id || null;
   const currentPeriodId =
     context?.period?.id || context?.current_period_id || null;
+  const currentPreschoolPeriodId = context?.current_preschool_period_id || null;
 
   const loadYears = useCallback(async () => {
     const list = await listAcademicYearsOrg();
@@ -112,6 +120,8 @@ export function OrgAcademicYearsScreen({}: Props) {
     setEditingPeriod(p || null);
     setPeriodName(p?.name || '');
     setPeriodOrder(String(p?.order_index ?? periods.length));
+    const nextScope = p?.scope;
+    setPeriodScope(isPeriodScope(nextScope) ? nextScope : 'ECOLE');
     setPeriodForm(true);
   }
 
@@ -158,12 +168,14 @@ export function OrgAcademicYearsScreen({}: Props) {
         await updatePeriod(editingPeriod.id, {
           name: periodName.trim(),
           order_index: order,
+          scope: periodScope,
         });
       } else {
         await createPeriod({
           academic_year_id: selectedYearId,
           name: periodName.trim(),
           order_index: order,
+          scope: periodScope,
         });
       }
       setPeriodForm(false);
@@ -226,11 +238,15 @@ export function OrgAcademicYearsScreen({}: Props) {
     }
   }
 
-  async function setCurrentPeriod(id: string) {
+  async function setCurrentPeriod(p: PeriodOrg) {
     setSaving(true);
     setError('');
     try {
-      await patchSchoolProfile({ current_period_id: id });
+      if (p.scope === 'PRESCOLAIRE') {
+        await patchSchoolProfile({ current_preschool_period_id: p.id });
+      } else {
+        await patchSchoolProfile({ current_period_id: p.id });
+      }
       await refetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -309,16 +325,23 @@ export function OrgAcademicYearsScreen({}: Props) {
         {periods.length === 0 ? (
           <EmptyState title="Aucune période" />
         ) : (
-          periods.map((p) => (
+          periods.map((p) => {
+            const current =
+              p.scope === 'PRESCOLAIRE'
+                ? currentPreschoolPeriodId === p.id
+                : currentPeriodId === p.id;
+            return (
             <View key={p.id} style={styles.card}>
               <Text style={styles.cardTitle}>
                 {p.name}
-                {currentPeriodId === p.id ? ' · courante' : ''}
+                {current ? ' · courante' : ''}
               </Text>
-              <Muted>Ordre {p.order_index ?? '—'}</Muted>
+              <Muted>
+                {periodScopeLabel(p.scope)} · Ordre {p.order_index ?? '—'}
+              </Muted>
               <View style={styles.rowActions}>
-                {currentPeriodId !== p.id ? (
-                  <Pressable onPress={() => void setCurrentPeriod(p.id)}>
+                {!current ? (
+                  <Pressable onPress={() => void setCurrentPeriod(p)}>
                     <Text style={styles.link}>Définir courante</Text>
                   </Pressable>
                 ) : null}
@@ -330,7 +353,8 @@ export function OrgAcademicYearsScreen({}: Props) {
                 </Pressable>
               </View>
             </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -354,6 +378,20 @@ export function OrgAcademicYearsScreen({}: Props) {
           {editingPeriod ? 'Modifier la période' : 'Nouvelle période'}
         </Text>
         <TextField label="Nom *" value={periodName} onChangeText={setPeriodName} />
+        <View style={{ gap: 6, marginBottom: 8 }}>
+          {PERIOD_SCOPES.map((s) => (
+            <Pressable key={s.key} onPress={() => setPeriodScope(s.key)}>
+              <Text
+                style={{
+                  fontWeight: periodScope === s.key ? '800' : '500',
+                  color: periodScope === s.key ? colors.primaryFallback : colors.text,
+                }}
+              >
+                {s.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
         <TextField
           label="Ordre"
           value={periodOrder}

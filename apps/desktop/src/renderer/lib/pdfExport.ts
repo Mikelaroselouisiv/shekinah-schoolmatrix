@@ -1,11 +1,5 @@
 /**
- * Export PDF global : génère un document PDF à partir de tableaux ou de contenu structuré.
- * Utilisable depuis n'importe quelle page (listes de classe, situations de paiement, notes, etc.).
- *
- * Utilisation :
- * - Un seul tableau : exportTableToPdf({ title, subtitle, columns, rows }, "fichier.pdf")
- * - Rapport multi-sections : exportSectionsToPdf(sections, "fichier.pdf", "Titre principal")
- * - Dans l'UI : <ExportPdfButton table={...} filename="x.pdf" /> ou sections={...} + mainTitle
+ * Export PDF : tableaux ou sections, avec en-tête d’établissement.
  */
 
 import { jsPDF } from "jspdf";
@@ -26,6 +20,19 @@ export type PdfSection = {
   table?: { columns: PdfColumn[]; rows: Record<string, string | number | null | undefined>[] };
 };
 
+export type PdfSchoolInfo = {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  logo_url?: string | null;
+};
+
+export type PdfBuildOptions = {
+  school?: PdfSchoolInfo | null;
+  orientation?: "portrait" | "landscape";
+};
+
 function asPdfText(value: string | number | null | undefined): string {
   if (value == null) return "";
   return String(value)
@@ -34,96 +41,195 @@ function asPdfText(value: string | number | null | undefined): string {
     .replace(/[\u2013\u2014]/g, "-");
 }
 
-/** Construit le doc pour un tableau (partagé entre export et blob). */
-function buildTablePdfDoc(config: PdfTableConfig): jsPDF {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  let y = 15;
-  if (config.title) {
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(asPdfText(config.title), 14, y);
-    y += 10;
+async function loadLogoPng(url?: string | null): Promise<string | null> {
+  if (!url || typeof document === "undefined") return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      return await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const max = 160;
+            const scale = Math.min(max / (img.width || 1), max / (img.height || 1), 1);
+            canvas.width = Math.max(1, Math.round((img.width || 1) * scale));
+            canvas.height = Math.max(1, Math.round((img.height || 1) * scale));
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(null);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/png"));
+          } catch {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = objectUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch {
+    return null;
   }
+}
+
+function drawSchoolHeader(
+  doc: jsPDF,
+  school: PdfSchoolInfo | null | undefined,
+  logo: string | null,
+): number {
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  let y = 12;
+  const logoMm = 16;
+  const textX = logo ? margin + logoMm + 4 : margin;
+
+  if (logo) {
+    try {
+      doc.addImage(logo, "PNG", margin, y - 1, logoMm, logoMm);
+    } catch {
+      /* logo illisible */
+    }
+  }
+
+  const name = asPdfText((school?.name || "").trim() || "Établissement");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(15, 23, 42);
+  doc.text(name, textX, y + 4);
+
+  const details = [
+    school?.address?.trim(),
+    [school?.phone?.trim(), school?.email?.trim()].filter(Boolean).join("   ·   "),
+  ].filter((line): line is string => !!line);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  let detailY = y + 9;
+  for (const line of details) {
+    doc.text(asPdfText(line), textX, detailY);
+    detailY += 4;
+  }
+
+  y = Math.max(logo ? y - 1 + logoMm : y, detailY) + 3;
+  doc.setDrawColor(13, 148, 136);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageW - margin, y);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y + 1.2, pageW - margin, y + 1.2);
+  return y + 8;
+}
+
+function tableOptions(startY: number) {
+  return {
+    startY,
+    theme: "grid" as const,
+    styles: { fontSize: 8.5, cellPadding: 2.4, valign: "middle" as const },
+    headStyles: { fillColor: [13, 148, 136], textColor: [255, 255, 255], fontStyle: "bold" as const },
+    alternateRowStyles: { fillColor: [240, 253, 250] },
+    margin: { left: 14, right: 14 },
+    tableWidth: "auto" as const,
+  };
+}
+
+async function createDoc(options?: PdfBuildOptions): Promise<{
+  doc: jsPDF;
+  y: number;
+  pageHeight: number;
+}> {
+  const orientation = options?.orientation ?? "portrait";
+  const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
+  const logo = await loadLogoPng(options?.school?.logo_url);
+  const y = options?.school
+    ? drawSchoolHeader(doc, options.school, logo)
+    : 15;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  return { doc, y, pageHeight };
+}
+
+function drawDocTitle(doc: jsPDF, title: string, y: number): number {
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 23, 42);
+  doc.text(asPdfText(title), 14, y);
+  return y + 8;
+}
+
+async function buildTablePdfDoc(
+  config: PdfTableConfig,
+  options?: PdfBuildOptions,
+): Promise<jsPDF> {
+  const { doc, y: start } = await createDoc(options);
+  let y = start;
+  if (config.title) y = drawDocTitle(doc, config.title, y);
   if (config.subtitle) {
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
+    doc.setTextColor(71, 85, 105);
     doc.text(asPdfText(config.subtitle), 14, y);
-    y += 8;
+    y += 7;
   }
   const headers = config.columns.map((c) => c.header);
   const body = config.rows.map((row) =>
     config.columns.map((col) => {
       const v = row[col.key];
       return v === null || v === undefined ? "-" : asPdfText(v);
-    })
+    }),
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (autoTable as (doc: any, options: any) => void)(doc, {
-    startY: y,
+    ...tableOptions(y),
     head: [headers],
     body,
-    theme: "grid",
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold" },
-    margin: { left: 14, right: 14 },
-    tableWidth: "auto",
   });
   return doc;
 }
 
-/**
- * Exporte un tableau vers un fichier PDF (téléchargement).
- * @param config titre, sous-titre, colonnes, lignes
- * @param filename nom du fichier sans .pdf
- */
-export async function exportTableToPdf(
-  config: PdfTableConfig,
-  filename: string
-): Promise<void> {
-  const doc = buildTablePdfDoc(config);
-  doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
-}
-
-/** Retourne le PDF (tableau) sous forme de Blob pour affichage dans un modal. */
-export async function getTablePdfBlob(config: PdfTableConfig): Promise<Blob> {
-  const doc = buildTablePdfDoc(config);
-  return doc.output("blob");
-}
-
-/** Construit le doc pour les sections (partagé entre export et blob). */
-function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const pageHeight = 297; // A4 portrait height in mm
-  let y = 15;
-  if (mainTitle) {
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(asPdfText(mainTitle), 14, y);
-    y += 10;
-  }
+async function buildSectionsPdfDoc(
+  sections: PdfSection[],
+  mainTitle?: string,
+  options?: PdfBuildOptions,
+): Promise<jsPDF> {
+  const { doc, y: start, pageHeight } = await createDoc(options);
+  let y = start;
+  if (mainTitle) y = drawDocTitle(doc, mainTitle, y);
   for (const section of sections) {
-    if (y > pageHeight - 40) {
+    if (y > pageHeight - 36) {
       doc.addPage();
-      y = 15;
+      y = options?.school ? 16 : 15;
     }
     if (section.title) {
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
+      doc.setTextColor(13, 148, 136);
       doc.text(asPdfText(section.title), 14, y);
-      y += 8;
+      y += 7;
     }
     if (section.lines?.length) {
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setFont("helvetica", "normal");
+      doc.setTextColor(30, 41, 59);
       for (const line of section.lines) {
-        if (y > pageHeight - 25) {
+        if (y > pageHeight - 22) {
           doc.addPage();
-          y = 15;
+          y = options?.school ? 16 : 15;
         }
-        doc.text(asPdfText(line), 14, y);
-        y += 6;
+        const wrapped = doc.splitTextToSize(asPdfText(line), doc.internal.pageSize.getWidth() - 28);
+        for (const w of wrapped) {
+          doc.text(w, 14, y);
+          y += 5;
+        }
       }
-      y += 4;
+      y += 3;
     }
     if (section.table?.columns.length && section.table.rows.length) {
       const headers = section.table.columns.map((c) => c.header);
@@ -131,18 +237,13 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
         section.table!.columns.map((col) => {
           const v = row[col.key];
           return v === null || v === undefined ? "-" : asPdfText(v);
-        })
+        }),
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (autoTable as (doc: any, options: any) => void)(doc, {
-        startY: y,
+        ...tableOptions(y),
         head: [headers],
         body,
-        theme: "grid",
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold" },
-        margin: { left: 14, right: 14 },
-        tableWidth: "auto",
       });
       y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y;
       y += 10;
@@ -151,24 +252,38 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
   return doc;
 }
 
-/**
- * Exporte plusieurs sections (titres, lignes de texte, tableaux) dans un même PDF.
- * Utile pour des rapports (ex. fiche élève : identité + paiement + notes).
- */
-export async function exportSectionsToPdf(
-  sections: PdfSection[],
+export async function exportTableToPdf(
+  config: PdfTableConfig,
   filename: string,
-  mainTitle?: string
+  options?: PdfBuildOptions,
 ): Promise<void> {
-  const doc = buildSectionsPdfDoc(sections, mainTitle);
+  const doc = await buildTablePdfDoc(config, options);
   doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
 }
 
-/** Retourne le PDF (sections) sous forme de Blob pour affichage dans un modal. */
+export async function getTablePdfBlob(
+  config: PdfTableConfig,
+  options?: PdfBuildOptions,
+): Promise<Blob> {
+  const doc = await buildTablePdfDoc(config, options);
+  return doc.output("blob");
+}
+
+export async function exportSectionsToPdf(
+  sections: PdfSection[],
+  filename: string,
+  mainTitle?: string,
+  options?: PdfBuildOptions,
+): Promise<void> {
+  const doc = await buildSectionsPdfDoc(sections, mainTitle, options);
+  doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
+}
+
 export async function getSectionsPdfBlob(
   sections: PdfSection[],
-  mainTitle?: string
+  mainTitle?: string,
+  options?: PdfBuildOptions,
 ): Promise<Blob> {
-  const doc = buildSectionsPdfDoc(sections, mainTitle);
+  const doc = await buildSectionsPdfDoc(sections, mainTitle, options);
   return doc.output("blob");
 }

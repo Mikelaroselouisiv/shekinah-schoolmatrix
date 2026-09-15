@@ -13,11 +13,12 @@ import {
   preschoolFrequencyLabel,
   preschoolLevelLabel,
 } from "@/lib/preschoolScale";
+import { periodScopeFromLevel } from "@/lib/educationLevels";
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string; description?: string | null; level?: string | null; is_preschool: boolean };
 type Subject = { id: string; name: string };
-type Period = { id: string; name: string; order_index: number };
+type Period = { id: string; name: string; order_index: number; scope?: string };
 
 type FormDataRow = {
   student_id: string;
@@ -173,13 +174,25 @@ export function DashboardGradesPage() {
       const data = await periodsRes.json();
       const ctxData = await ctxRes.json();
       if (!periodsRes.ok) throw new Error(data.message || "Erreur");
-      const list = (data.periods ?? []).sort((a: Period, b: Period) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      const scope = periodScopeFromLevel(selectedClass?.level);
+      const list = (data.periods ?? [])
+        .filter((p: Period) => (p.scope || "ECOLE") === scope)
+        .sort((a: Period, b: Period) => (a.order_index ?? 0) - (b.order_index ?? 0));
       setPeriods(list);
       if (list.length > 0) {
-        const defaultPeriodId = ctxRes.ok && ctxData.current_period_id && list.some((p: Period) => p.id === ctxData.current_period_id)
-          ? ctxData.current_period_id
-          : list[0].id;
-        setPeriodId((prev) => (prev === "" ? defaultPeriodId : prev));
+        const preferred =
+          scope === "PRESCOLAIRE"
+            ? ctxData.current_preschool_period_id
+            : ctxData.current_period_id;
+        const defaultPeriodId =
+          ctxRes.ok && preferred && list.some((p: Period) => p.id === preferred)
+            ? preferred
+            : list[0].id;
+        setPeriodId((prev) =>
+          prev && list.some((p: Period) => p.id === prev) ? prev : defaultPeriodId,
+        );
+      } else {
+        setPeriodId("");
       }
     } catch {
       setPeriods([]);
@@ -192,7 +205,7 @@ export function DashboardGradesPage() {
 
   useEffect(() => {
     loadPeriods();
-  }, [academicYearId]);
+  }, [academicYearId, selectedClass?.level]);
 
   useEffect(() => {
     if (academicYears.length > 0 && !coefAcademicYearId) {

@@ -20,7 +20,15 @@ export class Subject {
   @Column({ default: true })
   active: boolean;
 
-  /** LEVEL = Bien / Moins bien / Très bien / Excellent. FREQUENCY = Jamais / Parfois / Toujours. */
+  /** PRESCOLAIRE | PRIMAIRE | SECONDAIRE | FORMATION_SUPERIEURE */
+  @Column({ type: 'varchar', length: 32, default: 'PRIMAIRE' })
+  audience: string;
+
+  /** Rubrique du bulletin (préscolaire). */
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  section: string | null;
+
+  /** LEVEL = EX / TB / B / AB. FREQUENCY = TJ / SO / PF / JA. */
   @Column({ type: 'varchar', length: 20, default: 'LEVEL' })
   preschool_eval: string;
 
