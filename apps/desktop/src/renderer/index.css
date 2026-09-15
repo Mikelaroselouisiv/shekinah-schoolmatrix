@@ -62,3 +62,47 @@ body {
 .font-script {
   font-family: var(--font-dancing-script), cursive;
 }
+
+@keyframes reveal-flash {
+  0% {
+    box-shadow: 0 0 0 3px var(--school-accent-1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.reveal-flash {
+  animation: reveal-flash 0.85s ease-out;
+  scroll-margin-top: 1rem;
+}
+
+.class-input {
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+}
+
+.class-input:focus {
+  outline: none;
+  border-color: var(--school-accent-1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--school-accent-1) 18%, transparent);
+}
+
+.class-input-name {
+  width: 11rem;
+  max-width: 100%;
+}
+
+.class-input-room {
+  width: 6.5rem;
+  max-width: 100%;
+}
+
+.class-input-cap {
+  width: 5.25rem;
+}

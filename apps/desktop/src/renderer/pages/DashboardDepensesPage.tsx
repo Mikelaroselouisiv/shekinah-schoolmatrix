@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA, getTodayLocalYYYYMMDD } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
+import { useRevealScroll } from "@/lib/useRevealScroll";
 
 
 type Activity = { id: string; name: string; code: string | null };
@@ -29,6 +30,7 @@ export function DashboardDepensesPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const formRef = useRevealScroll<HTMLFormElement>(showForm);
   const [saving, setSaving] = useState(false);
   const [validatingId, setValidatingId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -194,7 +196,7 @@ export function DashboardDepensesPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
+        <form ref={formRef} onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
           <h3 className="font-semibold text-slate-900">Nouvelle dépense</h3>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>

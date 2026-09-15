@@ -7,6 +7,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class StudentParentsController {
   constructor(private readonly studentParentsService: StudentParentsService) {}
 
+  /**
+   * Enfants du compte connecté.
+   * Lit `user_linked_student` — même source que GET /users/me/linked-students,
+   * qui reste la route de référence pour les clients.
+   */
   @Get('my-children')
   async myChildren(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
     const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;

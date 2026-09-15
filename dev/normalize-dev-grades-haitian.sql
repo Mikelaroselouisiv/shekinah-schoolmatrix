@@ -1,4 +1,4 @@
--- DEV only (shekinah-db-dev). Recale les notes héritées « /20 + coef 1/2/3 »
+-- DEV only (schoolmatrix-db-dev). Recale les notes héritées « /20 + coef 1/2/3 »
 -- vers le barème haïtien : points obtenus / 100–500, moyenne = points/barème × 10.
 -- Idempotent : les notes déjà sur 100+ sont juste ramenées au barème de la matière.
 

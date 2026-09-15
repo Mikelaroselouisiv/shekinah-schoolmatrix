@@ -17,13 +17,15 @@ import { OfflineBanner } from '../../components/OfflineBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { canSeeSensitiveDashboardStats } from '../../lib/permissions';
+import { canSeeSensitiveDashboardStats, isTeacherRole } from '../../lib/permissions';
 import { formatTodayLong, studentDisplayName } from '../../lib/format';
 import {
   getDashboardStats,
   getImageUrl,
+  getUpcomingBirthdays,
   type DashboardStats,
   type LinkedStudent,
+  type UpcomingBirthday,
 } from '../../services/api';
 import { colors, softTint } from '../../theme/tokens';
 import { WORK_TAB_BY_ROLE, getScreen } from '../../../spec/productMap';
@@ -41,6 +43,7 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [birthdays, setBirthdays] = useState<UpcomingBirthday[]>([]);
 
   const firstName = user?.first_name || user?.email || 'utilisateur';
   const schoolName = context?.school?.name || home?.name || 'Shekinah';
@@ -54,6 +57,16 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
 
   const loadExtras = useCallback(async () => {
     await refreshLinkedStudents();
+    if (isTeacherRole(roleName)) {
+      try {
+        const data = await getUpcomingBirthdays();
+        setBirthdays(data.birthdays);
+      } catch {
+        setBirthdays([]);
+      }
+    } else {
+      setBirthdays([]);
+    }
     if (!showStats) return;
     setLoadingStats(true);
     try {
@@ -61,7 +74,7 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
     } finally {
       setLoadingStats(false);
     }
-  }, [showStats, refreshLinkedStudents]);
+  }, [showStats, refreshLinkedStudents, roleName]);
 
   useEffect(() => {
     void loadExtras();
@@ -120,7 +133,7 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
 
           <View style={styles.brand}>
             <Image
-              source={logoUri ? { uri: logoUri } : require('../../../assets/brand-logo.png')}
+              source={logoUri ? { uri: logoUri } : require('../../../assets/logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -134,15 +147,26 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
         </View>
 
         <View style={styles.body}>
+          {birthdays.length > 0 ? (
+            <View style={styles.birthdayCard}>
+              <Text style={styles.birthdayTitle}>Anniversaires</Text>
+              {birthdays.map((b) => (
+                <Text key={b.student_id} style={styles.birthdayLine}>
+                  {b.when === 'tomorrow' ? 'Demain' : 'Aujourd’hui'} — {b.first_name} {b.last_name}
+                  {b.room_name ? ` · ${b.room_name}` : ''}
+                  {b.turning_age != null ? ` (${b.turning_age} ans)` : ''}
+                </Text>
+              ))}
+            </View>
+          ) : null}
           {showStats ? (
             <View style={styles.block}>
               {loadingStats && !stats ? (
                 <LoadingBlock label="Stats…" />
               ) : (
                 <View style={styles.kpiRow}>
-                  <Kpi label="Classes" value={stats?.classes} />
-                  <Kpi label="Élèves" value={stats?.students} />
-                  <Kpi label="Profs" value={stats?.teachers} />
+                  <Kpi label="Classes" value={stats?.classesCount} />
+                  <Kpi label="Élèves" value={stats?.studentsCount} />
                 </View>
               )}
             </View>
@@ -260,6 +284,25 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 20,
     gap: 14,
+  },
+  birthdayCard: {
+    backgroundColor: colors.flameTint,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 6,
+  },
+  birthdayTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  birthdayLine: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
   },
   block: {
     gap: 8,

@@ -1,4 +1,8 @@
-import type { EducationLevelKey } from './education-levels';
+import {
+  LEVELS_PEDAGOGIQUE_PRIMAIRE,
+  LEVELS_PEDAGOGIQUE_SECONDAIRE,
+  type EducationLevelKey,
+} from './education-levels';
 
 /**
  * Une école peut renommer le rôle depuis « Gestion des rôles » (TEACHER →
@@ -100,7 +104,10 @@ export const PERMS_SECRETAIRE = ['students', 'fiche-eleve', 'classes'];
 
 export const PERMS_SURVEILLANT = ['discipline'];
 
-/** Niveaux par défaut d’un rôle — `null` = toute l’école. */
+/**
+ * Niveaux par défaut d’un rôle — `null` = toute l’école.
+ * Directeurs pédagogiques : primaire = 1er+2e AF ; secondaire = 3e AF + secondaire.
+ */
 export const DEFAULT_ROLE_EDUCATION_LEVELS: Record<string, EducationLevelKey[] | null> =
   {
     SUPER_ADMIN: null,
@@ -111,12 +118,12 @@ export const DEFAULT_ROLE_EDUCATION_LEVELS: Record<string, EducationLevelKey[] |
     DIRECTEUR_PEDAGOGIQUE: null,
     DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE: ['PRESCOLAIRE'],
     ADMIN_PRESCOLAIRE: ['PRESCOLAIRE'],
-    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
-    ADMIN_FONDAMENTAL: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
-    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: ['FONDAMENTAL_2'],
-    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: ['FONDAMENTAL_3'],
-    DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: ['SECONDAIRE'],
-    ADMIN_SECONDAIRE: ['SECONDAIRE'],
+    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
+    ADMIN_FONDAMENTAL: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
+    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
+    DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
+    DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
+    ADMIN_SECONDAIRE: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
     DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE: ['FORMATION_SUPERIEURE'],
     SECRETAIRE_GENERAL: null,
     SECRETAIRE_FORMATION_SUPERIEURE: ['FORMATION_SUPERIEURE'],
@@ -146,6 +153,19 @@ export const ROLES_SCHOOL_MANAGEMENT = [
   ...ROLES_SECRETAIRE,
   ROLE_NAMES.STAFF,
 ];
+
+/** Direction, pédagogie, secrétariat : dossier scolaire complet (parcours, PDF). */
+export const ROLES_STUDENT_DOSSIER = [
+  ...ROLES_FULL_SCHOOL,
+  ...ROLES_PEDAGOGIQUE,
+  ...ROLES_SECRETAIRE,
+];
+
+export function canAccessStudentDossierComplet(name?: string | null): boolean {
+  const n = (name ?? '').toUpperCase().trim();
+  if (isFullAccessRoleName(n)) return true;
+  return (ROLES_STUDENT_DOSSIER as readonly string[]).includes(n);
+}
 
 export const ROLES_GRADES = [
   ...ROLES_FULL_SCHOOL,

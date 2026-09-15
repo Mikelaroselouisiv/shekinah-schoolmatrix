@@ -77,13 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        // Ne pas bloquer indéfiniment si l’API cloud ne répond pas.
-        const u = await Promise.race([
-          getMe(),
-          new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('auth_timeout')), 8000),
-          ),
-        ]);
+        const u = await getMe();
         if (!cancelled) setUser(u);
         if (!cancelled) {
           try {

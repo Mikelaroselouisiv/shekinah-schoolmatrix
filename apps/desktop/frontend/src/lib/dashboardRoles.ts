@@ -43,6 +43,19 @@ const ROLES_DISCIPLINE: string[] = ["DISCIPLINE"];
 /** Rôles photographe (photos élèves uniquement via onglet Photographie). */
 const ROLES_PHOTOGRAPHY: string[] = ["PHOTOGRAPHER"];
 
+export const TEACHER_ROLE_NAMES: string[] = [
+  "TEACHER",
+  "PROFESSEUR",
+  "PROFESSEURE",
+  "PROF",
+  "ENSEIGNANT",
+  "ENSEIGNANTE",
+];
+
+export function isTeacherRole(role?: string | null): boolean {
+  return TEACHER_ROLE_NAMES.includes((role ?? "").toUpperCase().trim());
+}
+
 function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
   if (allowedRoles.length === 0) return true;
   return allowedRoles.includes(roleName);
@@ -96,7 +109,8 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], permissionKey: "schedule", block: "configuration" },
   // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], permissionKey: "students", block: "management" },
-  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/tableau-professeur", label: "Tableau de bord professeur", allowedRoles: [...TEACHER_ROLE_NAMES], permissionKey: "teacher-hub", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], permissionKey: "formation-classe", block: "management" },
   // Bloc Finance opérationnel : Économat + Dépenses (économe)
@@ -115,7 +129,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   {
     href: "/dashboard/fiche-eleve",
     label: "Fiche élève",
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL, ...ROLES_ECONOME, "PARENT"],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL, ...ROLES_ECONOME, ...TEACHER_ROLE_NAMES, "PARENT"],
     permissionKey: "fiche-eleve",
     block: "fiche",
   },
@@ -209,6 +223,24 @@ export function canSeeSensitiveDashboardStats(
 ): boolean {
   if (rolePermissions?.length && rolePermissions.includes("full_access")) return true;
   return ROLES_FULL.includes(roleName);
+}
+
+export function canSeeStudentDossierComplet(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  if (
+    role === "TEACHER" ||
+    role === "PARENT" ||
+    role === "ECONOME" ||
+    role === "COMPTABLE"
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  return !!rolePermissions?.includes("students");
 }
 
 /**

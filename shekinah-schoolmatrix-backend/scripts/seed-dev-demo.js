@@ -1,13 +1,13 @@
 /**
- * Jeu de données fictif pour Postgres DEV (shekinah-db-dev :5436 uniquement).
+ * Jeu de données fictif pour Postgres DEV (shekinah-db-dev :5435 uniquement).
  *
  * Usage (depuis shekinah-schoolmatrix-backend) :
- *   node scripts/seed-dev-demo.js
+ *   npm run seed:dev          (ou : node scripts/seed-dev-demo.js)
  *
  * Mot de passe de tous les comptes fictifs : systeme12
  * Ne touche pas au SUPER_ADMIN existant (larosemikelson@gmail.com).
  * Ne pousse rien vers GCP. Pour voir ces données « côté Remote » :
- *   npm run dev:backend:cloud  puis  npm run dev:sync-lab
+ *   npm run dev:backend:mirror  puis  npm run dev:sync-lab
  */
 'use strict';
 
@@ -18,7 +18,7 @@ const { Client } = require('pg');
 const DEMO_PASSWORD = 'systeme12';
 const YEAR = '2026-2027';
 const YEAR_PREV = '2025-2026';
-const DOMAIN = 'institutionmixteshekinah.com';
+const DOMAIN = 'ecoledemo.local';
 const PROTECTED_EMAILS = new Set(['larosemikelson@gmail.com']);
 
 const FIRST_F = [
@@ -77,13 +77,13 @@ function birthForLevel(level, i) {
 }
 
 function nisu(n) {
-  return `SHK${String(n).padStart(6, '0')}`;
+  return `PAR${String(n).padStart(6, '0')}`;
 }
 
 async function main() {
   const host = process.env.DB_HOST || 'localhost';
-  const port = Number(process.env.DB_PORT || 5436);
-  if (!['localhost', '127.0.0.1'].includes(host) || ![5435, 5436].includes(port)) {
+  const port = Number(process.env.DB_PORT || 5435);
+  if (!['localhost', '127.0.0.1'].includes(host) || ![5435, 5438].includes(port)) {
     throw new Error(`Refus : ce script ne cible que Postgres DEV local (reçu ${host}:${port}).`);
   }
 
@@ -679,10 +679,11 @@ async function main() {
     for (const [si, s] of allStudents.entries()) {
       const codes = subjectsFor(s.level);
       if (s.level === 'Préscolaire') {
-        const levels = ['A', 'EA', 'NA'];
-        const freqs = ['Régulier', 'Occasionnel', 'En progrès'];
+        const levels = ['MOINS_BIEN', 'BIEN', 'TRES_BIEN', 'EXCELLENT'];
+        const freqs = ['JAMAIS', 'PARFOIS', 'TOUJOURS'];
         for (const code of codes) {
           const sub = subjectByCode[code];
+          const byFreq = code === 'EPS';
           await client.query(
             `INSERT INTO preschool_grade (student_id, academic_year_id, class_id, subject_id, period_id, level, frequency, observation)
              SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::varchar, $7::varchar, $8::text
@@ -692,8 +693,8 @@ async function main() {
              )`,
             [
               s.id, yearId, s.class_id, sub.id, t1.id,
-              pick(levels, si + code.length),
-              pick(freqs, si),
+              byFreq ? null : pick(levels, si + code.length),
+              byFreq ? pick(freqs, si) : null,
               si % 4 === 0 ? 'Participe bien aux activités.' : null,
             ],
           );
@@ -807,23 +808,6 @@ async function main() {
       );
     }
 
-    for (const c of classes.filter((x) => x.level !== 'Préscolaire')) {
-      const codes = subjectsFor(c.level).slice(0, 4);
-      for (const [i, code] of codes.entries()) {
-        await client.query(
-          `INSERT INTO exam_schedule (class_id, subject_id, period_id, period, exam_date, start_time, end_time)
-           SELECT $1::uuid, $2::uuid, $3::uuid, $4::varchar, $5::date, $6::varchar, $7::varchar
-           WHERE NOT EXISTS (
-             SELECT 1 FROM exam_schedule
-             WHERE class_id = $1::uuid AND subject_id = $2::uuid AND period_id = $3::uuid
-           )`,
-          [
-            c.id, subjectByCode[code].id, t1.id, t1.name,
-            `2026-10-${String(12 + i).padStart(2, '0')}`, '08:00', '10:00',
-          ],
-        );
-      }
-    }
     for (const c of classes) {
       await client.query(
         `INSERT INTO extracurricular_activity (academic_year_id, activity_date, start_time, end_time, class_id, occasion, participation_fee, dress_code)
@@ -932,6 +916,33 @@ async function main() {
       [jeId, acc['706000']],
     );
 
+    // Le seed raisonne en libellés ('Préscolaire', 'Fondamental'…) mais
+    // class.level doit contenir une clé de cycle pour le périmètre des rôles.
+    // On convertit en dernier pour ne rien casser au-dessus.
+    await client.query(`
+      UPDATE class c
+      SET level = CASE
+        WHEN x.txt ~ 'prescol|matern' THEN 'PRESCOLAIRE'
+        WHEN x.txt ~ '^(7|8|9)eme' THEN 'FONDAMENTAL_3'
+        WHEN x.txt ~ '^(5|6)eme' THEN 'FONDAMENTAL_2'
+        WHEN x.txt ~ 'fondament' THEN 'FONDAMENTAL_1'
+        WHEN x.txt ~ 'secondair' THEN 'SECONDAIRE'
+        WHEN x.txt ~ 'superieur' THEN 'FORMATION_SUPERIEURE'
+        ELSE c.level
+      END
+      FROM (
+        SELECT
+          id,
+          translate(
+            lower(coalesce(name,'') || ' ' || coalesce(description,'') || ' ' || coalesce(level,'')),
+            'àâäéèêëîïôöùûüç',
+            'aaaeeeeiioouuuc'
+          ) AS txt
+        FROM class
+      ) x
+      WHERE x.id = c.id
+    `);
+
     await client.query('COMMIT');
 
     const counts = await client.query(`
@@ -949,7 +960,7 @@ async function main() {
         (SELECT COUNT(*) FROM schedule_slot) AS slots
     `);
 
-    console.log('\n=== Seed DEV Shekinah terminé ===');
+    console.log('\n=== Seed DEV Eureka terminé ===');
     console.log(counts.rows[0]);
     console.log(`\nMot de passe de TOUS les comptes fictifs : ${DEMO_PASSWORD}`);
     console.log('\nComptes staff (email ou téléphone) :');

@@ -2,6 +2,7 @@
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
+import { useRevealScroll } from "@/lib/useRevealScroll";
 
 type AcademicYear = {
   id: string;
@@ -39,6 +40,8 @@ export function DashboardAcademicYearsPage() {
   const [periodName, setPeriodName] = useState("");
   const [periodOrder, setPeriodOrder] = useState(0);
   const [savingPeriod, setSavingPeriod] = useState(false);
+  const yearFormRef = useRevealScroll<HTMLFormElement>(showYearForm, editingYear?.id ?? "new");
+  const periodFormRef = useRevealScroll<HTMLFormElement>(showPeriodForm, editingPeriod?.id ?? "new");
 
   const [currentYearId, setCurrentYearId] = useState<string | null>(null);
   const [currentPeriodId, setCurrentPeriodId] = useState<string | null>(null);
@@ -322,7 +325,7 @@ export function DashboardAcademicYearsPage() {
         </div>
 
         {showYearForm && (
-          <form onSubmit={handleYearSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
+          <form ref={yearFormRef} onSubmit={handleYearSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
             <h4 className="font-semibold text-slate-900">{editingYear ? "Modifier" : "Nouvelle année"}</h4>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>
@@ -441,7 +444,7 @@ export function DashboardAcademicYearsPage() {
         ) : (
           <>
             {showPeriodForm && (
-              <form onSubmit={handlePeriodSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-md">
+              <form ref={periodFormRef} onSubmit={handlePeriodSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-md">
                 <h4 className="font-semibold text-slate-900">{editingPeriod ? "Modifier" : "Nouvelle période"}</h4>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>

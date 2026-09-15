@@ -5,12 +5,12 @@ import {
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   ErrorBanner,
@@ -39,7 +39,7 @@ import {
   type RoomItem,
   type StudentWriteBody,
 } from '../../services/api';
-import type { StudentsStackParamList } from '../../navigation/types';
+import { isHigherEducationLevel, learnerNoun, learnerNounCap } from '../../lib/educationLevels';
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'Enrollment'>;
 type StepId = 'identite' | 'scolarite' | 'famille' | 'photos';
@@ -104,6 +104,9 @@ export function EnrollmentScreen({ navigation, route }: Props) {
     () => (form.class_id ? rooms.filter((r) => r.class_id === form.class_id) : []),
     [rooms, form.class_id],
   );
+  const selectedClass = classes.find((c) => c.id === form.class_id);
+  const formHigherEd = isHigherEducationLevel(selectedClass?.level);
+  const formLearner = learnerNoun(selectedClass?.level);
 
   const patch = useCallback((partial: Partial<StudentWriteBody>) => {
     setForm((f) => ({ ...f, ...partial }));
@@ -150,7 +153,11 @@ export function EnrollmentScreen({ navigation, route }: Props) {
             responsible_name: s.responsible_name || '',
             responsible_phone: s.responsible_phone || '',
           });
-          navigation.setOptions({ title: 'Modifier l’élève' });
+          navigation.setOptions({
+            title: `Modifier l’${learnerNoun(
+              s.class_level || c.find((cl) => cl.id === s.class_id)?.level,
+            )}`,
+          });
         } else {
           const yearId =
             context?.academic_year?.id ||
@@ -175,7 +182,6 @@ export function EnrollmentScreen({ navigation, route }: Props) {
 
   function validateStep(id: StepId): string | null {
     if (id === 'identite') {
-      if (!form.order_number.trim()) return 'NISU obligatoire.';
       if (!form.first_name.trim() || !form.last_name.trim()) {
         return 'Prénom et nom obligatoires.';
       }
@@ -183,6 +189,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
     if (id === 'scolarite') {
       if (!form.class_id) return 'Classe obligatoire.';
       if (!editing && !form.academic_year_id) return 'Année scolaire obligatoire.';
+      if (!formHigherEd && !form.order_number.trim()) return 'NISU obligatoire.';
     }
     return null;
   }
@@ -217,9 +224,11 @@ export function EnrollmentScreen({ navigation, route }: Props) {
     setError('');
     setSuccess('');
     try {
-      const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, '').toUpperCase();
+      const nisu = formHigherEd
+        ? ''
+        : form.order_number.trim().replace(/[\s\u00A0]+/g, '').toUpperCase();
       const body: StudentWriteBody = {
-        order_number: nisu,
+        order_number: nisu || null,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
@@ -247,7 +256,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
 
       if (editing && studentId) {
         const updated = await updateStudent(studentId, body);
-        setSuccess('Élève mis à jour.');
+        setSuccess(`${learnerNounCap(selectedClass?.level)} mis à jour.`);
         navigation.replace('StudentFiche', {
           studentId: updated.id,
           studentName: `${updated.first_name} ${updated.last_name}`,
@@ -256,7 +265,9 @@ export function EnrollmentScreen({ navigation, route }: Props) {
         const created = await createStudent(body);
         Alert.alert(
           'Inscription réussie',
-          `NISU : ${created.order_number || nisu}`,
+          created.order_number
+            ? `NISU : ${created.order_number}`
+            : `Code de gestion : ${created.management_code || created.id}`,
           [
             {
               text: 'Voir la fiche',
@@ -344,8 +355,8 @@ export function EnrollmentScreen({ navigation, route }: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Title>{editing ? 'Modifier l’élève' : 'Inscription'}</Title>
+      <FormScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Title>{editing ? `Modifier l’${formLearner}` : 'Inscription'}</Title>
 
         <View style={{ marginTop: 12 }}>
           <SegmentedControl
@@ -367,12 +378,6 @@ export function EnrollmentScreen({ navigation, route }: Props) {
 
         {step === 'identite' ? (
           <View style={styles.block}>
-            <TextField
-              label="NISU *"
-              value={form.order_number}
-              onChangeText={(t) => patch({ order_number: t })}
-              autoCapitalize="characters"
-            />
             <TextField
               label="Prénom *"
               value={form.first_name}
@@ -436,6 +441,14 @@ export function EnrollmentScreen({ navigation, route }: Props) {
               value={classes.find((c) => c.id === form.class_id)?.name || 'Choisir'}
               onPress={() => setPicker('class')}
             />
+            {!formHigherEd && form.class_id ? (
+              <TextField
+                label="NISU *"
+                value={form.order_number}
+                onChangeText={(t) => patch({ order_number: t })}
+                autoCapitalize="characters"
+              />
+            ) : null}
             <SelectChip
               label="Salle"
               value={rooms.find((r) => r.id === form.room_id)?.name || 'Aucune'}
@@ -486,7 +499,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
           <View style={styles.block}>
             {(
               [
-                ['photo_identity_student', 'Élève'],
+                ['photo_identity_student', formHigherEd ? 'Étudiant' : 'Élève'],
                 ['photo_identity_mother', 'Mère'],
                 ['photo_identity_father', 'Père'],
                 ['photo_identity_responsible', 'Responsable'],
@@ -550,7 +563,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
             />
           )}
         </View>
-      </ScrollView>
+      </FormScrollView>
 
       <Modal
         visible={!!picker}
@@ -576,7 +589,16 @@ export function EnrollmentScreen({ navigation, route }: Props) {
                   style={styles.modalRow}
                   onPress={() => {
                     if (picker === 'year') patch({ academic_year_id: item.id });
-                    if (picker === 'class') patch({ class_id: item.id, room_id: '' });
+                    if (picker === 'class') {
+                      const higher = isHigherEducationLevel(
+                        classes.find((c) => c.id === item.id)?.level,
+                      );
+                      patch({
+                        class_id: item.id,
+                        room_id: '',
+                        order_number: higher ? '' : form.order_number,
+                      });
+                    }
                     if (picker === 'room') patch({ room_id: item.id });
                     if (picker === 'gender') patch({ gender: item.id });
                     setPicker(null);

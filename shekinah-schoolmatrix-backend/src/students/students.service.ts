@@ -5,28 +5,21 @@ import { Student } from './student.entity';
 import { Class } from '../classes/class.entity';
 import { Room } from '../rooms/room.entity';
 import { FormationClasseService } from '../formation-classe/formation-classe.service';
+import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
+import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
-import { generateStudentCode, isLegacyStudentCode, normalizeStudentCode } from './student-code';
-import { SyncService } from '../sync/sync.service';
 import { SyncKickService } from '../sync/sync-kick.service';
-import { UsersService } from '../users/users.service';
-import {
-  ParentAccountService,
-  EnsureParentAccountResult,
-} from '../users/parent-account.service';
+import { ParentAccountService } from '../users/parent-account.service';
+import { isHigherEducationLevel } from '../roles/education-levels';
+import type { ArchiveReason } from './student.serialize';
 
 export type ImportResult = {
   created: number;
   skipped: number;
   errors: { row: number; message: string }[];
-};
-
-export type StudentCreateResult = {
-  student: Student;
-  parent_account: EnsureParentAccountResult | null;
 };
 
 @Injectable()
@@ -41,15 +34,18 @@ export class StudentsService {
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
     private readonly studentAiImport: StudentAiImportService,
-    private readonly syncService: SyncService,
     private readonly syncKick: SyncKickService,
-    private readonly usersService: UsersService,
     private readonly parentAccounts: ParentAccountService,
+    @InjectRepository(StudentClassAssignment)
+    private readonly assignmentRepo: Repository<StudentClassAssignment>,
+    @InjectRepository(SchoolProfile)
+    private readonly schoolProfileRepo: Repository<SchoolProfile>,
   ) {}
 
   async findAll(filters?: {
     classId?: string;
     roomId?: string;
+    status?: 'active' | 'alumni' | 'all';
   }): Promise<Student[]> {
     const qb = this.studentRepo
       .createQueryBuilder('s')
@@ -59,19 +55,58 @@ export class StudentsService {
       .addOrderBy('r.name', 'ASC')
       .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC');
+    const status = filters?.status ?? 'active';
+    if (status === 'active') {
+      qb.andWhere('s.active = true').andWhere('s.archived_at IS NULL');
+    } else if (status === 'alumni') {
+      qb.andWhere('(s.active = false OR s.archived_at IS NOT NULL)');
+    }
     if (filters?.classId) {
       qb.andWhere('s.class_id = :classId', { classId: filters.classId });
     }
     if (filters?.roomId) {
       qb.andWhere('s.room_id = :roomId', { roomId: filters.roomId });
     }
-    const list = await qb.getMany();
-    for (const s of list) {
-      if (!normalizeStudentCode(s.student_code)) {
-        await this.ensureStudentCode(s);
-      }
+    return qb.getMany();
+  }
+
+  /**
+   * Recherche progressive (limite basse). Sans requête, rien n’est renvoyé.
+   */
+  async search(params: {
+    q?: string;
+    status?: 'active' | 'alumni' | 'all';
+    limit?: number;
+  }): Promise<Student[]> {
+    const q = (params.q ?? '').trim();
+    if (q.length < 2) return [];
+    const status = params.status ?? 'active';
+    const limit = Math.min(Math.max(Number(params.limit) || 20, 1), 50);
+    const qb = this.studentRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.class', 'c')
+      .leftJoinAndSelect('s.room', 'r')
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
+      .take(limit);
+
+    if (status === 'active') {
+      qb.andWhere('s.active = true').andWhere('s.archived_at IS NULL');
+    } else if (status === 'alumni') {
+      qb.andWhere('(s.active = false OR s.archived_at IS NOT NULL)');
     }
-    return list;
+
+    qb.andWhere(
+      `(LOWER(s.first_name) LIKE LOWER(:q)
+        OR LOWER(s.last_name) LIKE LOWER(:q)
+        OR LOWER(COALESCE(s.management_code, '')) LIKE LOWER(:q)
+        OR LOWER(COALESCE(s.order_number, '')) LIKE LOWER(:q)
+        OR LOWER(s.last_name || ' ' || s.first_name) LIKE LOWER(:q)
+        OR LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER(:q))`,
+      { q: `%${q}%` },
+    );
+
+    return qb.getMany();
   }
 
   async findOne(id: string): Promise<Student> {
@@ -82,7 +117,7 @@ export class StudentsService {
     if (!s) {
       throw new NotFoundException('Student not found');
     }
-    return this.ensureStudentCode(s);
+    return s;
   }
 
   /** Valide salle ↔ classe et capacité. */
@@ -108,7 +143,7 @@ export class StudentsService {
     last_name: string;
     class_id: string;
     room_id?: string | null;
-    order_number: string;
+    order_number?: string | null;
     academic_year_id?: string;
     email?: string;
     phone?: string;
@@ -126,69 +161,52 @@ export class StudentsService {
     father_phone?: string;
     responsible_name?: string;
     responsible_phone?: string;
-  }): Promise<StudentCreateResult> {
-    const nisu = normalizeNisu(params.order_number);
-    if (!nisu) {
-      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
-    }
+  }): Promise<Student> {
     if (!params.class_id?.trim()) {
       throw new BadRequestException('La classe est obligatoire.');
     }
+    const nisu = await this.nisuForClass(params.class_id, params.order_number);
     // Salle optionnelle à la création (import PDF / inscription progressive → Fiche élève).
-    await this.assertNisuAvailable(nisu);
     const room = params.room_id?.trim()
       ? await this.resolveRoomForClass(params.class_id, params.room_id)
       : null;
-
-    let saved: Student | null = null;
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const studentCode = await this.allocateStudentCode();
-      const student = this.studentRepo.create({
-        order_number: nisu,
-        student_code: studentCode,
-        first_name: params.first_name.trim(),
-        last_name: params.last_name.trim(),
-        email: params.email?.trim(),
-        phone: params.phone?.trim(),
-        address: params.address?.trim(),
-        birth_date: params.birth_date ? new Date(params.birth_date) : undefined,
-        birth_place: params.birth_place?.trim(),
-        gender: params.gender?.trim(),
-        photo_identity_student: params.photo_identity_student?.trim() || undefined,
-        photo_identity_mother: params.photo_identity_mother?.trim() || undefined,
-        photo_identity_father: params.photo_identity_father?.trim() || undefined,
-        photo_identity_responsible:
-          params.photo_identity_responsible?.trim() || undefined,
-        mother_name: params.mother_name?.trim() || undefined,
-        mother_phone: params.mother_phone?.trim() || undefined,
-        father_name: params.father_name?.trim() || undefined,
-        father_phone: params.father_phone?.trim() || undefined,
-        responsible_name: params.responsible_name?.trim() || undefined,
-        responsible_phone: params.responsible_phone?.trim() || undefined,
-        class: { id: params.class_id },
-        room,
-        active: true,
-      });
-      try {
-        saved = await this.studentRepo.save(student);
-        break;
-      } catch (err) {
-        lastErr = err;
-        if (!isPostgresUniqueViolation(err)) throw err;
-        // Collision NISU → message clair ; collision code école → retry
-        const existingNisu = await this.studentRepo.findOne({ where: { order_number: nisu } });
-        if (existingNisu) {
-          throw new BadRequestException(
-            `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
-          );
-        }
+    const management_code = await this.allocateManagementCode();
+    const student = this.studentRepo.create({
+      order_number: nisu,
+      management_code,
+      first_name: params.first_name.trim(),
+      last_name: params.last_name.trim(),
+      email: params.email?.trim(),
+      phone: params.phone?.trim(),
+      address: params.address?.trim(),
+      birth_date: params.birth_date ? new Date(params.birth_date) : undefined,
+      birth_place: params.birth_place?.trim(),
+      gender: params.gender?.trim(),
+      photo_identity_student: params.photo_identity_student?.trim() || undefined,
+      photo_identity_mother: params.photo_identity_mother?.trim() || undefined,
+      photo_identity_father: params.photo_identity_father?.trim() || undefined,
+      photo_identity_responsible:
+        params.photo_identity_responsible?.trim() || undefined,
+      mother_name: params.mother_name?.trim() || undefined,
+      mother_phone: params.mother_phone?.trim() || undefined,
+      father_name: params.father_name?.trim() || undefined,
+      father_phone: params.father_phone?.trim() || undefined,
+      responsible_name: params.responsible_name?.trim() || undefined,
+      responsible_phone: params.responsible_phone?.trim() || undefined,
+      class: { id: params.class_id },
+      room,
+      active: true,
+    });
+    let saved: Student;
+    try {
+      saved = await this.studentRepo.save(student);
+    } catch (err) {
+      if (isPostgresUniqueViolation(err)) {
+        throw new BadRequestException(
+          `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
+        );
       }
-    }
-    if (!saved) {
-      throw lastErr instanceof Error
-        ? lastErr
-        : new BadRequestException('Impossible d’attribuer un code école unique.');
+      throw err;
     }
     if (params.academic_year_id) {
       await this.formationClasseService.addStudentToClass(
@@ -197,21 +215,48 @@ export class StudentsService {
         params.class_id,
       );
     }
-    const student = await this.findOne(saved.id);
-    let parent_account: EnsureParentAccountResult | null = null;
-    try {
-      parent_account = await this.parentAccounts.ensureForStudent(student, {
-        provision: true,
-      });
-    } catch (err) {
-      this.logger.warn(
-        `Compte parent auto non créé pour élève ${student.id}: ${(err as Error)?.message || err}`,
-      );
-    }
-    return { student, parent_account };
+    const created = await this.findOne(saved.id);
+    // Provision parent uniquement à l’inscription (pas aux MAJ — sinon delete annulé).
+    await this.attachGuardianQuietly(created, { provision: true });
+    return created;
   }
 
-  /** NISU unique global (Haïti) — refuse tout doublon. */
+  private async attachGuardianQuietly(
+    student: Student,
+    opts?: { provision?: boolean },
+  ): Promise<void> {
+    try {
+      await this.parentAccounts.ensureForStudent(student, opts);
+    } catch (err: any) {
+      this.logger.warn(
+        `Compte parent non provisionné pour ${student.last_name} ${student.first_name}: ${err?.message || err}`,
+      );
+    }
+  }
+
+  /**
+   * NISU obligatoire hors formation supérieure.
+   * Au supérieur : pas de NISU — on stocke null (plusieurs NULL OK pour l’unicité PG).
+   */
+  private async nisuForClass(
+    classId: string,
+    raw: string | null | undefined,
+    excludeStudentId?: string,
+  ): Promise<string | null> {
+    const cls = await this.classesService.findOne(classId);
+    const nisu = normalizeNisu(raw);
+    if (isHigherEducationLevel(cls.level)) {
+      if (nisu) await this.assertNisuAvailable(nisu, excludeStudentId);
+      return nisu || null;
+    }
+    if (!nisu) {
+      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
+    }
+    await this.assertNisuAvailable(nisu, excludeStudentId);
+    return nisu;
+  }
+
+  /** NISU unique global (Haïti) — refuse tout doublon. Usage interne / sensible. */
   private async assertNisuAvailable(nisu: string, excludeStudentId?: string): Promise<void> {
     const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
     if (existing && existing.id !== excludeStudentId) {
@@ -221,38 +266,16 @@ export class StudentsService {
     }
   }
 
-  /**
-   * Alloue un code de gestion école (public), indépendant du NISU.
-   * 8 caractères alphanumériques (lettres + chiffres), sans année.
-   */
-  private async allocateStudentCode(): Promise<string> {
+  /** Code de gestion public (badge, fiche) — distinct du NISU. */
+  private async allocateManagementCode(): Promise<string> {
     for (let attempt = 0; attempt < 40; attempt++) {
-      const code = generateStudentCode();
-      const existing = await this.studentRepo.findOne({ where: { student_code: code } });
-      if (!existing) return code;
+      const seq = (await this.studentRepo.count()) + 1 + attempt;
+      const code = `CG-${String(seq).padStart(6, '0')}`;
+      const exists = await this.studentRepo.findOne({ where: { management_code: code } });
+      if (!exists) return code;
     }
-    throw new BadRequestException('Impossible d’attribuer un code école unique.');
-  }
-
-  /** Garantit un code école public valide (8 car. alphanumériques, pas d’ancien format EL-AAAA). */
-  async ensureStudentCode(student: Student): Promise<Student> {
-    const current = normalizeStudentCode(student.student_code);
-    const ok =
-      !!current &&
-      current.length === 8 &&
-      !isLegacyStudentCode(student.student_code);
-    if (ok) return student;
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const code = await this.allocateStudentCode();
-      student.student_code = code;
-      try {
-        await this.studentRepo.save(student);
-        return student;
-      } catch (err) {
-        if (!isPostgresUniqueViolation(err)) throw err;
-      }
-    }
-    throw new BadRequestException('Impossible d’attribuer un code école unique.');
+    const suffix = Date.now().toString(36).toUpperCase().slice(-6);
+    return `CG-${suffix}`;
   }
 
   async update(
@@ -262,7 +285,7 @@ export class StudentsService {
       last_name: string;
       class_id: string;
       room_id: string | null;
-      order_number: string;
+      order_number: string | null;
       email: string;
       phone: string;
       address: string;
@@ -289,19 +312,22 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
-    if (params.order_number !== undefined) {
-      const nisu = normalizeNisu(params.order_number);
-      if (!nisu) {
-        throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
-      }
-      await this.assertNisuAvailable(nisu, id);
-      student.order_number = nisu;
+    if (!student.management_code?.trim()) {
+      student.management_code = await this.allocateManagementCode();
     }
     if (params.first_name !== undefined) student.first_name = params.first_name.trim();
     if (params.last_name !== undefined) student.last_name = params.last_name.trim();
     if (params.class_id !== undefined) student.class = { id: params.class_id } as Class;
 
     const classId = params.class_id ?? student.class?.id;
+    if (!classId) {
+      throw new BadRequestException('La classe est obligatoire.');
+    }
+    if (params.order_number !== undefined || params.class_id !== undefined) {
+      const raw =
+        params.order_number !== undefined ? params.order_number : student.order_number;
+      student.order_number = await this.nisuForClass(classId, raw, id);
+    }
     if (params.room_id !== undefined) {
       if (!params.room_id?.trim()) {
         student.room = null;
@@ -375,15 +401,8 @@ export class StudentsService {
       throw err;
     }
     const updated = await this.findOne(id);
-    // `provision: false` : on rattache un parent existant si le contact a été
-    // corrigé, mais on ne recrée jamais un compte supprimé volontairement.
-    try {
-      await this.parentAccounts.ensureForStudent(updated, { provision: false });
-    } catch (err) {
-      this.logger.warn(
-        `Rattachement parent non effectué pour élève ${id}: ${(err as Error)?.message || err}`,
-      );
-    }
+    // Lien vers un parent déjà existant seulement — jamais de nouveau compte.
+    await this.attachGuardianQuietly(updated, { provision: false });
     return updated;
   }
 
@@ -396,15 +415,37 @@ export class StudentsService {
     });
   }
 
-  async delete(id: string): Promise<void> {
-    const student = await this.studentRepo.findOne({ where: { id } });
-    if (!student) {
-      throw new NotFoundException('Student not found');
+  /**
+   * Retire l’élève de l’année en cours. Le dossier (notes, paiements, parcours) reste.
+   * Ne jamais hard-delete : un élève « supprimé » devient un ancien élève.
+   */
+  async archive(id: string, reason: ArchiveReason = 'REMOVED'): Promise<Student> {
+    const student = await this.findOne(id);
+    if (student.archived_at) return student;
+    student.active = false;
+    student.archived_at = new Date();
+    student.archive_reason = reason;
+    student.room = null;
+    await this.studentRepo.save(student);
+
+    const profiles = await this.schoolProfileRepo.find({ take: 1 });
+    const yearId = profiles[0]?.current_academic_year_id;
+    if (yearId) {
+      const previous = await this.assignmentRepo.find({
+        where: {
+          student: { id },
+          academic_year: { id: yearId },
+        },
+      });
+      if (previous.length) await this.assignmentRepo.remove(previous);
     }
-    // Tombstone avant hard-delete — empêche la résurrection au prochain pull cloud→local
-    await this.syncService.recordDelete('Student', id);
-    await this.studentRepo.remove(student);
-    this.syncKick.kick('student-delete');
+    this.syncKick.kick('student-archive');
+    return this.findOne(id);
+  }
+
+  /** Conservé pour l’API DELETE : archive, ne détruit pas le dossier. */
+  async delete(id: string): Promise<Student> {
+    return this.archive(id, 'REMOVED');
   }
 
   /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */

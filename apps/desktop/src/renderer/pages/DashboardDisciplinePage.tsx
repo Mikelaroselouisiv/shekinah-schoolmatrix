@@ -69,7 +69,7 @@ export function DashboardDisciplinePage() {
     date: getTodayLocalYYYYMMDD(),
     arrival_time: "08:00",
   });
-  const [studentsForLateness, setStudentsForLateness] = useState<{ id: string; first_name: string; last_name: string; order_number: string | null; student_code: string | null }[]>([]);
+  const [studentsForLateness, setStudentsForLateness] = useState<{ id: string; first_name: string; last_name: string; order_number: string | null }[]>([]);
   const [latenessSaving, setLatenessSaving] = useState(false);
 
   const [deductions, setDeductions] = useState<DeductionItem[]>([]);
@@ -570,7 +570,7 @@ export function DashboardDisciplinePage() {
                 >
                   <option value="">Sélectionner</option>
                   {studentsForLateness.map((s) => (
-                    <option key={s.id} value={s.id}>{s.student_code ? `${s.student_code} — ` : ""}{s.first_name} {s.last_name}</option>
+                    <option key={s.id} value={s.id}>{s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}</option>
                   ))}
                 </select>
               </div>

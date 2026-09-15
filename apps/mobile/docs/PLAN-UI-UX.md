@@ -29,7 +29,7 @@ Le desktop expose ~18 entrées de menu en **barre horizontale** + sous-onglets i
 6. **Progressive disclosure** — config école, comptabilité, import PDF = profondeur, pas tab bar.
 7. **Même API / mêmes permissions** que le desktop ; seul le *chemin* change.
 8. **Identité visuelle** — logo `assets/logo.png`, couleurs école (`/school/profile`) ; pas de chrome desktop copié.
-9. **Marque mobile** — nom produit = **Shekinah** uniquement. Ne jamais afficher ni utiliser Eureka / Parallele dans l’UI, le splash, les stores, ni les textes utilisateur (le dossier backend monorepo peut garder son nom technique).
+9. **Marque mobile** — nom produit = **Shekinah** uniquement. Ne jamais afficher ni utiliser « Parallele » dans l’UI, le splash, les stores, ni les textes utilisateur (le dossier backend monorepo peut garder son nom technique).
 
 ---
 
@@ -175,7 +175,7 @@ Login → Accueil (KPIs) → Plus → Pilotage / Organisation / Admin
 
 | Zone | Règle |
 |------|--------|
-| Splash / Login | Logo + marque **Shekinah** (`assets/logo.png`) ; jamais Eureka / Parallele ; champs sobres ; CTA unique |
+| Splash / Login | Logo + marque **Shekinah** (`assets/logo.png`) ; jamais « Parallele » ; champs sobres ; CTA unique |
 | Header in-app | Nom école (API) + petite pastille logo ; fallback marque « Shekinah » |
 | Tab bar | Icônes + labels courts FR ; accent = couleur primaire école |
 | Accueil | Une composition : bienvenue, contexte date/année, 3–6 raccourcis max |

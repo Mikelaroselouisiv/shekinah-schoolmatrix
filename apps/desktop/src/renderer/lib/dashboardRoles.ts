@@ -5,7 +5,8 @@
  *
  * Règles :
  * - SUPER_ADMIN, DIRECTEUR_GENERAL, DIRECTEUR_ADMINISTRATIF, ADMINISTRATEUR : accès total.
- * - Directeurs pédagogiques : notes, horaires, classes, élèves, stats — **leur niveau seulement**.
+ * - Directeurs pédagogiques : notes, horaires, classes, élèves, stats — **leur périmètre seulement**
+ *   (primaire = 1er+2e AF ; secondaire = 3e AF + secondaire).
  * - Secrétaires : dossiers élèves / classes (général = toute l’école ; FS = formation supérieure).
  * - Surveillant général : discipline.
  * - Économe : Économat et Dépenses.
@@ -76,6 +77,25 @@ const ROLES_DISCIPLINE: string[] = ["DISCIPLINE", "SURVEILLANT_GENERAL"];
 /** Rôles photographe (photos élèves uniquement via onglet Photographie). */
 const ROLES_PHOTOGRAPHY: string[] = ["PHOTOGRAPHER"];
 
+const ROLE_LABELS: Record<string, string> = {
+  DIRECTEUR_PEDAGOGIQUE: "Directeur pédagogique (tous les cycles)",
+  DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE: "Directeur pédagogique du préscolaire",
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL: "Directeur pédagogique du primaire",
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: "Directeur pédagogique du primaire",
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: "Directeur pédagogique du secondaire",
+  DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: "Directeur pédagogique du secondaire",
+  DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE: "Directeur pédagogique de la formation supérieure",
+  ADMIN_PRESCOLAIRE: "Directeur pédagogique du préscolaire",
+  ADMIN_FONDAMENTAL: "Directeur pédagogique du primaire",
+  ADMIN_SECONDAIRE: "Directeur pédagogique du secondaire",
+};
+
+export function formatRoleLabel(roleName: string | null | undefined): string {
+  if (!roleName) return "—";
+  const key = roleName.toUpperCase().trim();
+  return ROLE_LABELS[key] ?? roleName;
+}
+
 function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
   if (allowedRoles.length === 0) return true;
   return allowedRoles.includes(roleName);
@@ -97,6 +117,13 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
     );
   }
   if (permissionKey === "rooms") return rolePermissions.includes("rooms") || rolePermissions.includes("classes");
+  if (permissionKey === "classes") {
+    return (
+      rolePermissions.includes("classes") ||
+      rolePermissions.includes("rooms") ||
+      rolePermissions.includes("teachers")
+    );
+  }
   if (permissionKey === "stats-academiques") {
     return rolePermissions.includes("stats-academiques");
   }
@@ -116,16 +143,15 @@ export type NavItem = {
 /** Entrées du menu dashboard avec les rôles autorisés et le bloc d'affichage. */
 export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], permissionKey: "dashboard", block: "configuration" },
-  // Bloc Configuration : Matières, Classes, puis Salles (sections), Années, Professeurs, Horaires
-  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
+  // Bloc Configuration : Classes (salles + profs dans la fiche), Matières (catalogue), Années, Horaires
   { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "classes", block: "configuration" },
-  { href: "/dashboard/rooms", label: "Salles", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "rooms", block: "configuration" },
+  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
   { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
-  { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], permissionKey: "teachers", block: "configuration" },
   { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES], permissionKey: "schedule", block: "configuration" },
   // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "students", block: "management" },
   { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/tableau-professeur", label: "Tableau de bord professeur", allowedRoles: [...TEACHER_ROLE_NAMES], permissionKey: "teacher-hub", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE], permissionKey: "formation-classe", block: "management" },
   // Bloc Finance opérationnel : Économat + Dépenses (économe)
@@ -144,7 +170,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   {
     href: "/dashboard/fiche-eleve",
     label: "Fiche élève",
-    allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE, ...ROLES_ECONOME, "PARENT"],
+    allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE, ...ROLES_ECONOME, ...TEACHER_ROLE_NAMES, "PARENT"],
     permissionKey: "fiche-eleve",
     block: "fiche",
   },
@@ -163,6 +189,13 @@ export const USERS_NAV = { href: "/dashboard/users", label: "Gestion Utilisateur
 /** Vérifie si un rôle peut accéder à un chemin (pour redirection si accès interdit). */
 export function canAccessPath(roleName: string, path: string, rolePermissions?: string[]): boolean {
   if (path === "/dashboard") return true;
+  const normalized =
+    path === "/dashboard/rooms" ||
+    path.startsWith("/dashboard/rooms/") ||
+    path === "/dashboard/teachers" ||
+    path.startsWith("/dashboard/teachers/")
+      ? "/dashboard/classes"
+      : path;
   if (rolePermissions && rolePermissions.length > 0) {
     if (rolePermissions.includes("full_access")) return true;
     if (path === SCHOOL_NAV.href || path.startsWith(SCHOOL_NAV.href + "/")) {
@@ -172,10 +205,11 @@ export function canAccessPath(roleName: string, path: string, rolePermissions?: 
       return canSeeByPermissions("users", rolePermissions);
     }
     const item = DASHBOARD_NAV.find(
-      (n) => n.href !== "/dashboard" && (n.href === path || path.startsWith(n.href + "/"))
+      (n) => n.href !== "/dashboard" && (n.href === normalized || normalized.startsWith(n.href + "/"))
     );
     if (!item) return false;
     if (item.permissionKey === "stats-academiques" && isTeacherRole(roleName)) return true;
+    if (item.permissionKey === "teacher-hub" && isTeacherRole(roleName)) return true;
     return canSeeByPermissions(item.permissionKey, rolePermissions);
   }
   if (ROLES_FULL.includes(roleName)) return true;
@@ -186,7 +220,7 @@ export function canAccessPath(roleName: string, path: string, rolePermissions?: 
     return canSeeNavItem(roleName, ROLES_FULL);
   }
   const item = DASHBOARD_NAV.find(
-    (n) => n.href !== "/dashboard" && (n.href === path || path.startsWith(n.href + "/"))
+    (n) => n.href !== "/dashboard" && (n.href === normalized || normalized.startsWith(n.href + "/"))
   );
   if (!item) return false;
   return canSeeNavItem(roleName, item.allowedRoles);
@@ -209,7 +243,9 @@ export function getNavItemsForRole(
       const canSee =
         item.permissionKey === "stats-academiques" && isTeacherRole(roleName)
           ? true
-          : usePermissions
+          : item.permissionKey === "teacher-hub" && isTeacherRole(roleName)
+            ? true
+            : usePermissions
             ? canSeeByPermissions(item.permissionKey, rolePermissions)
             : canSeeNavItem(roleName, item.allowedRoles);
       if (canSee) {
@@ -242,6 +278,43 @@ export function canSeeSensitiveDashboardStats(
 ): boolean {
   if (rolePermissions?.length && rolePermissions.includes("full_access")) return true;
   return ROLES_FULL.includes(roleName);
+}
+
+/**
+ * Dossier scolaire complet (parcours multi-années, PDF unique) :
+ * direction, pédagogie, secrétariat — pas les enseignants, parents, économes.
+ */
+export function canSeeStudentDossierComplet(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  if (
+    isTeacherRole(role) ||
+    role === "PARENT" ||
+    role === "ECONOME" ||
+    role === "COMPTABLE" ||
+    role === "DISCIPLINE" ||
+    role === "SURVEILLANT_GENERAL" ||
+    role === "PHOTOGRAPHER"
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  if (ROLES_PEDAGOGIQUE.includes(role) || ROLES_SECRETAIRE.includes(role)) return true;
+  return (
+    !!rolePermissions?.includes("students") ||
+    !!rolePermissions?.includes("formation-classe")
+  );
+}
+
+/** NISU : direction, pédagogie, secrétariat — pas parent, prof, économe. */
+export function canSeeStudentNisu(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  return canSeeStudentDossierComplet(roleName, rolePermissions);
 }
 
 /**

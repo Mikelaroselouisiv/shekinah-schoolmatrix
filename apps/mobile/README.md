@@ -2,14 +2,13 @@
 
 Frontend React Native (Expo) pour Android & iOS.
 
-**Marque :** Shekinah (pas Eureka / Parallele dans l’UI).  
-**Backend :** même cloud que le desktop Remote (`http://34.118.138.96`).
+**Marque :** Shekinah (pas « Parallele » dans l’UI).
 
 ## Démarrer
 
 ```bash
-# depuis apps/mobile
-npm start
+# depuis la racine du monorepo
+npm run dev:mobile
 
 # ou
 npm --prefix apps/mobile start
@@ -24,8 +23,13 @@ Puis scanner le QR code avec Expo Go, ou `i` / `a` pour simulateur.
 Pour un vrai relance Android :
 
 ```bash
-# depuis apps/mobile
+# depuis la racine du monorepo
+npm run dev:mobile:android:fresh
+
+# depuis apps/mobile (même commande, alias ajouté)
 npm run android:fresh
+# ou
+npm run dev:mobile:android:fresh
 ```
 
 Ça : tue le port 8081, vide Metro/`.expo`, **force-stop Expo Go** sur l’émulateur, puis `expo start -c --android`.
@@ -42,14 +46,48 @@ NUKE=1 npm --prefix apps/mobile run android:fresh
 
 ### API
 
-Par défaut → **cloud Shekinah** `http://34.118.138.96` (identique au desktop Remote).
+Par défaut → **cloud** `http://34.118.138.96` (comme desktop Remote).  
+Override : `EXPO_PUBLIC_API_BASE_URL` ou `EXPO_PUBLIC_API_TARGET=local|cloud` (voir `.env.example`).  
+Les builds EAS injectent l’URL cloud (`eas.json`). HTTP cleartext / ATS sont autorisés dans `app.json` (API cloud en HTTP).
 
 ```bash
 # Nest local (iOS sim)
-EXPO_PUBLIC_API_TARGET=local npm start
+EXPO_PUBLIC_API_TARGET=local npm run dev:mobile
 
 # ou URL explicite — voir .env.example
 ```
+
+### Clavier
+
+`react-native-keyboard-controller` + `KeyboardProvider` ; helpers `FormScrollView` / `FormModal`.  
+Android : `softwareKeyboardLayoutMode: "resize"`. Rebuild natif requis après changement de config.
+
+### Build APK (preview) + login cloud
+
+```bash
+cd apps/mobile
+npx eas-cli build -p android --profile preview
+```
+
+Installer l’APK, se connecter → API `http://34.118.138.96`.
+
+### Publier une MAJ APK (feed GCS)
+
+Équivalent desktop `electron-updater` : feed  
+`https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/mobile/latest.json`
+
+```powershell
+# Depuis la racine du monorepo (bump + EAS wait + download artifact + upload GCS)
+powershell -ExecutionPolicy Bypass -File infra/scripts/ship-mobile.ps1 -Bump patch
+
+# Upload seul d’un APK déjà construit
+powershell -ExecutionPolicy Bypass -File infra/scripts/upload-mobile-apk.ps1 -ApkPath ./apps/mobile/dist/app.apk
+```
+
+Sur **Android Release**, l’app affiche une modal : **Mettre à jour** télécharge l’APK **dans l’app** (barre de progression), puis ouvre l’installateur système. Pas de navigateur.  
+iOS : pas de MAJ APK in-app.
+
+**Première fois** : installer un APK qui contient déjà le checker ; les ships suivants notifient les appareils.
 
 ## Spec produit
 
@@ -61,9 +99,4 @@ EXPO_PUBLIC_API_TARGET=local npm start
 | [`docs/ROLE_CHECKS.md`](docs/ROLE_CHECKS.md) | Checklist ACL par rôle (S21) |
 | [`spec/productMap.ts`](spec/productMap.ts) | Schéma navigation |
 
-## État chantier
-
-- **S0–S21** : parcours produit + durcissement (cache offline, file appel/paiement, `eas.json`, stub push)
-- Builds store : `eas build -p android|ios --profile preview|production` (remplacer `extra.eas.projectId` après `eas init` Shekinah)
-
-Logo : `assets/logo.png` (Shekinah)
+Logo : `assets/logo.png`

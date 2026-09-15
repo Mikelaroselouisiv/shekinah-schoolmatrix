@@ -1,5 +1,7 @@
 /**
- * Push notifications — architecture cible (S21).
+ * Notifications :
+ * - Anniversaires élèves (local, professeur connecté) : `birthdayNotifications.ts`
+ * - Push FCM/APNs (absences / paiements) : pas encore provisionné.
  *
  * Non branché en production tant que les projets FCM / APNs ne sont pas configurés
  * dans EAS. Cible :

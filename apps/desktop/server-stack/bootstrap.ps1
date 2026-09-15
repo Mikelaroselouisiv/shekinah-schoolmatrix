@@ -18,7 +18,9 @@ $DefaultsExample = Join-Path $StackDir 'defaults.env.example'
 $ImagesDir = Join-Path $StackDir 'images'
 $StateFile = Join-Path $StackDir '.bootstrap-done'
 $TaskName = 'Shekinah-SchoolMatrix-Server-Stack'
+$LegacyTaskName = $null
 $StartScript = Join-Path $StackDir 'stack-start.ps1'
+$LegacyEnvFile = $null
 
 function Write-Step([string]$Message) {
   Write-Host "==> $Message" -ForegroundColor Cyan
@@ -85,11 +87,28 @@ function Assert-GcsCredentials {
   }
 }
 
+function Test-PostgresServerExists {
+  docker inspect shekinah_postgres_server 2>$null | Out-Null
+  return $LASTEXITCODE -eq 0
+}
+
+function Import-LegacyEnvIfNeeded {
+  if (Test-Path -LiteralPath $EnvFile) { return }
+  if ($LegacyEnvFile -and (Test-Path -LiteralPath $LegacyEnvFile) -and ($LegacyEnvFile -ne $EnvFile)) {
+    Copy-Item -LiteralPath $LegacyEnvFile -Destination $EnvFile -Force
+    Write-Step 'Secrets repris depuis Shekinah SchoolMatrix (meme base Docker)'
+  }
+}
+
 function Ensure-EnvFile {
+  Import-LegacyEnvIfNeeded
   $source = Get-BundledDefaultsPath
   $bundled = Read-EnvMap $source
 
   if (-not (Test-Path -LiteralPath $EnvFile)) {
+    if (Test-PostgresServerExists) {
+      throw 'Postgres Server existe deja (shekinah_postgres_server) mais .env.server est introuvable. Restaurez C:\ProgramData\Shekinah SchoolMatrix\server-stack\.env.server — ne pas recreer le mot de passe (donnees intactes).'
+    }
     $map = @{}
     foreach ($k in $bundled.Keys) { $map[$k] = $bundled[$k] }
 
@@ -267,6 +286,11 @@ if (docker compose version 2>`$null) {
 }
 
 function Register-ScheduledTask {
+  if (-not $LegacyTaskName) { $legacy = $null } else { $legacy = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue }
+  if ($legacy) {
+    Write-Step "Tache existante conservee: $LegacyTaskName (pas de second compose up)"
+    return
+  }
   $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   if ($existing) { return }
   Write-StackStartScript
@@ -308,6 +332,7 @@ function Invoke-ComposeUp {
 }
 
 # --- main ---
+Import-LegacyEnvIfNeeded
 $cloudCfgChanged = $false
 if (Test-Path -LiteralPath $EnvFile) {
   $cloudCfgChanged = [bool](Align-BundledCloudConfig)

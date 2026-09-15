@@ -1,45 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { useState } from 'react';
+import { Image, StyleSheet, Switch, Text, View } from 'react-native';
+import axios from 'axios';
 import { Button, ErrorBanner, PasswordField, TextField } from '../../components/ui';
+import { FormScrollView } from '../../components/FormScrollView';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { getSetupRequired } from '../../services/api';
 import { colors } from '../../theme/tokens';
-import { SetupAdminScreen } from './SetupAdminScreen';
+
+function formatLoginError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      return 'Impossible de joindre le serveur. Vérifiez votre connexion internet.';
+    }
+    const msg =
+      (err.response.data as { message?: string } | undefined)?.message ||
+      err.message;
+    if (err.response.status >= 500) {
+      return 'Le serveur est temporairement indisponible. Réessayez plus tard.';
+    }
+    return typeof msg === 'string' ? msg : 'Identifiants incorrects.';
+  }
+  if (err instanceof Error) return err.message;
+  return 'Erreur de connexion';
+}
 
 export function LoginScreen() {
   const { login } = useAuth();
-  const { theme, refetch } = useSchool();
+  const { home, theme, refetch } = useSchool();
   const [loginValue, setLoginValue] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [setupRequired, setSetupRequired] = useState(false);
-  const [showSetup, setShowSetup] = useState(false);
-
-  const refreshSetup = useCallback(async () => {
-    try {
-      const required = await getSetupRequired();
-      setSetupRequired(required);
-      if (required) setShowSetup(true);
-    } catch {
-      setSetupRequired(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshSetup();
-  }, [refreshSetup]);
 
   async function handleSubmit() {
     setError('');
@@ -48,37 +40,21 @@ export function LoginScreen() {
       await login(loginValue, password, rememberMe);
       await refetch();
     } catch (err) {
-      const raw = err instanceof Error ? err.message : 'Erreur de connexion';
-      setError(/invalid credentials/i.test(raw) ? 'Identifiants invalides' : raw);
-      void refreshSetup();
+      setError(formatLoginError(err));
     } finally {
       setLoading(false);
     }
   }
 
-  if (showSetup && setupRequired) {
-    return (
-      <SetupAdminScreen
-        onDone={() => {
-          setShowSetup(false);
-          setSetupRequired(false);
-          void refreshSetup();
-        }}
-        onBackToLogin={() => setShowSetup(false)}
-      />
-    );
-  }
+  const schoolName = home?.name || 'Shekinah';
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.root, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <FormScrollView contentContainerStyle={styles.content} bottomOffset={40}>
         <View style={[styles.logoRing, { borderColor: theme.accentTint }]}>
-          <Image source={require('../../../assets/brand-logo.png')} style={styles.logo} />
+          <Image source={require('../../../assets/logo.png')} style={styles.logo} />
         </View>
-        <Text style={[styles.brand, { color: theme.primary }]}>Shekinah</Text>
+        <Text style={[styles.brand, { color: theme.primary }]}>{schoolName}</Text>
         <Text style={styles.subtitle}>Connexion</Text>
 
         <View style={styles.card}>
@@ -115,12 +91,9 @@ export function LoginScreen() {
             onPress={() => void handleSubmit()}
             disabled={loading || !loginValue.trim() || !password}
           />
-          {setupRequired ? (
-            <Button title="Créer un compte" variant="ghost" onPress={() => setShowSetup(true)} />
-          ) : null}
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </FormScrollView>
+    </View>
   );
 }
 

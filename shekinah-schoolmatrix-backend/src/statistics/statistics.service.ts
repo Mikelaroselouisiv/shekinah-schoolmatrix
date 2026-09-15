@@ -422,6 +422,7 @@ export class StatisticsService {
     const monthly = new Map<string, number>();
 
     for (const t of transactions) {
+      if (t.cancelled_at) continue;
       const stId = t.student?.id ?? (t as any).student_id;
       const svcId = t.service?.id ?? (t as any).service_id;
       const cid = t.class?.id ?? (t as any).class_id;
@@ -550,7 +551,7 @@ export class StatisticsService {
         students_total: students.length,
         students_with_balance: studentsWithBalance,
         students_fully_paid: studentsFullyPaid,
-        transactions_count: transactions.length,
+        transactions_count: transactions.filter((t) => !t.cancelled_at).length,
       },
       cashflow: monitor,
       banks,

@@ -18,7 +18,7 @@
 
 Le `pull` **n’émet pas** les lignes encore en table mais déjà tombstonées (évite de republier une delete incomplète).
 
-**Piège métier** : le provisionnement auto des comptes PARENT ne doit avoir lieu qu’à **l’inscription** élève — pas à chaque MAJ fiche (sinon une suppression de parent est recréée au prochain save). D’où le drapeau `provision` de `ParentAccountService.ensureForStudent`.
+**Piège métier** : le provisionnement auto des comptes PARENT ne doit avoir lieu qu’à **l’inscription** élève — pas à chaque MAJ fiche (sinon une suppression de parent est recréée au prochain save).
 
 ## Conflits : last-write-wins
 
@@ -74,6 +74,10 @@ Ne jamais écraser si uuid déjà présent :
 - `PaymentTransaction`
 - `Attendance`
 
+## HomeworkAssignment / HomeworkGrade
+
+Devoirs et leçons du professeur + notes sur la carte. Sync LWW (le professeur peut corriger la note en temps réel). Après `Attendance` dans `ENTITY_ORDER`.
+
 ## Auth
 
 Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
@@ -90,6 +94,16 @@ Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS`
 
 Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`, optionnel).
 
-Inclut **`User`** (`password_hash`, photos, `role_id`) ainsi que les rattachements `UserLinkedStudent` / `StudentParent` — sans eux, un parent synchronisé arrive sans aucun enfant. Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+Inclut **`User`** (`password_hash`, photos, `role_id`). **Pas de sync `Role`** : les ids de rôles divergent dès qu’un Server a été seedé plus tard (rôles pédagogiques ajoutés) ou qu’une école a renommé `TEACHER`. Le filaire User porte donc **`role_name`** ; l’apply rattache le compte au rôle local de même nom (alias `TEACHER` / `PROFESSEUR`). Sans ça, Remote voyait les profs sur les classes et le Server avait un annuaire vide.
 
-Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, porté côté desktop dans `lib/dashboardRoles.ts`).
+Les **ids serial User** peuvent aussi diverger (même e-mail, id 44 au cloud et id 8 au Server). Un `INSERT` User échoue alors en unique e-mail ; `teacher_class_subject.teacher_id` pointe vers l’id cloud absent → FK, curseur qui avançait, **classes sans profs alors que Remote les affiche**. L’apply User se rabatt sur la ligne locale par e-mail ; le filaire des assignations porte `teacher_email`. Un lot 100 % en erreur **n’avance plus le curseur**. `TeacherClassSubject` / `ClassTeacher` / `TeacherSubject` ont un `updated_at` pour pouvoir relancer le pull.
+
+**Horaires** : `ClassSubject` (matières de la fiche classe) **et** `ClassTeacher` / `TeacherSubject` / `TeacherClassSubject` (titulaires et profs par matière / salle) doivent voyager. Sans les assignations, le bloc Horaires voyait des classes « sans matières » alors que la page Classes était complète. `ScheduleSlot.teacher_id` et `HomeworkAssignment.teacher_id` sont optionnels à l’apply (un créneau / devoir n’est plus refusé si le compte prof n’est pas encore arrivé). Les deux API (Server **et** GCP) doivent connaître ces entités — un image cloud périmée répond `Entité sync inconnue` et l’agent saute les profs des classes.
+
+**Métier aussi dans ENTITY_ORDER** : discipline (`Lateness`, `DisciplinaryMeasure`, `DisciplinaryDeduction`), économe (`StudentServiceExemption`), finance (`Account`, `Exercice`, `OtherRevenue`, `JournalEntry`, `JournalEntryLine`). Absents → fiche élève / caisse / journal différents entre Server et Remote.
+
+**Replace-all** (matières de classe, listes du jour, rentrée, liens parent) : toujours `repository.remove` (tombstone) — jamais `DELETE` SQL brut, sinon l’autre nœud ressuscite les anciennes lignes.
+
+Les comptes du plan comptable sont seedés des deux côtés (UUIDs différents, même `code`) : le filaire des lignes de journal porte `account_code`. Idem exercice (`exercice_date_debut` / `exercice_date_fin`).
+
+Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, portés côté desktop `lib/dashboardRoles.ts` et mobile `lib/permissions.ts`). Le seed ne recrée pas `TEACHER` si un alias existe déjà, sinon l’annuaire professeurs se scinde en deux rôles.

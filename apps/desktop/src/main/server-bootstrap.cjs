@@ -19,9 +19,49 @@ function getBundledStackDir() {
   return null;
 }
 
+const LEGACY_PRODUCT_DIR = 'Shekinah SchoolMatrix';
+const PRODUCT_DIR = 'Shekinah SchoolMatrix';
+const PRESERVE_STACK_FILES = new Set(['.env.server', '.bootstrap-done']);
+
+function programDataRoot() {
+  return process.env.ProgramData || 'C:\\ProgramData';
+}
+
+function stackDirFor(productDir) {
+  return path.join(programDataRoot(), productDir, 'server-stack');
+}
+
+/**
+ * Dossier stack sur la machine école.
+ * Après le renommage Parallèle → Eureka, l'ancien dossier ProgramData contient
+ * encore .env.server (mot de passe Postgres) et Docker (schoolmatrix-server).
+ * Réutiliser ce dossier évite de recréer une stack vide + Network Error.
+ */
 function getInstalledStackDir() {
-  const programData = process.env.ProgramData || 'C:\\ProgramData';
-  return path.join(programData, 'Shekinah SchoolMatrix', 'server-stack');
+  const eureka = stackDirFor(PRODUCT_DIR);
+  const parallele = stackDirFor(LEGACY_PRODUCT_DIR);
+  const paralleleEnv = path.join(parallele, '.env.server');
+  // L'école a déjà tourné sous Parallèle : garder CE dossier (DB_PASS + Docker).
+  if (fs.existsSync(paralleleEnv)) {
+    return parallele;
+  }
+  return eureka;
+}
+
+function copyFileIfMissing(src, dest) {
+  if (!src || !dest) return;
+  if (!fs.existsSync(src) || fs.existsSync(dest)) return;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+}
+
+/** Copie secrets/état depuis l'install Parallèle si Eureka n'en a pas encore. */
+function migrateLegacySecrets(installed) {
+  const legacy = stackDirFor(LEGACY_PRODUCT_DIR);
+  if (legacy === installed) return;
+  for (const name of PRESERVE_STACK_FILES) {
+    copyFileIfMissing(path.join(legacy, name), path.join(installed, name));
+  }
 }
 
 function copyDirRecursive(src, dest) {
@@ -42,8 +82,9 @@ function ensureStackInstalled() {
   }
   // Toujours resynchroniser images + scripts (mise à jour Server) ; préserver secrets/état.
   fs.mkdirSync(installed, { recursive: true });
+  migrateLegacySecrets(installed);
   for (const entry of fs.readdirSync(bundled, { withFileTypes: true })) {
-    if (entry.name === '.env.server' || entry.name === '.bootstrap-done') continue;
+    if (PRESERVE_STACK_FILES.has(entry.name)) continue;
     const from = path.join(bundled, entry.name);
     const to = path.join(installed, entry.name);
     if (entry.isDirectory()) copyDirRecursive(from, to);

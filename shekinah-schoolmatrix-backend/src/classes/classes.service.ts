@@ -4,8 +4,6 @@ import { Repository } from 'typeorm';
 import { Class } from './class.entity';
 import { ClassSubject } from './class-subject.entity';
 import { Room } from '../rooms/room.entity';
-import { SyncService } from '../sync/sync.service';
-import { SyncKickService } from '../sync/sync-kick.service';
 import { isEducationLevelKey } from '../roles/education-levels';
 
 @Injectable()
@@ -17,8 +15,6 @@ export class ClassesService {
     private readonly classSubjectRepo: Repository<ClassSubject>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
-    private readonly syncService: SyncService,
-    private readonly syncKick: SyncKickService,
   ) {}
 
   private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
@@ -66,11 +62,15 @@ export class ClassesService {
       id: a.subject.id,
       name: a.subject.name,
       code: a.subject.code,
+      preschool_eval: a.subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     }));
   }
 
   async setClassSubjects(classId: string, subjectIds: string[]): Promise<void> {
-    await this.classSubjectRepo.delete({ class_id: classId });
+    const previous = await this.classSubjectRepo.find({
+      where: { class_id: classId },
+    });
+    if (previous.length) await this.classSubjectRepo.remove(previous);
     const uniqueIds = [...new Set(subjectIds.filter(Boolean))];
     for (const subjectId of uniqueIds) {
       const cs = this.classSubjectRepo.create({
@@ -177,8 +177,6 @@ export class ClassesService {
         `Cannot delete: ${cls.students.length} student(s) in this class. Reassign them first.`,
       );
     }
-    await this.syncService.recordDelete('Class', id);
     await this.classRepo.remove(cls);
-    this.syncKick.kick('class-delete');
   }
 }

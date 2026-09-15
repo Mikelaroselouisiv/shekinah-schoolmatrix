@@ -12,10 +12,7 @@ function clientIp(req: Request): string | undefined {
   const header = req.headers['x-forwarded-for'];
   const raw = Array.isArray(header) ? header.join(',') : header;
   if (raw) {
-    const parts = raw
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
+    const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
     if (parts.length) return parts[parts.length - 1];
   }
   return req.ip ?? req.socket?.remoteAddress ?? undefined;

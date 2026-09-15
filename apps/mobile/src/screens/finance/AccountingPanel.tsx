@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -392,126 +393,114 @@ export function AccountingPanel() {
         </View>
       ) : null}
 
-      <Modal visible={entryOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.sheet, { maxHeight: '90%' }]}>
-            <Text style={styles.sheetTitle}>Écriture manuelle</Text>
-            <DateField label="Date" value={entryDate} onChange={setEntryDate} />
-            <TextField label="Libellé *" value={entryLabel} onChangeText={setEntryLabel} />
-            {lines.map((l, i) => (
-              <View key={i} style={styles.lineBox}>
-                <Pressable
-                  style={styles.chip}
-                  onPress={() => setAccountPickerLine(i)}
-                >
-                  <Text style={styles.chipLabel}>Compte</Text>
-                  <Text style={styles.chipValue}>
-                    {accounts.find((a) => a.id === l.account_id)
-                      ? `${accounts.find((a) => a.id === l.account_id)!.code} · ${
-                          accounts.find((a) => a.id === l.account_id)!.label
-                        }`
-                      : 'Choisir'}
-                  </Text>
-                </Pressable>
-                <View style={styles.lineAmounts}>
-                  <View style={{ flex: 1 }}>
-                    <TextField
-                      label="Débit"
-                      value={l.debit}
-                      onChangeText={(t) =>
-                        setLines((prev) =>
-                          prev.map((x, j) => (j === i ? { ...x, debit: t } : x)),
-                        )
-                      }
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <TextField
-                      label="Crédit"
-                      value={l.credit}
-                      onChangeText={(t) =>
-                        setLines((prev) =>
-                          prev.map((x, j) => (j === i ? { ...x, credit: t } : x)),
-                        )
-                      }
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                </View>
-                {lines.length > 1 ? (
-                  <Pressable onPress={() => setLines((prev) => prev.filter((_, j) => j !== i))}>
-                    <Text style={styles.danger}>Retirer la ligne</Text>
-                  </Pressable>
-                ) : null}
+      <FormModal visible={entryOpen} onRequestClose={() => setEntryOpen(false)}>
+        <Text style={styles.sheetTitle}>Écriture manuelle</Text>
+        <DateField label="Date" value={entryDate} onChange={setEntryDate} />
+        <TextField label="Libellé *" value={entryLabel} onChangeText={setEntryLabel} />
+        {lines.map((l, i) => (
+          <View key={i} style={styles.lineBox}>
+            <Pressable
+              style={styles.chip}
+              onPress={() => setAccountPickerLine(i)}
+            >
+              <Text style={styles.chipLabel}>Compte</Text>
+              <Text style={styles.chipValue}>
+                {accounts.find((a) => a.id === l.account_id)
+                  ? `${accounts.find((a) => a.id === l.account_id)!.code} · ${
+                      accounts.find((a) => a.id === l.account_id)!.label
+                    }`
+                  : 'Choisir'}
+              </Text>
+            </Pressable>
+            <View style={styles.lineAmounts}>
+              <View style={{ flex: 1 }}>
+                <TextField
+                  label="Débit"
+                  value={l.debit}
+                  onChangeText={(t) =>
+                    setLines((prev) =>
+                      prev.map((x, j) => (j === i ? { ...x, debit: t } : x)),
+                    )
+                  }
+                  keyboardType="decimal-pad"
+                />
               </View>
-            ))}
-            <Muted>
-              Totaux · D {formatMoney(totals.debit)} / C {formatMoney(totals.credit)}
-            </Muted>
-            <Button
-              title="Ajouter une ligne"
-              variant="ghost"
-              onPress={() =>
-                setLines((prev) => [...prev, { account_id: '', debit: '', credit: '' }])
-              }
-            />
-            <ErrorBanner message={error} />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void saveEntry()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setEntryOpen(false)} />
+              <View style={{ flex: 1 }}>
+                <TextField
+                  label="Crédit"
+                  value={l.credit}
+                  onChangeText={(t) =>
+                    setLines((prev) =>
+                      prev.map((x, j) => (j === i ? { ...x, credit: t } : x)),
+                    )
+                  }
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+            {lines.length > 1 ? (
+              <Pressable onPress={() => setLines((prev) => prev.filter((_, j) => j !== i))}>
+                <Text style={styles.danger}>Retirer la ligne</Text>
+              </Pressable>
+            ) : null}
           </View>
-        </View>
-      </Modal>
+        ))}
+        <Muted>
+          Totaux · D {formatMoney(totals.debit)} / C {formatMoney(totals.credit)}
+        </Muted>
+        <Button
+          title="Ajouter une ligne"
+          variant="ghost"
+          onPress={() =>
+            setLines((prev) => [...prev, { account_id: '', debit: '', credit: '' }])
+          }
+        />
+        <ErrorBanner message={error} />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void saveEntry()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setEntryOpen(false)} />
+      </FormModal>
 
-      <Modal visible={revOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Autre revenu</Text>
-            <DateField label="Date" value={revDate} onChange={setRevDate} />
-            <TextField label="Libellé *" value={revLabel} onChangeText={setRevLabel} />
-            <TextField
-              label="Montant *"
-              value={revAmount}
-              onChangeText={setRevAmount}
-              keyboardType="decimal-pad"
-            />
-            <TextField label="Catégorie" value={revCategory} onChangeText={setRevCategory} />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void saveRevenue()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setRevOpen(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={revOpen} onRequestClose={() => setRevOpen(false)}>
+        <Text style={styles.sheetTitle}>Autre revenu</Text>
+        <DateField label="Date" value={revDate} onChange={setRevDate} />
+        <TextField label="Libellé *" value={revLabel} onChangeText={setRevLabel} />
+        <TextField
+          label="Montant *"
+          value={revAmount}
+          onChangeText={setRevAmount}
+          keyboardType="decimal-pad"
+        />
+        <TextField label="Catégorie" value={revCategory} onChangeText={setRevCategory} />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void saveRevenue()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setRevOpen(false)} />
+      </FormModal>
 
-      <Modal visible={accOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Nouveau compte</Text>
-            <TextField
-              label="Code *"
-              value={accCode}
-              onChangeText={setAccCode}
-              onBlur={() => void onCodeBlur()}
-              autoCapitalize="characters"
-            />
-            <TextField label="Libellé *" value={accLabel} onChangeText={setAccLabel} />
-            <TextField label="Type" value={accType} onChangeText={setAccType} autoCapitalize="characters" />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void saveAccount()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setAccOpen(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={accOpen} onRequestClose={() => setAccOpen(false)}>
+        <Text style={styles.sheetTitle}>Nouveau compte</Text>
+        <TextField
+          label="Code *"
+          value={accCode}
+          onChangeText={setAccCode}
+          onBlur={() => void onCodeBlur()}
+          autoCapitalize="characters"
+        />
+        <TextField label="Libellé *" value={accLabel} onChangeText={setAccLabel} />
+        <TextField label="Type" value={accType} onChangeText={setAccType} autoCapitalize="characters" />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void saveAccount()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setAccOpen(false)} />
+      </FormModal>
 
       <Modal visible={accountPickerLine != null} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setAccountPickerLine(null)}>

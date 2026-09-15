@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   ErrorBanner,
@@ -192,7 +192,7 @@ export function SchoolAdminScreen({}: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Title>Établissement</Title>
         <ErrorBanner message={error} />
         {success ? (
@@ -289,7 +289,7 @@ export function SchoolAdminScreen({}: Props) {
             disabled={saving || uploading}
           />
         </View>
-      </ScrollView>
+      </FormScrollView>
     </Screen>
   );
 }

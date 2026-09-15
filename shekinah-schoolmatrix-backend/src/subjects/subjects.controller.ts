@@ -28,6 +28,7 @@ export class SubjectsController {
         name: s.name,
         code: s.code,
         active: s.active,
+        preschool_eval: s.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
         created_at: s.created_at,
         updated_at: s.updated_at,
       })),
@@ -44,6 +45,7 @@ export class SubjectsController {
         name: subject.name,
         code: subject.code,
         active: subject.active,
+        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
         created_at: subject.created_at,
         updated_at: subject.updated_at,
       },
@@ -52,10 +54,11 @@ export class SubjectsController {
 
   @DenyParents()
   @Post()
-  async create(@Body() body: { name: string; code?: string }) {
+  async create(@Body() body: { name: string; code?: string; preschool_eval?: string }) {
     const subject = await this.subjectsService.create({
       name: body.name,
       code: body.code,
+      preschool_eval: body.preschool_eval,
     });
     return {
       ok: true,
@@ -64,6 +67,7 @@ export class SubjectsController {
         name: subject.name,
         code: subject.code,
         active: subject.active,
+        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
         created_at: subject.created_at,
         updated_at: subject.updated_at,
       },
@@ -74,7 +78,7 @@ export class SubjectsController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; code?: string; active?: boolean },
+    @Body() body: { name?: string; code?: string; active?: boolean; preschool_eval?: string },
   ) {
     const subject = await this.subjectsService.update(id, body);
     return {
@@ -84,6 +88,7 @@ export class SubjectsController {
         name: subject.name,
         code: subject.code,
         active: subject.active,
+        preschool_eval: subject.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
         created_at: subject.created_at,
         updated_at: subject.updated_at,
       },

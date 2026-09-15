@@ -7,8 +7,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { StudentPhoto, StudentPhotoKind } from './student-photo.entity';
 import { Student } from './student.entity';
-import { SyncService } from '../sync/sync.service';
-import { SyncKickService } from '../sync/sync-kick.service';
 
 const ALLOWED_KINDS: StudentPhotoKind[] = [
   'profile',
@@ -25,8 +23,6 @@ export class StudentPhotosService {
     private readonly photoRepo: Repository<StudentPhoto>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
-    private readonly syncService: SyncService,
-    private readonly syncKick: SyncKickService,
   ) {}
 
   async listForStudent(studentId: string): Promise<StudentPhoto[]> {
@@ -67,7 +63,6 @@ export class StudentPhotosService {
         { photo_identity_student: url },
       );
     }
-    this.syncKick.kick('student-photo');
     return saved;
   }
 
@@ -78,9 +73,10 @@ export class StudentPhotosService {
     if (!photo) throw new NotFoundException('Photo introuvable');
     const wasIdentity = photo.kind === 'profile' || photo.kind === 'identity';
     const removedUrl = photo.url;
-    await this.syncService.recordDelete('StudentPhoto', photoId);
     await this.photoRepo.remove(photo);
 
+    // La vignette de l'élève pointait sur la photo supprimée : retomber sur la
+    // dernière photo d'identité restante, sinon la fiche garde une image morte.
     if (wasIdentity) {
       const student = await this.studentRepo.findOne({ where: { id: studentId } });
       if (student && student.photo_identity_student === removedUrl) {
@@ -98,7 +94,6 @@ export class StudentPhotosService {
         );
       }
     }
-    this.syncKick.kick('student-photo-delete');
   }
 
   private async assertStudent(id: string): Promise<Student> {

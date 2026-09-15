@@ -51,8 +51,8 @@ export class User {
   @Column({ default: true })
   active: boolean;
 
-  /** Compte provisionné automatiquement : mot de passe par défaut à changer. */
-  @Column({ type: 'boolean', default: false })
+  /** true = mot de passe / fiche encore au défaut (ex. system12) — à personnaliser. */
+  @Column({ default: false })
   must_change_password: boolean;
 
   @CreateDateColumn()

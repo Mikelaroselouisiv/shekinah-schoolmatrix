@@ -21,6 +21,7 @@ import { GradesModule } from './grades/grades.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DisciplineModule } from './discipline/discipline.module';
 import { FormationClasseModule } from './formation-classe/formation-classe.module';
+import { HomeworkModule } from './homework/homework.module';
 import { StudentParentsModule } from './student-parents/student-parents.module';
 import { RolesModule } from './roles/roles.module';
 import { SetupModule } from './setup/setup.module';
@@ -83,6 +84,7 @@ import { migrations } from './migrations';
     UploadsModule,
     DisciplineModule,
     FormationClasseModule,
+    HomeworkModule,
     StudentParentsModule,
     StatisticsModule,
     AuthModule,

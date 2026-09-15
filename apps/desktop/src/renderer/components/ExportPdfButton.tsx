@@ -8,6 +8,8 @@ type ExportPdfButtonProps = {
   table?: PdfTableConfig;
   /** Export multi-sections (fiche, rapport) */
   sections?: PdfSection[];
+  /** Générateur personnalisé (listes imprimables, etc.). */
+  getBlob?: () => Promise<Blob>;
   mainTitle?: string;
   filename: string;
   label?: string;
@@ -21,6 +23,7 @@ type ExportPdfButtonProps = {
 export function ExportPdfButton({
   table,
   sections,
+  getBlob,
   mainTitle,
   filename,
   label = "Exporter en PDF",
@@ -30,7 +33,7 @@ export function ExportPdfButton({
   const [loading, setLoading] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
-  const canExport = Boolean(table || (sections && sections.length > 0));
+  const canExport = Boolean(getBlob || table || (sections && sections.length > 0));
 
   async function handleClick() {
     if (loading || disabled || !canExport) return;
@@ -38,7 +41,9 @@ export function ExportPdfButton({
     setPdfBlob(null);
     try {
       let blob: Blob;
-      if (table) {
+      if (getBlob) {
+        blob = await getBlob();
+      } else if (table) {
         blob = await getTablePdfBlob(table);
       } else if (sections?.length) {
         blob = await getSectionsPdfBlob(sections, mainTitle);
@@ -59,7 +64,11 @@ export function ExportPdfButton({
     <>
       <button
         type="button"
-        onClick={handleClick}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleClick();
+        }}
         disabled={disabled || loading || !canExport}
         className={className || "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"}
       >

@@ -516,6 +516,7 @@ export default function UsersPage() {
           </div>
           <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Dossiers élèves liés</label>
+              <p className="text-xs text-slate-500 mb-2">Gestion parentale en plus du rôle actuel — le compte reste super admin, enseignant, etc.</p>
               <div className="flex flex-wrap items-end gap-2 mb-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="flex-1 min-w-[160px]">
                   <label className="block text-xs text-slate-500 mb-0.5">Lier par identifiant (n° ministère)</label>

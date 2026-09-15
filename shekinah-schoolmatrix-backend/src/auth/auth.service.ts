@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { LoginThrottleService } from './login-throttle.service';
@@ -22,10 +17,10 @@ export class AuthService {
   ) {}
 
   /**
-   * `withRefresh` est opt-in : sans lui, la réponse est identique à avant
-   * (jeton 7 j / 365 j, pas de refresh token). Les Remote et Server déjà
-   * installés dans les écoles ne voient donc aucun changement.
-   */
+  * `withRefresh` est opt-in : sans lui, la réponse est identique à avant
+  * (jeton 7 j / 365 j, pas de refresh token). Le desktop et le mobile déjà
+  * déployés ne voient donc aucun changement.
+  */
   async login(
     login: string,
     password: string,
@@ -36,7 +31,9 @@ export class AuthService {
     this.throttle.assertAllowed(login, ip);
 
     const user = await this.users.findByEmailOrPhone(login);
-    const ok = user ? await this.users.validatePassword(user, password) : false;
+    const ok = user
+      ? await this.users.validatePassword(user, password)
+      : false;
     if (!user || !ok) {
       this.throttle.recordFailure(login, ip);
       throw new UnauthorizedException('Invalid credentials');
@@ -56,9 +53,7 @@ export class AuthService {
       user.role?.name ?? (typeof user.role === 'string' ? user.role : null);
     // Ne jamais inventer PARENT : un jeton « faux parent » bloque @DenyParents (ex. GET /users).
     if (!roleName) {
-      throw new UnauthorizedException(
-        'Compte sans rôle assigné. Contactez l’administration.',
-      );
+      throw new UnauthorizedException('Compte sans rôle assigné. Contactez l’administration.');
     }
     const payload = { sub: user.id, role: roleName, email: user.email };
     const publicUser = {
@@ -163,9 +158,7 @@ export class AuthService {
   private accessTtlSeconds(): number {
     const m = /^(\d+)([smhd])$/.exec(SHORT_ACCESS_TTL);
     if (!m) return 1800;
-    const unit = { s: 1, m: 60, h: 3600, d: 86400 }[
-      m[2] as 's' | 'm' | 'h' | 'd'
-    ];
+    const unit = { s: 1, m: 60, h: 3600, d: 86400 }[m[2] as 's' | 'm' | 'h' | 'd'];
     return Number.parseInt(m[1], 10) * unit;
   }
 

@@ -31,8 +31,18 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
     );
   }
   if (permissionKey === 'rooms') return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
+  if (permissionKey === 'classes') {
+    return (
+      rolePermissions.includes('classes') ||
+      rolePermissions.includes('rooms') ||
+      rolePermissions.includes('teachers')
+    );
+  }
   if (permissionKey === 'stats-academiques') {
     return rolePermissions.includes('stats-academiques');
+  }
+  if (permissionKey === 'teacher-hub') {
+    return rolePermissions.includes('teacher-hub') || rolePermissions.includes('grades');
   }
   return rolePermissions.includes(permissionKey);
 }
@@ -50,7 +60,9 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
     const canSee =
       item.permissionKey === 'stats-academiques' && isTeacherRole(roleName)
         ? true
-        : usePermissions
+        : item.permissionKey === 'teacher-hub' && isTeacherRole(roleName)
+          ? true
+          : usePermissions
           ? canSeeByPermissions(item.permissionKey, rolePermissions)
           : canSeeNavItem(roleName, item.allowedRoles);
     if (!canSee) continue;

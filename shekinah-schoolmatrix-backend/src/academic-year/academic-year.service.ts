@@ -2,16 +2,12 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AcademicYear } from './academic-year.entity';
-import { SyncService } from '../sync/sync.service';
-import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class AcademicYearService {
   constructor(
     @InjectRepository(AcademicYear)
     private readonly repo: Repository<AcademicYear>,
-    private readonly syncService: SyncService,
-    private readonly syncKick: SyncKickService,
   ) {}
 
   async findAll(): Promise<AcademicYear[]> {
@@ -66,9 +62,7 @@ export class AcademicYearService {
   async delete(id: string): Promise<{ deleted: boolean }> {
     const ay = await this.repo.findOne({ where: { id } });
     if (!ay) throw new NotFoundException('Academic year not found');
-    await this.syncService.recordDelete('AcademicYear', id);
     await this.repo.remove(ay);
-    this.syncKick.kick('academic-year-delete');
     return { deleted: true };
   }
 }

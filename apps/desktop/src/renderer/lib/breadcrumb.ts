@@ -17,6 +17,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "academic-years": "Années et périodes",
   coefficients: "Coefficients",
   roles: "Rôles",
+  "tableau-professeur": "Tableau de bord professeur",
   discipline: "Discipline",
   "fiche-eleve": "Fiche élève",
   photography: "Photographie",

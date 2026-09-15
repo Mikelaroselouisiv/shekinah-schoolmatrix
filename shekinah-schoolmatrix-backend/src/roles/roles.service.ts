@@ -1,14 +1,21 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Role } from './role.entity';
 import {
   DEFAULT_ROLE_EDUCATION_LEVELS,
   PERMS_PEDAGOGIQUE,
   PERMS_SECRETAIRE,
   PERMS_SURVEILLANT,
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
 } from './roles.constants';
-import { normalizeEducationLevels } from './education-levels';
+import {
+  LEVELS_PEDAGOGIQUE_PRIMAIRE,
+  LEVELS_PEDAGOGIQUE_SECONDAIRE,
+  educationLevelsEqual,
+  normalizeEducationLevels,
+} from './education-levels';
 
 const FULL = ['full_access'];
 
@@ -57,27 +64,31 @@ const DEFAULT_ROLES: {
   },
   {
     name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
-    description: 'Directeur / Directrice pédagogique — 1er et 2e cycles fondamental',
+    description:
+      'Directeur / Directrice pédagogique du primaire — 1er et 2e cycles fondamental',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
   },
   {
     name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
-    description: 'Directeur / Directrice pédagogique — 2e cycle fondamental seulement',
+    description:
+      'Alias Directeur pédagogique du primaire (1er et 2e cycles fondamental)',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['FONDAMENTAL_2'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
   },
   {
     name: 'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
-    description: 'Directeur / Directrice pédagogique — 3e cycle fondamental',
+    description:
+      'Alias Directeur pédagogique du secondaire (3e cycle fondamental et secondaire)',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['FONDAMENTAL_3'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
   },
   {
     name: 'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
-    description: 'Directeur / Directrice pédagogique — secondaire',
+    description:
+      'Directeur / Directrice pédagogique du secondaire — 3e cycle fondamental et secondaire',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['SECONDAIRE'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
   },
   {
     name: 'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
@@ -93,15 +104,15 @@ const DEFAULT_ROLES: {
   },
   {
     name: 'ADMIN_FONDAMENTAL',
-    description: 'Alias Directeur pédagogique 1er et 2e cycles fondamental',
+    description: 'Alias Directeur pédagogique du primaire (1er et 2e cycles)',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['FONDAMENTAL_1', 'FONDAMENTAL_2'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_PRIMAIRE],
   },
   {
     name: 'ADMIN_SECONDAIRE',
-    description: 'Alias Directeur pédagogique secondaire',
+    description: 'Alias Directeur pédagogique du secondaire (3e cycle et secondaire)',
     permissions: PERMS_PEDAGOGIQUE,
-    education_levels: ['SECONDAIRE'],
+    education_levels: [...LEVELS_PEDAGOGIQUE_SECONDAIRE],
   },
   {
     name: 'CENSEUR',
@@ -140,7 +151,7 @@ const DEFAULT_ROLES: {
     permissions: ['stats-financieres', 'comptabilite'],
   },
   { name: 'STAFF', description: 'Staff administratif générique (rétrocompatibilité)' },
-  { name: 'TEACHER', description: 'Enseignant / Enseignante — notes et son périmètre' },
+  { name: 'TEACHER', description: 'Enseignant — notes, appel (présco / 1er-2e AF), devoirs et leçons' },
   { name: 'PARENT', description: 'Parent — fiche de ses enfants' },
   {
     name: 'PHOTOGRAPHER',
@@ -148,6 +159,23 @@ const DEFAULT_ROLES: {
     permissions: ['photography'],
   },
 ];
+
+/** Ancien découpage (un rôle par cycle) — à réécrire vers primaire / secondaire. */
+const LEGACY_ROLE_EDUCATION_LEVELS: Record<string, string[]> = {
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: ['FONDAMENTAL_2'],
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: ['FONDAMENTAL_3'],
+  DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: ['SECONDAIRE'],
+  ADMIN_SECONDAIRE: ['SECONDAIRE'],
+};
+
+const LEGACY_ROLE_DESCRIPTIONS = new Set([
+  'Directeur / Directrice pédagogique — 1er et 2e cycles fondamental',
+  'Directeur / Directrice pédagogique — 2e cycle fondamental seulement',
+  'Directeur / Directrice pédagogique — 3e cycle fondamental',
+  'Directeur / Directrice pédagogique — secondaire',
+  'Alias Directeur pédagogique 1er et 2e cycles fondamental',
+  'Alias Directeur pédagogique secondaire',
+]);
 
 @Injectable()
 export class RolesService {
@@ -163,6 +191,14 @@ export class RolesService {
           ? r.education_levels
           : (DEFAULT_ROLE_EDUCATION_LEVELS[r.name] ?? null);
       const exists = await this.rolesRepo.findOne({ where: { name: r.name } });
+      // Rôle renommé par l'école (TEACHER → PROFESSEUR) : ne pas en recréer un
+      // second au redémarrage, sinon l'annuaire se scinde en deux.
+      if (!exists && isTeacherRoleName(r.name)) {
+        const alias = await this.rolesRepo.findOne({
+          where: { name: In(TEACHER_ROLE_NAMES) },
+        });
+        if (alias) continue;
+      }
       if (!exists) {
         await this.rolesRepo.save(
           this.rolesRepo.create({
@@ -184,6 +220,24 @@ export class RolesService {
       }
       if (exists.education_levels == null && levels) {
         exists.education_levels = levels;
+        changed = true;
+      } else if (
+        levels &&
+        LEGACY_ROLE_EDUCATION_LEVELS[r.name] &&
+        educationLevelsEqual(
+          exists.education_levels,
+          LEGACY_ROLE_EDUCATION_LEVELS[r.name],
+        )
+      ) {
+        exists.education_levels = levels;
+        changed = true;
+      }
+      if (
+        r.description &&
+        exists.description !== r.description &&
+        (!exists.description || LEGACY_ROLE_DESCRIPTIONS.has(exists.description))
+      ) {
+        exists.description = r.description;
         changed = true;
       }
       if (changed) await this.rolesRepo.save(exists);

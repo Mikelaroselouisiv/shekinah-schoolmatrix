@@ -5,6 +5,8 @@
   id?: string;
   className?: string;
   required?: boolean;
+  min?: string;
+  max?: string;
 };
 
 /**
@@ -16,6 +18,8 @@ export function DateInputJJMMAAAA({
   id,
   className = "",
   required = false,
+  min,
+  max,
 }: Props) {
   return (
     <input
@@ -25,6 +29,8 @@ export function DateInputJJMMAAAA({
       onChange={(e) => onChange(e.target.value)}
       className={className}
       required={required}
+      min={min || undefined}
+      max={max || undefined}
     />
   );
 }

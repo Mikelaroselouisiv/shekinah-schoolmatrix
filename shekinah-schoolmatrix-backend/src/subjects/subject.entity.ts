@@ -20,6 +20,10 @@ export class Subject {
   @Column({ default: true })
   active: boolean;
 
+  /** LEVEL = Bien / Moins bien / Très bien / Excellent. FREQUENCY = Jamais / Parfois / Toujours. */
+  @Column({ type: 'varchar', length: 20, default: 'LEVEL' })
+  preschool_eval: string;
+
   @CreateDateColumn()
   created_at: Date;
 

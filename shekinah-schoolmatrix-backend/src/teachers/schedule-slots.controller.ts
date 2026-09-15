@@ -50,6 +50,7 @@ export class ScheduleSlotsController {
       day_of_week: number;
       start_time: string;
       end_time: string;
+      materials?: string | null;
     },
   ) {
     const slot = await this.teachersService.createScheduleSlot({
@@ -59,8 +60,9 @@ export class ScheduleSlotsController {
       teacher_id: body.teacher_id,
       room_id: body.room_id,
       day_of_week: body.day_of_week,
-      start_time: body.start_time,
-      end_time: body.end_time,
+        start_time: body.start_time,
+        end_time: body.end_time,
+        materials: body.materials,
     });
     return {
       ok: true,
@@ -92,6 +94,7 @@ export class ScheduleSlotsController {
       day_of_week: number;
       start_time: string;
       end_time: string;
+      materials?: string | null;
     }>,
   ) {
     const slot = await this.teachersService.updateScheduleSlot(id, body);

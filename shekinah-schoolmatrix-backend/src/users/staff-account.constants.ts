@@ -1,10 +1,5 @@
-import {
-  AUTO_PARENT_PASSWORD,
-  INSTITUTION_EMAIL_DOMAIN,
-} from './parent-account.util';
+/** Mot de passe temporaire des comptes provisionnés (professeurs, etc.). */
+export const DEFAULT_STAFF_PASSWORD = 'system12';
 
-/** Mot de passe initial de tout compte provisionné (parent ou personnel). */
-export const DEFAULT_STAFF_PASSWORD = AUTO_PARENT_PASSWORD;
-
-/** Repli quand school_profile.domain n'est pas un domaine exploitable. */
-export const DEFAULT_STAFF_EMAIL_DOMAIN = INSTITUTION_EMAIL_DOMAIN;
+/** Domaine e-mail institutionnel si school_profile.domain est vide. */
+export const DEFAULT_STAFF_EMAIL_DOMAIN = 'institutionmixteshekinah.com';

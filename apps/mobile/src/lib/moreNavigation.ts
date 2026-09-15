@@ -34,8 +34,23 @@ export const SCREEN_ICONS: Record<string, Glyph> = {
   users: 'key-outline',
 };
 
+const ROLE_LABELS: Record<string, string> = {
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL: 'Directeur pédagogique du primaire',
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: 'Directeur pédagogique du primaire',
+  ADMIN_FONDAMENTAL: 'Directeur pédagogique du primaire',
+  DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: 'Directeur pédagogique du secondaire',
+  DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: 'Directeur pédagogique du secondaire',
+  ADMIN_SECONDAIRE: 'Directeur pédagogique du secondaire',
+  DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
+  ADMIN_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
+  DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE:
+    'Directeur pédagogique de la formation supérieure',
+};
+
 export function formatRoleLabel(roleName: string | null | undefined): string {
   if (!roleName) return '—';
+  const key = roleName.toUpperCase().trim();
+  if (ROLE_LABELS[key]) return ROLE_LABELS[key];
   return roleName
     .split('_')
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
@@ -99,13 +114,9 @@ export function openProductScreen(
       navigation.navigate('OrgSubjects');
       return;
     case 'classes':
-      navigation.navigate('OrgClasses');
-      return;
     case 'rooms':
-      navigation.navigate('OrgRooms');
-      return;
     case 'teachers':
-      navigation.navigate('OrgTeachers');
+      navigation.navigate('OrgClasses');
       return;
     case 'school':
       navigation.navigate('SchoolAdmin');

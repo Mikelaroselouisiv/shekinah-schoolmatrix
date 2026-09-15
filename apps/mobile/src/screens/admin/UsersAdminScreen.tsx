@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -27,6 +29,7 @@ import {
   createUser,
   deleteUser,
   findStudentByOrderNumber,
+  getUser,
   listRoles,
   listUsers,
   resetUserPassword,
@@ -40,6 +43,8 @@ import { AccessDenied, useCanAccess } from '../../lib/access';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'UsersAdmin'>;
 
+const TAKE = 25;
+
 function displayName(u: OrgUser): string {
   return [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
 }
@@ -49,10 +54,18 @@ export function UsersAdminScreen({}: Props) {
   const [users, setUsers] = useState<OrgUser[]>([]);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [query, setQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [boot, setBoot] = useState(true);
+  const [listLoading, setListLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
+  const loadMoreLock = useRef(false);
+  const searchGen = useRef(0);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<OrgUser | null>(null);
@@ -71,36 +84,102 @@ export function UsersAdminScreen({}: Props) {
   const [resetUser, setResetUser] = useState<OrgUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
 
-  const load = useCallback(async () => {
-    const [u, r] = await Promise.all([listUsers(), listRoles()]);
-    setUsers(u);
-    setRoles(r);
+  const loadRoles = useCallback(async () => {
+    setRoles(await listRoles());
+  }, []);
+
+  const loadFirstPage = useCallback(async (q: string) => {
+    const res = await listUsers({ q: q || undefined, page: 1, take: TAKE });
+    setUsers(res.users);
+    setTotal(res.total);
+    setPage(1);
+    return res;
   }, []);
 
   useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    if (!allowed) {
+      setBoot(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        await load();
+        await loadRoles();
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Erreur');
-      } finally {
-        if (!cancelled) setBoot(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [allowed, loadRoles]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((u) => {
-      const blob = `${u.first_name || ''} ${u.last_name || ''} ${u.email} ${u.role || ''}`.toLowerCase();
-      return blob.includes(q);
-    });
-  }, [users, query]);
+  useEffect(() => {
+    if (!allowed) {
+      setBoot(false);
+      return;
+    }
+    let cancelled = false;
+    const gen = ++searchGen.current;
+    (async () => {
+      setListLoading(true);
+      setError('');
+      try {
+        const res = await listUsers({ q: searchQuery || undefined, page: 1, take: TAKE });
+        if (cancelled || gen !== searchGen.current) return;
+        setUsers(res.users);
+        setTotal(res.total);
+        setPage(1);
+      } catch (err) {
+        if (!cancelled && gen === searchGen.current) {
+          setError(err instanceof Error ? err.message : 'Erreur');
+          setUsers([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled && gen === searchGen.current) {
+          setBoot(false);
+          setListLoading(false);
+          setRefreshing(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [allowed, searchQuery, loadFirstPage]);
+
+  async function loadMore() {
+    if (loadMoreLock.current || listLoading || loadingMore) return;
+    if (users.length >= total) return;
+    loadMoreLock.current = true;
+    const gen = searchGen.current;
+    setLoadingMore(true);
+    try {
+      const res = await listUsers({
+        q: searchQuery || undefined,
+        page: page + 1,
+        take: TAKE,
+      });
+      if (gen !== searchGen.current) return;
+      setPage(res.page);
+      setTotal(res.total);
+      setUsers((prev) => {
+        const seen = new Set(prev.map((u) => u.id));
+        return [...prev, ...res.users.filter((u) => !seen.has(u.id))];
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      loadMoreLock.current = false;
+      setLoadingMore(false);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -117,19 +196,24 @@ export function UsersAdminScreen({}: Props) {
     setError('');
   }
 
-  function openEdit(u: OrgUser) {
-    setEditing(u);
-    setFirstName(u.first_name || '');
-    setLastName(u.last_name || '');
-    setEmail(u.email || '');
-    setPhone(u.phone || '');
-    setPassword('');
-    setRoleName(u.role || 'PARENT');
-    setLinkedIds(u.linked_student_ids || []);
-    setLinkedLabels({});
-    setNisuInput('');
-    setFormOpen(true);
+  async function openEdit(u: OrgUser) {
     setError('');
+    try {
+      const full = await getUser(u.id);
+      setEditing(full);
+      setFirstName(full.first_name || '');
+      setLastName(full.last_name || '');
+      setEmail(full.email || '');
+      setPhone(full.phone || '');
+      setPassword('');
+      setRoleName(full.role || 'PARENT');
+      setLinkedIds(full.linked_student_ids || []);
+      setLinkedLabels({});
+      setNisuInput('');
+      setFormOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    }
   }
 
   async function addByNisu() {
@@ -182,7 +266,7 @@ export function UsersAdminScreen({}: Props) {
           linked_student_ids: linkedIds,
           ...(password.trim() ? { password: password.trim() } : {}),
         });
-        if (roleName && roleName !== editing.role) {
+        if (editing.role && roleName && roleName !== editing.role) {
           await setUserRole(editing.id, roleName);
         }
       } else {
@@ -198,7 +282,7 @@ export function UsersAdminScreen({}: Props) {
       }
       setFormOpen(false);
       setSuccess(editing ? 'Utilisateur mis à jour.' : 'Utilisateur créé.');
-      await load();
+      await loadFirstPage(searchQuery);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
     } finally {
@@ -216,7 +300,7 @@ export function UsersAdminScreen({}: Props) {
           void (async () => {
             try {
               await deleteUser(u.id);
-              await load();
+              await loadFirstPage(searchQuery);
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Erreur');
             }
@@ -260,7 +344,10 @@ export function UsersAdminScreen({}: Props) {
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
       <View style={styles.top}>
         <Title>Utilisateurs</Title>
-        <SearchBar value={query} onChangeText={setQuery} placeholder="Nom, email, rôle…" />
+        <SearchBar value={query} onChangeText={setQuery} placeholder="Nom, email ou téléphone…" />
+        <Muted>
+          {total} utilisateur{total > 1 ? 's' : ''}
+        </Muted>
         <Button title="Nouvel utilisateur" onPress={openCreate} />
         <ErrorBanner message={error} />
         {success ? (
@@ -271,10 +358,38 @@ export function UsersAdminScreen({}: Props) {
       </View>
 
       <FlatList
-        data={filtered}
+        data={users}
         keyExtractor={(i) => String(i.id)}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<EmptyState title="Aucun utilisateur" />}
+        onEndReachedThreshold={0.4}
+        onEndReached={() => void loadMore()}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void loadFirstPage(searchQuery).finally(() => setRefreshing(false));
+            }}
+          />
+        }
+        ListEmptyComponent={
+          listLoading ? (
+            <LoadingBlock />
+          ) : (
+            <EmptyState
+              title={
+                searchQuery
+                  ? 'Aucun utilisateur ne correspond à la recherche.'
+                  : 'Aucun utilisateur'
+              }
+            />
+          )
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primaryFallback} />
+          ) : null
+        }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>{displayName(item)}</Text>
@@ -283,9 +398,6 @@ export function UsersAdminScreen({}: Props) {
               {item.role ? ` · ${item.role}` : ''}
               {item.active === false ? ' · inactif' : ''}
             </Muted>
-            {(item.linked_student_ids?.length || 0) > 0 ? (
-              <Muted>{item.linked_student_ids!.length} élève(s) lié(s)</Muted>
-            ) : null}
             <View style={styles.actions}>
               <Pressable onPress={() => openEdit(item)}>
                 <Text style={styles.link}>Modifier</Text>
@@ -307,99 +419,89 @@ export function UsersAdminScreen({}: Props) {
         )}
       />
 
-      <Modal visible={formOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.sheetTitle}>
-                {editing ? 'Modifier l’utilisateur' : 'Nouvel utilisateur'}
-              </Text>
-              <TextField label="Prénom" value={firstName} onChangeText={setFirstName} />
-              <TextField label="Nom" value={lastName} onChangeText={setLastName} />
-              <TextField
-                label="Email *"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              <TextField
-                label="Téléphone"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-              <Pressable style={styles.chip} onPress={() => setRolePicker(true)}>
-                <Text style={styles.chipLabel}>Rôle</Text>
-                <Text style={styles.chipValue}>{roleName}</Text>
-              </Pressable>
-              <TextField
-                label={editing ? 'Mot de passe (optionnel)' : 'Mot de passe *'}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+      <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
+        <Text style={styles.sheetTitle}>
+          {editing ? 'Modifier l’utilisateur' : 'Nouvel utilisateur'}
+        </Text>
+        <TextField label="Prénom" value={firstName} onChangeText={setFirstName} />
+        <TextField label="Nom" value={lastName} onChangeText={setLastName} />
+        <TextField
+          label="Email *"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextField
+          label="Téléphone"
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+        />
+        <Pressable style={styles.chip} onPress={() => setRolePicker(true)}>
+          <Text style={styles.chipLabel}>Rôle</Text>
+          <Text style={styles.chipValue}>{roleName}</Text>
+        </Pressable>
+        <TextField
+          label={editing ? 'Mot de passe (optionnel)' : 'Mot de passe *'}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-              <Text style={styles.subHead}>Élèves liés (NISU)</Text>
-              <TextField
-                label="NISU"
-                value={nisuInput}
-                onChangeText={setNisuInput}
-                autoCapitalize="characters"
-              />
-              <Button
-                title={linking ? '…' : 'Lier'}
-                variant="ghost"
-                onPress={() => void addByNisu()}
-                disabled={linking}
-              />
-              {linkedIds.map((id) => (
-                <View key={id} style={styles.linkRow}>
-                  <Text style={styles.cardTitle}>{linkedLabels[id] || id}</Text>
-                  <Pressable
-                    onPress={() => setLinkedIds((prev) => prev.filter((x) => x !== id))}
-                  >
-                    <Text style={styles.danger}>Retirer</Text>
-                  </Pressable>
-                </View>
-              ))}
-
-              <ErrorBanner message={error} />
-              <View style={{ gap: 8, marginTop: 12, marginBottom: 28 }}>
-                <Button
-                  title={saving ? '…' : 'Enregistrer'}
-                  onPress={() => void save()}
-                  disabled={saving}
-                />
-                <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
-              </View>
-            </ScrollView>
+        <Text style={styles.subHead}>Élèves liés (NISU)</Text>
+        <TextField
+          label="NISU"
+          value={nisuInput}
+          onChangeText={setNisuInput}
+          autoCapitalize="characters"
+        />
+        <Button
+          title={linking ? '…' : 'Lier'}
+          variant="ghost"
+          onPress={() => void addByNisu()}
+          disabled={linking}
+        />
+        {linkedIds.map((id) => (
+          <View key={id} style={styles.linkRow}>
+            <Text style={styles.cardTitle}>{linkedLabels[id] || id}</Text>
+            <Pressable
+              onPress={() => setLinkedIds((prev) => prev.filter((x) => x !== id))}
+            >
+              <Text style={styles.danger}>Retirer</Text>
+            </Pressable>
           </View>
-        </View>
-      </Modal>
+        ))}
 
-      <Modal visible={!!resetUser} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>
-              Réinitialiser · {resetUser ? displayName(resetUser) : ''}
-            </Text>
-            <TextField
-              label="Nouveau mot de passe *"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-            />
-            <ErrorBanner message={error} />
-            <Button
-              title={saving ? '…' : 'Réinitialiser'}
-              onPress={() => void doResetPassword()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setResetUser(null)} />
-          </View>
+        <ErrorBanner message={error} />
+        <View style={{ gap: 8, marginTop: 12, marginBottom: 28 }}>
+          <Button
+            title={saving ? '…' : 'Enregistrer'}
+            onPress={() => void save()}
+            disabled={saving}
+          />
+          <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
         </View>
-      </Modal>
+      </FormModal>
+
+      <FormModal visible={!!resetUser} onRequestClose={() => setResetUser(null)}>
+        <Text style={styles.sheetTitle}>
+          Réinitialiser · {resetUser ? displayName(resetUser) : ''}
+        </Text>
+        <TextField
+          label="Nouveau mot de passe *"
+          value={newPassword}
+          onChangeText={setNewPassword}
+          secureTextEntry
+        />
+        <ErrorBanner message={error} />
+        <Button
+          title={saving ? '…' : 'Réinitialiser'}
+          onPress={() => void doResetPassword()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setResetUser(null)} />
+      </FormModal>
 
       <Modal visible={rolePicker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setRolePicker(false)}>

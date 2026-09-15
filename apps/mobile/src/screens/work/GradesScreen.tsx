@@ -32,6 +32,7 @@ import {
   getTeacherClasses,
   getTeacherSubjectsInClass,
   saveGrades,
+  setSubjectPreschoolEval,
   type AcademicYear,
   type ClassItem,
   type GradeFormRow,
@@ -41,6 +42,14 @@ import {
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { isTeacherRole } from '../../lib/permissions';
+import {
+  PRESCHOOL_EVAL_FREQUENCY,
+  PRESCHOOL_EVAL_LEVEL,
+  PRESCHOOL_FREQUENCIES,
+  PRESCHOOL_LEVELS,
+  YEAR_END_DECISIONS,
+} from '../../lib/preschoolScale';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Grades'>;
 
@@ -51,7 +60,7 @@ export function GradesScreen({}: Props) {
   const { roleName } = useAuth();
   const { context, theme } = useSchool();
   const insets = useSafeAreaInsets();
-  const isTeacher = roleName === 'TEACHER';
+  const isTeacher = isTeacherRole(roleName);
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -65,6 +74,8 @@ export function GradesScreen({}: Props) {
 
   const [rows, setRows] = useState<GradeFormRow[]>([]);
   const [preschoolRows, setPreschoolRows] = useState<PreschoolGradeRow[]>([]);
+  const [evalMode, setEvalMode] = useState<'LEVEL' | 'FREQUENCY'>('LEVEL');
+  const [isLastPeriod, setIsLastPeriod] = useState(false);
   const [defaultCoef, setDefaultCoef] = useState<number | null>(null);
   const [canEdit, setCanEdit] = useState(true);
   const [teacherName, setTeacherName] = useState<string | null>(null);
@@ -173,6 +184,8 @@ export function GradesScreen({}: Props) {
       setCanEdit(data.can_edit);
       setTeacherName(data.teacher?.name || null);
       setDefaultCoef(data.default_coefficient ?? null);
+      setEvalMode(data.eval_mode === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL');
+      setIsLastPeriod(!!data.is_last_period);
       if (isPreschool) {
         setPreschoolRows(data.rows as PreschoolGradeRow[]);
         setRows([]);
@@ -180,7 +193,7 @@ export function GradesScreen({}: Props) {
         setRows(
           (data.rows as GradeFormRow[]).map((r) => ({
             ...r,
-            coefficient: r.coefficient ?? data.default_coefficient ?? 100,
+            coefficient: r.coefficient ?? data.default_coefficient ?? 1,
             grade_value: r.grade_value ?? null,
           })),
         );
@@ -214,10 +227,20 @@ export function GradesScreen({}: Props) {
           preschool: true,
           grades: preschoolRows.map((r) => ({
             student_id: r.student_id,
-            level: r.level?.trim() || undefined,
-            frequency: r.frequency?.trim() || undefined,
+            level: evalMode === 'LEVEL' ? r.level?.trim() || undefined : undefined,
+            frequency: evalMode === 'FREQUENCY' ? r.frequency?.trim() || undefined : undefined,
             observation: r.observation?.trim() || undefined,
           })),
+          ...(isLastPeriod
+            ? {
+                decisions: preschoolRows
+                  .filter((r) => r.assignment_id)
+                  .map((r) => ({
+                    assignment_id: r.assignment_id as string,
+                    decision: r.decision || null,
+                  })),
+              }
+            : {}),
         });
       } else {
         await saveGrades({
@@ -227,7 +250,7 @@ export function GradesScreen({}: Props) {
           period_id: periodId,
           grades: rows.map((r) => ({
             student_id: r.student_id,
-            coefficient: r.coefficient ?? defaultCoef ?? 100,
+            coefficient: r.coefficient ?? defaultCoef ?? 1,
             grade_value: r.grade_value,
             detail: r.detail?.trim() || undefined,
           })),
@@ -300,10 +323,27 @@ export function GradesScreen({}: Props) {
         </View>
 
         {teacherName ? <Muted>Professeur · {teacherName}</Muted> : null}
-        {!isPreschool && ready ? (
-          <Muted>
-            Note sur {defaultCoef ?? 100}. Saisir les points obtenus (ex. 180/200 = 9,00/10).
-          </Muted>
+        {isPreschool ? (
+          <View style={styles.modeWrap}>
+            <Pressable
+              onPress={() => {
+                setEvalMode(PRESCHOOL_EVAL_LEVEL);
+                if (subjectId) void setSubjectPreschoolEval(subjectId, PRESCHOOL_EVAL_LEVEL);
+              }}
+              style={[styles.modeChip, evalMode === 'LEVEL' && styles.modeChipOn]}
+            >
+              <Text style={[styles.modeText, evalMode === 'LEVEL' && styles.modeTextOn]}>Niveau</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setEvalMode(PRESCHOOL_EVAL_FREQUENCY);
+                if (subjectId) void setSubjectPreschoolEval(subjectId, PRESCHOOL_EVAL_FREQUENCY);
+              }}
+              style={[styles.modeChip, evalMode === 'FREQUENCY' && styles.modeChipOn]}
+            >
+              <Text style={[styles.modeText, evalMode === 'FREQUENCY' && styles.modeTextOn]}>Fréquence</Text>
+            </Pressable>
+          </View>
         ) : null}
         {!canEdit ? (
           <View style={styles.lockBanner}>
@@ -338,6 +378,8 @@ export function GradesScreen({}: Props) {
               <PreschoolRow
                 row={item as PreschoolGradeRow}
                 editable={canEdit}
+                evalMode={evalMode}
+                showDecision={isLastPeriod}
                 onChange={(next) =>
                   setPreschoolRows((prev) =>
                     prev.map((r) => (r.student_id === next.student_id ? next : r)),
@@ -415,11 +457,6 @@ function SelectChip({
   );
 }
 
-function pointsToTen(obtained: number | null | undefined, bareme: number): number | null {
-  if (obtained == null || Number.isNaN(obtained) || !(bareme > 0)) return null;
-  return Math.round((obtained / bareme) * 10 * 100) / 100;
-}
-
 function StandardRow({
   row,
   editable,
@@ -431,14 +468,12 @@ function StandardRow({
   defaultCoef: number | null;
   onChange: (row: GradeFormRow) => void;
 }) {
-  const bareme = defaultCoef && defaultCoef >= 50 ? defaultCoef : 100;
-  const onTen = pointsToTen(row.grade_value, bareme);
   return (
     <View style={styles.card}>
       <Text style={styles.studentName}>{row.student_name}</Text>
       <View style={styles.fieldsRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Points / {bareme}</Text>
+          <Text style={styles.fieldLabel}>Note</Text>
           <TextInput
             editable={editable}
             keyboardType="decimal-pad"
@@ -448,18 +483,29 @@ function StandardRow({
               const num = cleaned.trim() === '' ? null : Number(cleaned);
               onChange({
                 ...row,
-                coefficient: bareme,
                 grade_value: num != null && !Number.isNaN(num) ? num : null,
               });
             }}
-            placeholder="ex. 180"
+            placeholder="—"
             placeholderTextColor={colors.textMuted}
             style={styles.input}
           />
         </View>
-        <View style={{ width: 72, justifyContent: 'flex-end', paddingBottom: 10 }}>
-          <Text style={styles.fieldLabel}>/10</Text>
-          <Text style={styles.studentName}>{onTen != null ? onTen.toFixed(2) : '—'}</Text>
+        <View style={{ width: 90 }}>
+          <Text style={styles.fieldLabel}>Coef.</Text>
+          <TextInput
+            editable={editable}
+            keyboardType="decimal-pad"
+            value={String(row.coefficient ?? defaultCoef ?? 1)}
+            onChangeText={(t) => {
+              const num = Number(t.replace(',', '.'));
+              onChange({
+                ...row,
+                coefficient: Number.isNaN(num) ? defaultCoef ?? 1 : num,
+              });
+            }}
+            style={styles.input}
+          />
         </View>
       </View>
       <Text style={styles.fieldLabel}>Détail</Text>
@@ -475,32 +521,73 @@ function StandardRow({
   );
 }
 
+function ChoiceRow({
+  options,
+  value,
+  editable,
+  onChange,
+}: {
+  options: readonly { value: string; label: string }[];
+  value: string | null | undefined;
+  editable: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  return (
+    <View style={styles.choiceWrap}>
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <Pressable
+            key={o.value}
+            disabled={!editable}
+            onPress={() => onChange(on ? null : o.value)}
+            style={[styles.choice, on && styles.choiceOn, !editable && { opacity: 0.45 }]}
+          >
+            <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function PreschoolRow({
   row,
   editable,
+  evalMode,
+  showDecision,
   onChange,
 }: {
   row: PreschoolGradeRow;
   editable: boolean;
+  evalMode: 'LEVEL' | 'FREQUENCY';
+  showDecision: boolean;
   onChange: (row: PreschoolGradeRow) => void;
 }) {
   return (
     <View style={styles.card}>
       <Text style={styles.studentName}>{row.student_name}</Text>
-      <Text style={styles.fieldLabel}>Niveau</Text>
-      <TextInput
-        editable={editable}
-        value={row.level || ''}
-        onChangeText={(level) => onChange({ ...row, level })}
-        style={styles.input}
-      />
-      <Text style={styles.fieldLabel}>Fréquence</Text>
-      <TextInput
-        editable={editable}
-        value={row.frequency || ''}
-        onChangeText={(frequency) => onChange({ ...row, frequency })}
-        style={styles.input}
-      />
+      {evalMode === PRESCHOOL_EVAL_LEVEL ? (
+        <>
+          <Text style={styles.fieldLabel}>Niveau</Text>
+          <ChoiceRow
+            options={PRESCHOOL_LEVELS}
+            value={row.level}
+            editable={editable}
+            onChange={(level) => onChange({ ...row, level })}
+          />
+        </>
+      ) : (
+        <>
+          <Text style={styles.fieldLabel}>Fréquence</Text>
+          <ChoiceRow
+            options={PRESCHOOL_FREQUENCIES}
+            value={row.frequency}
+            editable={editable}
+            onChange={(frequency) => onChange({ ...row, frequency })}
+          />
+        </>
+      )}
       <Text style={styles.fieldLabel}>Observation</Text>
       <TextInput
         editable={editable}
@@ -508,6 +595,17 @@ function PreschoolRow({
         onChangeText={(observation) => onChange({ ...row, observation })}
         style={styles.input}
       />
+      {showDecision ? (
+        <>
+          <Text style={styles.fieldLabel}>Décision</Text>
+          <ChoiceRow
+            options={YEAR_END_DECISIONS}
+            value={row.decision}
+            editable={editable}
+            onChange={(decision) => onChange({ ...row, decision })}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -551,6 +649,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   studentName: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 10 },
+  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  choice: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  choiceOn: { backgroundColor: '#0F766E', borderColor: '#0F766E' },
+  choiceText: { fontSize: 12, fontWeight: '600', color: colors.text },
+  choiceTextOn: { color: '#fff' },
+  modeWrap: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  modeChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  modeChipOn: { backgroundColor: '#0F766E', borderColor: '#0F766E' },
+  modeText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  modeTextOn: { color: '#fff' },
   fieldsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   fieldLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600', marginBottom: 4 },
   input: {

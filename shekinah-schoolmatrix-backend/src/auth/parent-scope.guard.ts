@@ -36,10 +36,10 @@ type RequestUser = {
  * - Avoir des élèves liés ne change PAS le rôle : SUPER_ADMIN / TEACHER / etc.
  *   restent du staff. Seul le nom de rôle `PARENT` active ce périmètre.
  * - Tous les autres rôles : comportement strictement inchangé (aucune requête
- *   supplémentaire, aucun contrôle ajouté). Le desktop Remote et Server qui
+ *   supplémentaire, aucun contrôle ajouté). Le desktop et le mobile qui
  *   utilisent ces routes avec des jetons admin/enseignant ne sont pas touchés.
  *
- * Si le JWT dit PARENT (ou n'a pas de rôle), on confirme en base : un login
+ * Si le JWT dit PARENT (ou n’a pas de rôle), on confirme en base : un login
  * téléphone sans jointure `role` pouvait emballer un admin en « PARENT ».
  */
 @Injectable()

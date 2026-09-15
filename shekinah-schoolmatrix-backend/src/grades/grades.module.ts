@@ -9,6 +9,7 @@ import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Class } from '../classes/class.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Period } from '../period/period.entity';
+import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { GradesController } from './grades.controller';
@@ -27,6 +28,7 @@ import { LevelScopeModule } from '../auth/level-scope.module';
       Class,
       Subject,
       Period,
+      StudentClassAssignment,
     ]),
     ParentScopeModule,
     LevelScopeModule,

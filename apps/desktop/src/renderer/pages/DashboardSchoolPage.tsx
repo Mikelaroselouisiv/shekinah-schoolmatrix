@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -174,7 +174,7 @@ export function DashboardSchoolPage() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="École Parallele"
+            placeholder="École Eureka"
             className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
             required
           />
@@ -227,7 +227,7 @@ export function DashboardSchoolPage() {
             type="text"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
-            placeholder="https://ecole-parallele.com"
+            placeholder="https://ecole-eureka.com"
             className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
           />
         </div>

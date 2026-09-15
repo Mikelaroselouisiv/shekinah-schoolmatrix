@@ -7,8 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 TARGET="${1:-android}" # android | ios | start
-# Par défaut on purge Expo Go Android (sinon vieux logo Eureka / bundle collé).
-NUKE="${NUKE:-1}"
+NUKE="${NUKE:-0}"
 
 adb_bin() {
   if command -v adb >/dev/null 2>&1; then
@@ -42,8 +41,6 @@ fi
 if [[ "$TARGET" == "android" || "$TARGET" == "ios" ]]; then
   if ADB="$(adb_bin)"; then
     if "$ADB" devices 2>/dev/null | grep -qE $'\tdevice$'; then
-      echo "→ adb reverse 8081 (évite hang exp://LAN sur émulateur)…"
-      "$ADB" reverse tcp:8081 tcp:8081 >/dev/null 2>&1 || true
       echo "→ Force-stop Expo Go Android…"
       "$ADB" shell am force-stop host.exp.exponent >/dev/null 2>&1 || true
       if [[ "$NUKE" == "1" ]]; then
@@ -64,10 +61,8 @@ if [[ "$TARGET" == "ios" ]] && command -v xcrun >/dev/null 2>&1; then
 fi
 
 echo "→ expo start -c (${TARGET})…"
-# Sur émulateur Android, localhost via adb reverse est plus fiable que l’IP LAN.
 if [[ "$TARGET" == "android" ]]; then
-  export REACT_NATIVE_PACKAGER_HOSTNAME="${REACT_NATIVE_PACKAGER_HOSTNAME:-127.0.0.1}"
-  exec npx expo start -c --android --localhost
+  exec npx expo start -c --android
 elif [[ "$TARGET" == "ios" ]]; then
   exec npx expo start -c --ios
 else

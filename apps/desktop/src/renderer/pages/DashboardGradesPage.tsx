@@ -1,7 +1,18 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
+import { AppAccordion } from "@/components/AppAccordion";
+import { isTeacherRole } from "@/lib/dashboardRoles";
 import { BAREME_PRESETS, DEFAULT_BAREME, pointsToTen } from "@/lib/gradeScale";
+import {
+  PRESCHOOL_EVAL_FREQUENCY,
+  PRESCHOOL_EVAL_LEVEL,
+  PRESCHOOL_FREQUENCIES,
+  PRESCHOOL_LEVELS,
+  YEAR_END_DECISIONS,
+  preschoolFrequencyLabel,
+  preschoolLevelLabel,
+} from "@/lib/preschoolScale";
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string; description?: string | null; level?: string | null; is_preschool: boolean };
@@ -23,6 +34,8 @@ type PreschoolFormDataRow = {
   frequency: string | null;
   observation: string;
   grade_id: string | null;
+  assignment_id: string | null;
+  decision: string | null;
 };
 type CoefficientItem = {
   id: string;
@@ -47,6 +60,8 @@ type ThresholdItem = {
   min_average_ajourne: number;
 };
 
+const FIELD = "class-input w-full";
+
 export function DashboardGradesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -67,6 +82,9 @@ export function DashboardGradesPage() {
   const [defaultCoefficient, setDefaultCoefficient] = useState<number | null>(null);
   const [rows, setRows] = useState<FormDataRow[]>([]);
   const [preschoolRows, setPreschoolRows] = useState<PreschoolFormDataRow[]>([]);
+  const [evalMode, setEvalMode] = useState<"LEVEL" | "FREQUENCY">("LEVEL");
+  const [isLastPeriod, setIsLastPeriod] = useState(false);
+  const [openBlock, setOpenBlock] = useState<"saisie" | "thresholds" | "coefficients">("saisie");
   const [saving, setSaving] = useState(false);
 
   const [coefficients, setCoefficients] = useState<CoefficientItem[]>([]);
@@ -124,10 +142,15 @@ export function DashboardGradesPage() {
           : years[0].id;
         setAcademicYearId((prev) => (prev === "" ? defaultYearId : prev));
       }
-      if (meData.user?.role === "TEACHER") {
+      if (isTeacherRole(meData.user?.role)) {
         const tcRes = await fetchWithAuth(`${API_BASE}/teachers/me/classes`);
         const tcData = tcRes.ok ? await tcRes.json() : {};
-        const tClasses = (tcData.classes ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name, is_preschool: false }));
+        const tClasses = (tcData.classes ?? []).map((c: { id: string; name: string; level?: string | null; is_preschool?: boolean }) => ({
+          id: c.id,
+          name: c.name,
+          level: c.level,
+          is_preschool: !!c.is_preschool,
+        }));
         setTeacherClasses(tClasses);
       } else {
         setTeacherClasses([]);
@@ -337,11 +360,15 @@ export function DashboardGradesPage() {
   }
 
   useEffect(() => {
-    setSelectedClass(classes.find((c) => c.id === classId) ?? null);
-  }, [classId, classes]);
+    setSelectedClass(
+      classes.find((c) => c.id === classId) ??
+        teacherClasses.find((c) => c.id === classId) ??
+        null,
+    );
+  }, [classId, classes, teacherClasses]);
 
   useEffect(() => {
-    if (currentUserRole !== "TEACHER" || !classId) {
+    if (!isTeacherRole(currentUserRole) || !classId) {
       setTeacherSubjectsInClass([]);
       return;
     }
@@ -361,6 +388,7 @@ export function DashboardGradesPage() {
       setDefaultCoefficient(null);
       setRows([]);
       setPreschoolRows([]);
+      setIsLastPeriod(false);
       return;
     }
     const isPreschool = selectedClass?.is_preschool ?? false;
@@ -379,10 +407,19 @@ export function DashboardGradesPage() {
           setDefaultCoefficient(data.default_coefficient ?? null);
           setRows(data.rows ?? []);
           setPreschoolRows([]);
+          setIsLastPeriod(false);
         } else {
           setDefaultCoefficient(null);
           setRows([]);
-          setPreschoolRows(data.rows ?? []);
+          setPreschoolRows(
+            (data.rows ?? []).map((r: PreschoolFormDataRow) => ({
+              ...r,
+              assignment_id: r.assignment_id ?? null,
+              decision: r.decision ?? null,
+            })),
+          );
+          setEvalMode(data.eval_mode === "FREQUENCY" ? "FREQUENCY" : "LEVEL");
+          setIsLastPeriod(!!data.is_last_period);
         }
       })
       .catch((e) => {
@@ -409,10 +446,18 @@ export function DashboardGradesPage() {
             period_id: periodId,
             grades: preschoolRows.map((r) => ({
               student_id: r.student_id,
-              level: r.level?.trim() || undefined,
-              frequency: r.frequency?.trim() || undefined,
+              level: evalMode === "LEVEL" ? r.level?.trim() || undefined : undefined,
+              frequency: evalMode === "FREQUENCY" ? r.frequency?.trim() || undefined : undefined,
               observation: r.observation?.trim() || undefined,
             })),
+            ...(isLastPeriod
+              ? {
+                  decisions: preschoolRows.map((r) => ({
+                    assignment_id: r.assignment_id,
+                    decision: r.decision || null,
+                  })),
+                }
+              : {}),
           }
         : {
             academic_year_id: academicYearId,
@@ -461,9 +506,22 @@ export function DashboardGradesPage() {
     }
   }
 
+  async function applyEvalMode(mode: "LEVEL" | "FREQUENCY") {
+    if (!subjectId) return;
+    setEvalMode(mode);
+    try {
+      await fetchWithAuth(`${API_BASE}/subjects/${subjectId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ preschool_eval: mode }),
+      });
+    } catch {
+      /* the local toggle still applies for this session */
+    }
+  }
+
   const isPreschool = selectedClass?.is_preschool ?? false;
   const canLoadForm = academicYearId && classId && subjectId && periodId;
-  const isTeacher = currentUserRole === "TEACHER";
+  const isTeacher = isTeacherRole(currentUserRole);
   const classesForSaisie = isTeacher ? teacherClasses : classes;
   const subjectsForSaisie = isTeacher ? teacherSubjectsInClass : subjects;
   const subjectName = subjectsForSaisie.find((s) => s.id === subjectId)?.name ?? subjects.find((s) => s.id === subjectId)?.name ?? "";
@@ -474,36 +532,44 @@ export function DashboardGradesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Saisie des notes</h2>
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/80 px-5 py-4 shadow-sm">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">Pédagogie</p>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Saisie des notes</h2>
+        </div>
+      </div>
 
-      {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
+      {error ? (
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">{error}</div>
+      ) : null}
 
-      <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
-        <h3 className="font-semibold text-slate-900 mb-4">Sélection</h3>
-        {isTeacher && (
-          <p className="text-sm text-slate-600 mb-3">Vous ne voyez que les classes et matières qui vous sont assignées.</p>
-        )}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Année scolaire</label>
+      <AppAccordion
+        title="Saisie"
+        tone="teal"
+        open={openBlock === "saisie"}
+        onToggle={() => setOpenBlock("saisie")}
+      >
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <label className="block space-y-1.5">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Année</span>
             <select
               value={academicYearId}
               onChange={(e) => { setAcademicYearId(e.target.value); setPeriodId(""); }}
-              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              className={FIELD}
             >
               <option value="">Sélectionner</option>
               {academicYears.map((y) => (
                 <option key={y.id} value={y.id}>{y.name}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Classe</span>
             <select
               value={classId}
               onChange={(e) => setClassId(e.target.value)}
-              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              className={FIELD}
             >
               <option value="">Sélectionner</option>
               {classesForSaisie.map((c) => (
@@ -512,13 +578,13 @@ export function DashboardGradesPage() {
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Matière</label>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Matière</span>
             <select
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
-              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              className={FIELD}
               disabled={isTeacher && !classId}
             >
               <option value="">Sélectionner</option>
@@ -530,46 +596,68 @@ export function DashboardGradesPage() {
                 ))
               )}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Période</label>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Période</span>
             <select
               value={periodId}
               onChange={(e) => setPeriodId(e.target.value)}
-              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              className={FIELD}
             >
               <option value="">Sélectionner</option>
               {periods.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
-      </div>
 
-      {canLoadForm && (
+      {canLoadForm ? (
         <>
           {formLoading ? (
-            <div className="p-8 text-center text-slate-500">Chargement des élèves et des notes...</div>
+            <div className="p-8 text-center text-slate-500">Chargement...</div>
           ) : (
-            <form onSubmit={handleSaveGrades} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-slate-600">
-                  {subjectName} — {periodName}
-                  {teacher && <span className="ml-2">(Enseignant : {teacher.name})</span>}
-                  {isPreschool && <span className="ml-2 font-medium text-amber-700">— Évaluation préscolaire</span>}
-                </p>
+            <form onSubmit={handleSaveGrades} className="mt-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm font-medium text-slate-800">
+                    {subjectName}{periodName ? ` · ${periodName}` : ""}
+                    {teacher ? ` · ${teacher.name}` : ""}
+                  </p>
+                  {isPreschool ? (
+                    <div className="inline-flex rounded-full bg-white p-1 ring-1 ring-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => void applyEvalMode(PRESCHOOL_EVAL_LEVEL)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          evalMode === "LEVEL" ? "bg-teal-700 text-white" : "text-slate-600"
+                        }`}
+                      >
+                        Niveau
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void applyEvalMode(PRESCHOOL_EVAL_FREQUENCY)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          evalMode === "FREQUENCY" ? "bg-teal-700 text-white" : "text-slate-600"
+                        }`}
+                      >
+                        Fréquence
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 {canEditGrades ? (
                   <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">
-                    {saving ? "Enregistrement..." : "Enregistrer les notes"}
+                    {saving ? "Enregistrement..." : isPreschool && isLastPeriod ? "Enregistrer" : "Enregistrer les notes"}
                   </button>
                 ) : (
-                  <p className="text-sm text-amber-700 font-medium">Les notes ont été enregistrées. Seul le directeur général peut les modifier.</p>
+                  <p className="text-sm font-medium text-amber-700">Déjà enregistré</p>
                 )}
               </div>
 
               {!isPreschool && (
-                <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 border border-[var(--app-border)]">
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
                   <span className="text-sm font-medium text-slate-800">Note sur</span>
                   {BAREME_PRESETS.map((n) => (
                     <button
@@ -577,69 +665,101 @@ export function DashboardGradesPage() {
                       type="button"
                       disabled={!canEditGrades}
                       onClick={() => applyBareme(n)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${
+                      className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${
                         bareme === n
-                          ? "bg-[var(--school-accent-1)] text-white border-transparent"
-                          : "bg-white text-slate-700 border-[var(--app-border)] hover:bg-slate-100"
+                          ? "border-transparent bg-[var(--school-accent-1)] text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                       } disabled:opacity-50`}
                     >
                       {n}
                     </button>
                   ))}
-                  <span className="text-sm text-slate-600">
-                    Saisir les points obtenus, ex. 180/{bareme} → {pointsToTen(180, bareme)?.toFixed(2)}/10
-                  </span>
                 </div>
               )}
 
               {isPreschool ? (
-                <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                    <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
                         <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Niveau</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Fréquence</th>
+                        {evalMode === "LEVEL" ? (
+                          <th className="px-4 py-3 font-medium text-slate-900 w-44">Niveau</th>
+                        ) : (
+                          <th className="px-4 py-3 font-medium text-slate-900 w-44">Fréquence</th>
+                        )}
                         <th className="px-4 py-3 font-medium text-slate-900">Observation</th>
+                        {isLastPeriod ? (
+                          <th className="px-4 py-3 font-medium text-slate-900 w-48">Décision</th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
                       {preschoolRows.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
+                        <tr><td colSpan={isLastPeriod ? 4 : 3} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
                       ) : (
                         preschoolRows.map((r) => (
-                          <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                          <tr key={r.student_id} className="border-b border-slate-100 hover:bg-slate-50/50">
                             <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.level ?? ""}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, level: e.target.value || null } : row))}
-                                placeholder="Ex: A, EA, NA"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
-                                disabled={!canEditGrades}
-                              />
-                            </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.frequency ?? ""}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, frequency: e.target.value || null } : row))}
-                                placeholder="Ex: Régulier"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
-                                disabled={!canEditGrades}
-                              />
-                            </td>
+                            {evalMode === "LEVEL" ? (
+                              <td className="px-4 py-2">
+                                <select
+                                  value={r.level ?? ""}
+                                  onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, level: e.target.value || null } : row))}
+                                  className={FIELD}
+                                  disabled={!canEditGrades}
+                                >
+                                  <option value="">—</option>
+                                  {r.level && !PRESCHOOL_LEVELS.some((o) => o.value === r.level) ? (
+                                    <option value={r.level}>{preschoolLevelLabel(r.level)}</option>
+                                  ) : null}
+                                  {PRESCHOOL_LEVELS.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            ) : (
+                              <td className="px-4 py-2">
+                                <select
+                                  value={r.frequency ?? ""}
+                                  onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, frequency: e.target.value || null } : row))}
+                                  className={FIELD}
+                                  disabled={!canEditGrades}
+                                >
+                                  <option value="">—</option>
+                                  {r.frequency && !PRESCHOOL_FREQUENCIES.some((o) => o.value === r.frequency) ? (
+                                    <option value={r.frequency}>{preschoolFrequencyLabel(r.frequency)}</option>
+                                  ) : null}
+                                  {PRESCHOOL_FREQUENCIES.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            )}
                             <td className="px-4 py-2">
                               <input
                                 type="text"
                                 value={r.observation}
                                 onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, observation: e.target.value } : row))}
-                                placeholder="Observation"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                className={FIELD}
                                 disabled={!canEditGrades}
                               />
                             </td>
+                            {isLastPeriod ? (
+                              <td className="px-4 py-2">
+                                <select
+                                  value={r.decision ?? ""}
+                                  onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, decision: e.target.value || null } : row))}
+                                  className={FIELD}
+                                  disabled={!canEditGrades}
+                                >
+                                  <option value="">—</option>
+                                  {YEAR_END_DECISIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            ) : null}
                           </tr>
                         ))
                       )}
@@ -705,12 +825,16 @@ export function DashboardGradesPage() {
             </form>
           )}
         </>
-      )}
+      ) : null}
+      </AppAccordion>
 
-      {classes.some((c) => !c.is_preschool) && (
+      {classes.some((c) => !c.is_preschool) ? (
         <>
-          <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
-            <h3 className="font-semibold text-slate-900 mb-4">Seuils de décision de fin d&apos;année (hors préscolaire)</h3>
+          <AppAccordion
+            title="Seuils de fin d'année"
+            open={openBlock === "thresholds"}
+            onToggle={() => setOpenBlock("thresholds")}
+          >
             <form onSubmit={handleSaveThreshold} className="space-y-4 mb-4">
               <div className="flex flex-wrap gap-4 items-end">
                 <div>
@@ -792,7 +916,6 @@ export function DashboardGradesPage() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-slate-500">Renvoyé définitivement = moyenne &lt; seuil Ajourné</p>
               <button type="submit" disabled={thresholdSaving || !thresholdAcademicYearId} className="app-btn-primary disabled:opacity-60">
                 {thresholdSaving ? "Enregistrement..." : "Enregistrer les seuils"}
               </button>
@@ -843,7 +966,7 @@ export function DashboardGradesPage() {
               {thresholdLoading ? (
                 <p className="text-slate-500 text-sm py-4">Chargement...</p>
               ) : thresholds.length === 0 ? (
-                <p className="text-slate-500 text-sm py-4">Aucun seuil défini. Sélectionnez une année académique.</p>
+                <p className="text-slate-500 text-sm py-4">Aucun seuil défini</p>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
                   <table className="w-full text-left text-sm">
@@ -883,14 +1006,13 @@ export function DashboardGradesPage() {
                 </div>
               )}
             </div>
-          </div>
+          </AppAccordion>
 
-          <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
-            <h3 className="font-semibold text-slate-900 mb-1">Note sur laquelle les matières sont corrigées</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              100, 200, 300, 400 ou 500 selon la matière. Ex. 180/200 → 9,00/10.
-            </p>
-            
+          <AppAccordion
+            title="Barème des matières"
+            open={openBlock === "coefficients"}
+            onToggle={() => setOpenBlock("coefficients")}
+          > 
             <form onSubmit={handleSaveCoefficient} className="flex flex-wrap gap-4 items-end mb-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Année académique</label>
@@ -1009,7 +1131,7 @@ export function DashboardGradesPage() {
               {coefLoading ? (
                 <p className="text-slate-500 text-sm py-4">Chargement...</p>
               ) : coefficients.length === 0 ? (
-                <p className="text-slate-500 text-sm py-4">Aucun coefficient défini. Sélectionnez une année académique pour afficher la liste.</p>
+                <p className="text-slate-500 text-sm py-4">Aucun coefficient défini</p>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
                   <table className="w-full text-left text-sm">
@@ -1045,13 +1167,9 @@ export function DashboardGradesPage() {
                 </div>
               )}
             </div>
-          </div>
+          </AppAccordion>
         </>
-      )}
-
-      {!canLoadForm && !formLoading && (
-        <p className="text-slate-500 text-sm">Sélectionnez une année, une classe, une matière et une période pour afficher le tableau de saisie.</p>
-      )}
+      ) : null}
     </div>
   );
 }

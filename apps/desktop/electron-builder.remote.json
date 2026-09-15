@@ -18,8 +18,11 @@
   "extraResources": [
     {
       "from": "build/icon.png",
-      "to": "icon.png",
-      "filter": ["**/*"]
+      "to": "icon.png"
+    },
+    {
+      "from": "build/icon.ico",
+      "to": "icon.ico"
     }
   ],
   "publish": {

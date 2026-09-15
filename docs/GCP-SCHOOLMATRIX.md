@@ -15,8 +15,8 @@ Ne jamais opérer sur `pos-entrprise-israel`, `pos-freres-basiles`, `eau-cascade
 | Ressource | Valeur |
 |-----------|--------|
 | Project | `shekinah-schoolmatrix` |
-| Project number | `972156035703` |
-| Compte SDK | config `schoolmatrix-shekinah` / `larosemikelson@gmail.com` |
+| Project number | `1093524002924` |
+| Compte SDK | config `schoolmatrix` / `larosemikelson@gmail.com` |
 | Région / zone | `northamerica-northeast1` / `northamerica-northeast1-a` |
 | Artifact Registry | `schoolmatrix-backend` |
 | Image backend | `northamerica-northeast1-docker.pkg.dev/shekinah-schoolmatrix/schoolmatrix-backend/backend` |
@@ -25,8 +25,8 @@ Ne jamais opérer sur `pos-entrprise-israel`, `pos-freres-basiles`, `eau-cascade
 | Billing | `01D27D-8BA5C8-721AC7` (Troisième Compte de facturation) |
 | SA CI | `github-actions@shekinah-schoolmatrix.iam.gserviceaccount.com` |
 | SA VM | `schoolmatrix-vm@shekinah-schoolmatrix.iam.gserviceaccount.com` |
-| WIF | `projects/972156035703/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
-| GitHub repo | `Mikelaroselouisiv/shekinah-schoolmatrix` |
+| WIF | `projects/1093524002924/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| GitHub repo | `Mikelaroselouisiv/schoolmatrix` |
 
 ## Garde-fous
 
@@ -44,7 +44,7 @@ Lié à `01D27D-8BA5C8-721AC7` (Troisième Compte de facturation).
 
 ## GitHub secrets / vars
 
-À coller dans le repo `Mikelaroselouisiv/shekinah-schoolmatrix` → Settings → Secrets and variables → Actions.
+À coller dans le repo `Mikelaroselouisiv/schoolmatrix` → Settings → Secrets and variables → Actions.
 
 **Secrets**
 
@@ -52,7 +52,7 @@ Lié à `01D27D-8BA5C8-721AC7` (Troisième Compte de facturation).
 |--------|--------|
 | `GCP_PROJECT_ID` | `shekinah-schoolmatrix` |
 | `GCP_SERVICE_ACCOUNT` | `github-actions@shekinah-schoolmatrix.iam.gserviceaccount.com` |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/972156035703/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/1093524002924/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
 
 **Variables**
 

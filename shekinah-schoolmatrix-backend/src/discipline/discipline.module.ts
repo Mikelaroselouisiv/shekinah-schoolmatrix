@@ -9,6 +9,7 @@ import { Class } from '../classes/class.entity';
 import { DisciplineService } from './discipline.service';
 import { DisciplineController } from './discipline.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
+import { TeachersModule } from '../teachers/teachers.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ParentScopeModule } from '../auth/parent-scope.module';
       Class,
     ]),
     ParentScopeModule,
+    TeachersModule,
   ],
   controllers: [DisciplineController],
   providers: [DisciplineService],

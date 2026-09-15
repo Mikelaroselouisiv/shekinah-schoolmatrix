@@ -1,4 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type PdfPreviewModalProps = {
   blob: Blob;
@@ -38,11 +39,14 @@ export function PdfPreviewModal({ blob, filename, onClose }: PdfPreviewModalProp
     } catch {
       window.open(objectUrl, "_blank")?.print();
     }
+    window.schoolmatrixDesktop?.restoreKeyboardFocus?.();
   }
 
-  return (
+  if (!objectUrl) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -88,6 +92,7 @@ export function PdfPreviewModal({ blob, filename, onClose }: PdfPreviewModalProp
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -26,6 +26,14 @@ export type PdfSection = {
   table?: { columns: PdfColumn[]; rows: Record<string, string | number | null | undefined>[] };
 };
 
+function asPdfText(value: string | number | null | undefined): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-");
+}
+
 /** Construit le doc pour un tableau (partagé entre export et blob). */
 function buildTablePdfDoc(config: PdfTableConfig): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -33,20 +41,20 @@ function buildTablePdfDoc(config: PdfTableConfig): jsPDF {
   if (config.title) {
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
-    doc.text(config.title, 14, y);
+    doc.text(asPdfText(config.title), 14, y);
     y += 10;
   }
   if (config.subtitle) {
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text(config.subtitle, 14, y);
+    doc.text(asPdfText(config.subtitle), 14, y);
     y += 8;
   }
   const headers = config.columns.map((c) => c.header);
   const body = config.rows.map((row) =>
     config.columns.map((col) => {
       const v = row[col.key];
-      return v === null || v === undefined ? "—" : String(v);
+      return v === null || v === undefined ? "-" : asPdfText(v);
     })
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,7 +98,7 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
   if (mainTitle) {
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text(mainTitle, 14, y);
+    doc.text(asPdfText(mainTitle), 14, y);
     y += 10;
   }
   for (const section of sections) {
@@ -101,7 +109,7 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
     if (section.title) {
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      doc.text(section.title, 14, y);
+      doc.text(asPdfText(section.title), 14, y);
       y += 8;
     }
     if (section.lines?.length) {
@@ -112,7 +120,7 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
           doc.addPage();
           y = 15;
         }
-        doc.text(line, 14, y);
+        doc.text(asPdfText(line), 14, y);
         y += 6;
       }
       y += 4;
@@ -122,7 +130,7 @@ function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF 
       const body = section.table.rows.map((row) =>
         section.table!.columns.map((col) => {
           const v = row[col.key];
-          return v === null || v === undefined ? "—" : String(v);
+          return v === null || v === undefined ? "-" : asPdfText(v);
         })
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

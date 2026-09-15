@@ -1,5 +1,5 @@
 # Libere les ports du lab DEV (Nest + Vite + kick agent).
-# Ne touche pas Postgres Docker (5436 / 5437) ni la VM GCP.
+# Ne touche pas Postgres Docker (5435 / 5438) ni la VM GCP.
 
 $ErrorActionPreference = "Continue"
 $ports = 3000, 3001, 5173, 5174, 3911
@@ -25,4 +25,4 @@ foreach ($procId in $pids) {
 }
 
 Write-Host "OK - ports libres." -ForegroundColor Green
-Write-Host "Postgres DEV (5436) et miroir (5437) inchanges." -ForegroundColor DarkGray
+Write-Host "Postgres DEV (5435) et miroir (5438) inchanges." -ForegroundColor DarkGray

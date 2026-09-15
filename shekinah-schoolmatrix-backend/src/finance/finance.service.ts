@@ -548,6 +548,50 @@ export class FinanceService {
     });
   }
 
+  /** Inverse l'écriture ECONOMAT d'un paiement annulé (caisse / recettes). */
+  async voidEconomatPayment(tx: PaymentTransaction): Promise<void> {
+    const entries = await this.entryRepo.find({
+      where: { source: 'ECONOMAT', source_ref: tx.id },
+      relations: ['lines', 'lines.account', 'exercice'],
+    });
+    if (entries.length === 0) return;
+    const originals = entries.filter((e) => !String(e.label ?? '').startsWith('Annulation'));
+    if (originals.length === 0 || originals.length < entries.length) return;
+    for (const e of originals) {
+      const dateStr =
+        typeof e.entry_date === 'string'
+          ? e.entry_date
+          : (e.entry_date as Date).toISOString().slice(0, 10);
+      const lines = (e.lines ?? [])
+        .map((l) => {
+          const accountId = l.account?.id;
+          if (!accountId) return null;
+          return {
+            account_id: accountId,
+            debit: Number(l.credit) || 0,
+            credit: Number(l.debit) || 0,
+            line_label: `Annulation ${l.line_label || e.label}`,
+          };
+        })
+        .filter((l): l is { account_id: string; debit: number; credit: number; line_label: string } => !!l);
+      if (lines.length === 0) continue;
+      const exerciceId = e.exercice?.id ?? (e as { exercice_id?: string }).exercice_id;
+      if (!exerciceId) continue;
+      try {
+        await this.createJournalEntry({
+          exercice_id: exerciceId,
+          entry_date: dateStr,
+          label: `Annulation ${e.label}`,
+          source: 'ECONOMAT',
+          source_ref: tx.id,
+          lines,
+        });
+      } catch {
+        // exercice clôturé ou plan incomplet : le paiement est déjà hors totaux économat
+      }
+    }
+  }
+
   // ─── Banques & comptes ───────────────────────────────────────────────
 
   async findBanks(): Promise<any[]> {
@@ -680,6 +724,7 @@ export class FinanceService {
       .select('t.bank_account_id', 'bank_account_id')
       .addSelect('SUM(t.amount_paid)', 'total')
       .where('t.bank_account_id IS NOT NULL')
+      .andWhere('t.cancelled_at IS NULL')
       .groupBy('t.bank_account_id')
       .getRawMany();
     for (const row of paid) {
@@ -728,6 +773,7 @@ export class FinanceService {
       .select('t.bank_account_id', 'bank_account_id')
       .addSelect('SUM(t.amount_paid)', 'total')
       .where('t.bank_account_id IS NOT NULL')
+      .andWhere('t.cancelled_at IS NULL')
       .groupBy('t.bank_account_id')
       .getRawMany();
     const spentRows = await this.expenseRepo
@@ -798,12 +844,14 @@ export class FinanceService {
       };
     }
 
+    const excludeCancelledEconomat = `(e.source <> 'ECONOMAT' OR e.source_ref IS NULL OR NOT EXISTS (SELECT 1 FROM payment_transaction pt WHERE pt.id::text = e.source_ref AND pt.cancelled_at IS NOT NULL))`;
     const qbDebit = this.lineRepo
       .createQueryBuilder('l')
       .innerJoin('l.entry', 'e')
       .where('l.account_id = :cid', { cid: caisseId })
       .andWhere('e.entry_date >= :df', { df: params.date_from })
       .andWhere('e.entry_date <= :dt', { dt: params.date_to })
+      .andWhere(excludeCancelledEconomat)
       .select('SUM(l.debit)', 'tot');
     const qbCredit = this.lineRepo
       .createQueryBuilder('l')
@@ -811,6 +859,7 @@ export class FinanceService {
       .where('l.account_id = :cid', { cid: caisseId })
       .andWhere('e.entry_date >= :df', { df: params.date_from })
       .andWhere('e.entry_date <= :dt', { dt: params.date_to })
+      .andWhere(excludeCancelledEconomat)
       .select('SUM(l.credit)', 'tot');
 
     if (params.fee_service_id) {
@@ -819,6 +868,7 @@ export class FinanceService {
         .where('t.service_id = :sid', { sid: params.fee_service_id })
         .andWhere('t.payment_date >= :df', { df: params.date_from })
         .andWhere('t.payment_date <= :dt', { dt: params.date_to })
+        .andWhere('t.cancelled_at IS NULL')
         .select('t.id')
         .getMany();
       const ids = txIds.map((t) => t.id);
@@ -873,7 +923,8 @@ export class FinanceService {
       .andWhere('l.account_id = :cid', { cid: caisseId })
       .andWhere('e.entry_date >= :df', { df: params.date_from })
       .andWhere('e.entry_date <= :dt', { dt: params.date_to })
-      .select('SUM(l.debit)', 's')
+      .andWhere(excludeCancelledEconomat)
+      .select('SUM(l.debit) - SUM(l.credit)', 's')
       .getRawOne();
     const sumEconomat = Number(economatSum?.s ?? 0);
     const autreRevSum = await this.otherRevenueRepo

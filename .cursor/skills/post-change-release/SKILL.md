@@ -60,7 +60,7 @@ Détails : [docs/RELEASE.md](../../../docs/RELEASE.md), [docs/DESKTOP.md](../../
 | `apps/sync-agent/**` | Doit être re-bundlé dans Server (`prepare-server-stack`) |
 | `docs/**`, `.github/**` | Push GitHub |
 
-Remote Git : **`origin`** → `https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix.git`  
+Remote Git : **`origin`** → `https://github.com/Mikelaroselouisiv/schoolmatrix.git`  
 GCP : projet **`shekinah-schoolmatrix`** uniquement (`assert-schoolmatrix-gcp.ps1`).
 
 ## Anti-patterns

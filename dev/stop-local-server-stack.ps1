@@ -1,12 +1,12 @@
-# Stop Docker project schoolmatrix-server on this DEV machine.
+# Stop Docker project shekinah-schoolmatrix-server on this DEV machine.
 # Frees port 3000 for Nest (npm run dev:backend).
-# Does NOT touch GCP VM or a remote school machine.
+# Does NOT touch GCP VM, Eureka, or a remote school machine.
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
 $compose = Join-Path $root "apps\desktop\server-stack\docker-compose.yml"
 
-Write-Host "Stopping local Server stack (project schoolmatrix-server)..." -ForegroundColor Cyan
+Write-Host "Stopping local Server stack (project shekinah-schoolmatrix-server)..." -ForegroundColor Cyan
 
 $names = @(
   "shekinah_api_server",
@@ -20,7 +20,7 @@ foreach ($n in $names) {
 
 if (Test-Path $compose) {
   # Ignore compose variable warnings (DB_PASS etc.) — we only need containers down.
-  cmd /c "docker compose -f `"$compose`" -p schoolmatrix-server down >NUL 2>&1"
+  cmd /c "docker compose -f `"$compose`" -p shekinah-schoolmatrix-server down >NUL 2>&1"
 }
 
 Write-Host "OK - you can run: npm run dev:backend" -ForegroundColor Green

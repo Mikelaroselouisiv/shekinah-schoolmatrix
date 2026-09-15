@@ -9,6 +9,7 @@ import { colors } from '../theme/tokens';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { WorkScreen } from '../screens/work/WorkScreen';
 import { WorkModuleScreen } from '../screens/work/WorkModuleScreen';
+import { TeacherHubScreen } from '../screens/work/TeacherHubScreen';
 import { AttendanceScreen } from '../screens/work/AttendanceScreen';
 import { GradesScreen } from '../screens/work/GradesScreen';
 import { DisciplineScreen } from '../screens/work/DisciplineScreen';
@@ -74,6 +75,7 @@ function WorkStack() {
       <WorkStackNav.Screen name="WorkMain" component={WorkScreen} options={{ title: 'Tableau de bord' }} />
       <WorkStackNav.Screen name="WorkModule" component={WorkModuleScreen} options={{ title: 'Module' }} />
       <WorkStackNav.Screen name="Attendance" component={AttendanceScreen} options={{ title: 'Appel' }} />
+      <WorkStackNav.Screen name="TeacherHub" component={TeacherHubScreen} options={{ title: 'Tableau professeur' }} />
       <WorkStackNav.Screen name="Grades" component={GradesScreen} options={{ title: 'Notes' }} />
       <WorkStackNav.Screen
         name="Discipline"

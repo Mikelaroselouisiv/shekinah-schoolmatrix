@@ -14,6 +14,9 @@ declare global {
       fetchMedia?: (
         url: string,
       ) => Promise<{ base64: string; contentType: string } | null>;
+      confirmSync: (message: string) => boolean;
+      alertSync: (message: string) => void;
+      restoreKeyboardFocus: () => void;
       updater?: {
         getState: () => Promise<DesktopUpdaterState>;
         check: () => Promise<DesktopUpdaterState>;

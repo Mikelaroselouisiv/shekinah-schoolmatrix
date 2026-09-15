@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 import { formatDateJJMMAAAA } from "@/src/lib/format";
 import {
@@ -15,6 +16,31 @@ type Subject = { id: string; name: string };
 type Period = { id: string; name: string };
 type CourseCell = { id: string; subject_id: string; teacher_name?: string | null };
 type ExamCell = { id: string; subject_id: string };
+
+export type ClassScheduleMoment = {
+  id: string;
+  class_id: string;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  label: string | null;
+};
+
+export type SchoolScheduleDuty = {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  title: string;
+  responsible_name: string | null;
+};
+
+const MOMENT_KINDS = [
+  { id: "ENTRY", label: "Rentrée" },
+  { id: "RECESS", label: "Récréation" },
+  { id: "CLOSING", label: "Prière de fin de journée" },
+] as const;
 
 type Props = {
   title: string;
@@ -33,6 +59,17 @@ type Props = {
   onClose: () => void;
   onSelectCourse: (dayIndex: number, start: string, end: string, subjectId: string) => void;
   onSelectExam: (date: string, start: string, end: string, subjectId: string) => void;
+  classMoments?: ClassScheduleMoment[];
+  schoolDuties?: SchoolScheduleDuty[];
+  onCreateMoment?: (payload: {
+    kind: string;
+    start_time: string;
+    end_time: string;
+    label: string;
+    days: number[];
+  }) => void;
+  onDeleteMoment?: (id: string) => void;
+  momentsBusy?: boolean;
 };
 
 export function ScheduleGridModal({
@@ -52,8 +89,24 @@ export function ScheduleGridModal({
   onClose,
   onSelectCourse,
   onSelectExam,
+  classMoments = [],
+  schoolDuties = [],
+  onCreateMoment,
+  onDeleteMoment,
+  momentsBusy = false,
 }: Props) {
   const weekStart = mondayOf(examWeekStart || "");
+  const [momentKind, setMomentKind] = useState("RECESS");
+  const [momentStart, setMomentStart] = useState("10:00");
+  const [momentEnd, setMomentEnd] = useState("10:15");
+  const [momentLabel, setMomentLabel] = useState("");
+  const [momentDays, setMomentDays] = useState<number[]>(SCHEDULE_DAYS.map((d) => d.index));
+
+  function toggleMomentDay(day: number) {
+    setMomentDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort(),
+    );
+  }
 
   return (
     <div
@@ -181,6 +234,155 @@ export function ScheduleGridModal({
               ))}
             </tbody>
           </table>
+
+          {mode === "cours" && (
+            <div className="mt-6 space-y-4 border-t border-[var(--app-border)] pt-5">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">Moments spéciaux de la classe</h4>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Rentrée, récréation et prière de fin : durées courtes (pas une heure de cours).
+                  Elles se calent sur cette classe uniquement.
+                </p>
+              </div>
+
+              {schoolDuties.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-950">
+                  <div className="font-medium">Dévotion (toute l’école)</div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                    {SCHEDULE_DAYS.map((day) => {
+                      const d = schoolDuties.find((x) => x.day_of_week === day.index);
+                      if (!d) return null;
+                      return (
+                        <span key={day.index}>
+                          {day.label} {d.start_time}–{d.end_time}
+                          {d.responsible_name ? ` · ${d.responsible_name}` : ""}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {classMoments.length === 0 ? (
+                <p className="text-xs text-slate-500">Aucun moment spécial pour cette classe.</p>
+              ) : (
+                <ul className="divide-y divide-[var(--app-border)] rounded-lg border border-[var(--app-border)]">
+                  {classMoments
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time),
+                    )
+                    .map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                      >
+                        <span>
+                          <span className="font-medium text-slate-900">{m.title}</span>
+                          <span className="text-slate-500">
+                            {" "}
+                            · {SCHEDULE_DAYS.find((d) => d.index === m.day_of_week)?.label ?? m.day_of_week}{" "}
+                            {m.start_time}–{m.end_time}
+                          </span>
+                        </span>
+                        {onDeleteMoment && (
+                          <button
+                            type="button"
+                            className="text-xs text-red-600 hover:underline"
+                            onClick={() => onDeleteMoment(m.id)}
+                          >
+                            Supprimer
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                </ul>
+              )}
+
+              {onCreateMoment && (
+                <form
+                  className="grid gap-3 rounded-lg border border-[var(--app-border)] bg-slate-50 p-3 sm:grid-cols-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!momentDays.length) return;
+                    onCreateMoment({
+                      kind: momentKind,
+                      start_time: momentStart,
+                      end_time: momentEnd,
+                      label: momentLabel,
+                      days: momentDays,
+                    });
+                  }}
+                >
+                  <div>
+                    <label className="mb-0.5 block text-xs text-slate-500">Type</label>
+                    <select
+                      value={momentKind}
+                      onChange={(e) => setMomentKind(e.target.value)}
+                      className="w-full rounded border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                    >
+                      {MOMENT_KINDS.map((k) => (
+                        <option key={k.id} value={k.id}>{k.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-0.5 block text-xs text-slate-500">Libellé (optionnel)</label>
+                    <input
+                      type="text"
+                      value={momentLabel}
+                      onChange={(e) => setMomentLabel(e.target.value)}
+                      placeholder="Grande récré…"
+                      className="w-full rounded border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-0.5 block text-xs text-slate-500">Début</label>
+                    <input
+                      type="time"
+                      value={momentStart}
+                      onChange={(e) => setMomentStart(e.target.value)}
+                      className="w-full rounded border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-0.5 block text-xs text-slate-500">Fin</label>
+                    <input
+                      type="time"
+                      value={momentEnd}
+                      onChange={(e) => setMomentEnd(e.target.value)}
+                      className="w-full rounded border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <div className="mb-1 text-xs text-slate-500">Jours</div>
+                    <div className="flex flex-wrap gap-3">
+                      {SCHEDULE_DAYS.map((day) => (
+                        <label key={day.index} className="flex items-center gap-1.5 text-xs text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={momentDays.includes(day.index)}
+                            onChange={() => toggleMomentDay(day.index)}
+                          />
+                          {day.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="submit"
+                      disabled={momentsBusy || momentDays.length === 0}
+                      className="app-btn-primary text-sm py-1.5 disabled:opacity-60"
+                    >
+                      {momentsBusy ? "Enregistrement…" : "Caler sur l’horaire"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -2,16 +2,12 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subject } from './subject.entity';
-import { SyncService } from '../sync/sync.service';
-import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class SubjectsService {
   constructor(
     @InjectRepository(Subject)
     private readonly subjectRepo: Repository<Subject>,
-    private readonly syncService: SyncService,
-    private readonly syncKick: SyncKickService,
   ) {}
 
   async findAll(): Promise<Subject[]> {
@@ -26,7 +22,7 @@ export class SubjectsService {
     return subject;
   }
 
-  async create(params: { name: string; code?: string }): Promise<Subject> {
+  async create(params: { name: string; code?: string; preschool_eval?: string }): Promise<Subject> {
     const name = params.name.trim();
     const exists = await this.subjectRepo.findOne({ where: { name } });
     if (exists) {
@@ -36,13 +32,14 @@ export class SubjectsService {
       name,
       code: params.code?.trim(),
       active: true,
+      preschool_eval: params.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     });
     return this.subjectRepo.save(subject);
   }
 
   async update(
     id: string,
-    params: { name?: string; code?: string; active?: boolean },
+    params: { name?: string; code?: string; active?: boolean; preschool_eval?: string },
   ): Promise<Subject> {
     const subject = await this.subjectRepo.findOne({ where: { id } });
     if (!subject) {
@@ -58,6 +55,9 @@ export class SubjectsService {
     }
     if (params.code !== undefined) subject.code = params.code.trim() || undefined;
     if (params.active !== undefined) subject.active = params.active;
+    if (params.preschool_eval !== undefined) {
+      subject.preschool_eval = params.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL';
+    }
     return this.subjectRepo.save(subject);
   }
 
@@ -66,8 +66,6 @@ export class SubjectsService {
     if (!subject) {
       throw new NotFoundException('Subject not found');
     }
-    await this.syncService.recordDelete('Subject', id);
     await this.subjectRepo.remove(subject);
-    this.syncKick.kick('subject-delete');
   }
 }

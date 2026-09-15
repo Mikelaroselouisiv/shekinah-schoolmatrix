@@ -42,9 +42,7 @@ secrets/
 *.pem
 
 # Uploads runtime locaux (ne pas versionner)
-parallele-schoolmatrix-backend/storage/
 shekinah-schoolmatrix-backend/storage/
-shekinah-schoolmatrix-backend/storage-cloud-twin/
 
 # Desktop build artifacts
 apps/desktop/next-runtime/
@@ -58,15 +56,16 @@ apps/desktop/server-stack/credentials/*.json
 
 apps/desktop/dist/
 
+# Mobile Expo
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+
 # Installateurs locaux (binaires)
+/Shekinah-SchoolMatrix-Remote*.exe
+/Shekinah-SchoolMatrix-Server*.exe
 /release/
 _archive/**/release/
-installers-usb-*/
-
-# Documents de travail école (listes élèves, PDF scannés)
-NISU SHEKINAH/
-Shekinah liste.docx
-~$*.docx
 
 
 apps/desktop/release-server/
@@ -74,3 +73,7 @@ apps/desktop/release-server-b/
 apps/desktop/release-remote/
 apps/desktop/release/
 
+NISU SHEKINAH/
+Shekinah liste.docx
+installers-usb-*/
+shekinah-schoolmatrix-backend/storage-cloud-twin/

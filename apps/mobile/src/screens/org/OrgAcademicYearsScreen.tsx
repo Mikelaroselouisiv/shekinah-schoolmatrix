@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -335,47 +334,39 @@ export function OrgAcademicYearsScreen({}: Props) {
         )}
       </ScrollView>
 
-      <Modal visible={yearForm} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>
-              {editingYear ? 'Modifier l’année' : 'Nouvelle année'}
-            </Text>
-            <TextField label="Nom *" value={yearName} onChangeText={setYearName} />
-            <DateField label="Début" value={yearStart} onChange={setYearStart} />
-            <DateField label="Fin" value={yearEnd} onChange={setYearEnd} />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void saveYear()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setYearForm(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={yearForm} onRequestClose={() => setYearForm(false)}>
+        <Text style={styles.sheetTitle}>
+          {editingYear ? 'Modifier l’année' : 'Nouvelle année'}
+        </Text>
+        <TextField label="Nom *" value={yearName} onChangeText={setYearName} />
+        <DateField label="Début" value={yearStart} onChange={setYearStart} />
+        <DateField label="Fin" value={yearEnd} onChange={setYearEnd} />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void saveYear()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setYearForm(false)} />
+      </FormModal>
 
-      <Modal visible={periodForm} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>
-              {editingPeriod ? 'Modifier la période' : 'Nouvelle période'}
-            </Text>
-            <TextField label="Nom *" value={periodName} onChangeText={setPeriodName} />
-            <TextField
-              label="Ordre"
-              value={periodOrder}
-              onChangeText={setPeriodOrder}
-              keyboardType="number-pad"
-            />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void savePeriod()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setPeriodForm(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={periodForm} onRequestClose={() => setPeriodForm(false)}>
+        <Text style={styles.sheetTitle}>
+          {editingPeriod ? 'Modifier la période' : 'Nouvelle période'}
+        </Text>
+        <TextField label="Nom *" value={periodName} onChangeText={setPeriodName} />
+        <TextField
+          label="Ordre"
+          value={periodOrder}
+          onChangeText={setPeriodOrder}
+          keyboardType="number-pad"
+        />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void savePeriod()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setPeriodForm(false)} />
+      </FormModal>
     </Screen>
   );
 }

@@ -33,6 +33,7 @@ export type WorkStackParamList = {
   WorkMain: undefined;
   WorkModule: { screenId: string; title?: string };
   Attendance: undefined;
+  TeacherHub: undefined;
   Grades: undefined;
   Discipline: undefined;
   Photography: undefined;

@@ -14,6 +14,7 @@ const ROUTE_LABELS: Record<string, string> = {
   comptabilite: "Comptabilité",
   school: "Gestion établissement",
   grades: "Saisie des notes",
+  "tableau-professeur": "Tableau de bord professeur",
   "academic-years": "Années et périodes",
   coefficients: "Coefficients",
   roles: "Rôles",

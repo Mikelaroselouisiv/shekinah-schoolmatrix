@@ -10,11 +10,12 @@ import { ExportPdfButton } from "@/src/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/src/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob, fetchRoomNameForClass } from "@/src/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/src/lib/format";
+import { isHigherEducationLevel, learnerNoun, learnerNounCap } from "@/src/lib/educationLevels";
 
 type Student = {
   id: string;
   order_number: string | null;
-  student_code: string | null;
+  management_code: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;
@@ -31,10 +32,11 @@ type Student = {
   responsible_phone: string | null;
   class_id: string;
   class_name: string;
+  class_level?: string | null;
   is_preschool?: boolean;
 };
 
-type ClassItem = { id: string; name: string };
+type ClassItem = { id: string; name: string; level?: string | null };
 
 type AcademicYear = { id: string; name: string };
 
@@ -224,23 +226,25 @@ export default function FicheElevePage() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      const isParentOrTeacher = roleName === "PARENT" || roleName === "TEACHER";
+      const isParentOnly = roleName === "PARENT";
       const [_, __, linkedRes] = await Promise.all([
         loadClasses(),
         loadAcademicYears(),
-        isParentOrTeacher ? fetchWithAuth(`${API_BASE}/users/me/linked-students`) : Promise.resolve(null),
+        fetchWithAuth(`${API_BASE}/users/me/linked-students`),
       ]);
-      if (isParentOrTeacher && linkedRes) {
+      if (linkedRes) {
         const linkedData = await linkedRes.json();
         const list: LinkedStudent[] = linkedData.linked_students ?? [];
         if (list.length > 0) {
           setLinkedStudents(list);
-          setRestrictToLinkedStudents(true);
-          setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
-          const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
-          const sel = list.find((x) => x.id === toSelect) ?? list[0];
-          setSelectedStudentId(toSelect);
-          setSelectedClassId(sel.class_id);
+          if (isParentOnly) {
+            setRestrictToLinkedStudents(true);
+            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+            const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
+            const sel = list.find((x) => x.id === toSelect) ?? list[0];
+            setSelectedStudentId(toSelect);
+            setSelectedClassId(sel.class_id);
+          }
         }
       }
       setLoading(false);
@@ -383,9 +387,14 @@ export default function FicheElevePage() {
     return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
   }
 
+  const ficheLevel =
+    student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
+  const ficheLearner = learnerNoun(ficheLevel);
+  const ficheHigherEd = isHigherEducationLevel(ficheLevel);
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Fiche élève</h2>
+      <h2 className="text-2xl font-bold text-slate-900">Fiche {ficheLearner}</h2>
 
       {/* Sélecteur élève */}
       <div className="flex flex-wrap gap-4 items-end p-4 rounded-xl border border-[var(--app-border)] bg-white">
@@ -408,7 +417,7 @@ export default function FicheElevePage() {
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Élève</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">{learnerNounCap(ficheLevel)}</label>
           <select
             value={selectedStudentId}
             onChange={(e) => {
@@ -424,7 +433,7 @@ export default function FicheElevePage() {
             <option value="">— Sélectionner —</option>
             {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
               <option key={s.id} value={s.id}>
-                {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                {s.order_number && !ficheHigherEd ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
                 {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
               </option>
             ))}
@@ -436,7 +445,7 @@ export default function FicheElevePage() {
 
       {!student ? (
         <div className="p-12 rounded-xl border border-[var(--app-border)] bg-slate-50/50 text-center text-slate-500">
-          Sélectionnez une classe puis un élève pour afficher sa fiche.
+          Sélectionnez une classe puis un {ficheLearner} pour afficher sa fiche.
         </div>
       ) : (
         <>
@@ -454,7 +463,11 @@ export default function FicheElevePage() {
                 <h3 className="text-xl font-bold text-slate-900">
                   {student.first_name} {student.last_name}
                 </h3>
-                <p className="text-slate-600 font-mono text-sm">{student.order_number ?? "—"}</p>
+                {!ficheHigherEd && student.order_number ? (
+                  <p className="text-slate-600 font-mono text-sm">{student.order_number}</p>
+                ) : student.management_code ? (
+                  <p className="text-slate-600 font-mono text-sm">Code {student.management_code}</p>
+                ) : null}
                 <p className="text-slate-700 mt-1">
                   <span className="font-medium">Tél. :</span> {student.phone ?? student.email ?? "—"}
                 </p>
@@ -473,7 +486,7 @@ export default function FicheElevePage() {
                       {
                         first_name: student.first_name,
                         last_name: student.last_name,
-                        student_code: student.student_code,
+                        management_code: student.management_code,
                         class_name: student.class_name,
                         room_name,
                         photo_url: student.photo_identity_student,
@@ -487,7 +500,7 @@ export default function FicheElevePage() {
                   href={`/dashboard/students?edit_id=${student.id}`}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--school-accent-1)] text-[var(--school-accent-1)] hover:bg-[var(--school-accent-1)]/10 font-medium text-sm transition-colors"
                 >
-                  Modifier l&apos;élève
+                  Modifier l&apos;{ficheLearner}
                 </Link>
               )}
             </div>

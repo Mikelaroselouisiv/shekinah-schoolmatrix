@@ -98,6 +98,10 @@ export function WorkScreen({ navigation }: Props) {
       navigation.navigate('Grades');
       return;
     }
+    if (screenId === 'teacher-hub') {
+      navigation.navigate('TeacherHub');
+      return;
+    }
     if (screenId === 'photography') {
       navigation.navigate('Photography');
       return;
@@ -143,7 +147,7 @@ export function WorkScreen({ navigation }: Props) {
             style={({ pressed }) => [styles.logoWrap, pressed && { opacity: 0.85 }]}
           >
             <Image
-              source={logoUri ? { uri: logoUri } : require('../../../assets/brand-logo.png')}
+              source={logoUri ? { uri: logoUri } : require('../../../assets/logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />

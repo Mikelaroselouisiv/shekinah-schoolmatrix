@@ -38,6 +38,9 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
       rolePermissions.includes("classes")
     );
   }
+  if (permissionKey === "teacher-hub") {
+    return rolePermissions.includes("teacher-hub") || rolePermissions.includes("grades");
+  }
   return rolePermissions.includes(permissionKey);
 }
 

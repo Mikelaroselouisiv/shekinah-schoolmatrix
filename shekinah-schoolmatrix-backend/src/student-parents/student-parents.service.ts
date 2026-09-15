@@ -1,72 +1,42 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { StudentParent } from './student-parent.entity';
-import { User } from '../users/user.entity';
-import { UserLinkedStudent } from '../users/user-linked-student.entity';
+import { UsersService } from '../users/users.service';
 
+export interface ParentChild {
+  id: string;
+  order_number: string | null;
+  first_name: string;
+  last_name: string;
+  class_id: string | null;
+  class_name: string | null;
+  photo_identity_student: string | null;
+}
+
+/**
+ * Rattachement parent → élève.
+ *
+ * Source unique : `user_linked_student`, alimentée par `linked_student_ids`
+ * dans l'administration des utilisateurs. L'ancienne table `student_parent`
+ * n'était écrite par aucun code : cet endpoint renvoyait donc toujours une
+ * liste vide. Elle n'est plus lue.
+ */
 @Injectable()
 export class StudentParentsService {
-  constructor(
-    @InjectRepository(StudentParent)
-    private readonly studentParentRepo: Repository<StudentParent>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
-    @InjectRepository(UserLinkedStudent)
-    private readonly linkedStudentRepo: Repository<UserLinkedStudent>,
-  ) {}
+  constructor(private readonly users: UsersService) {}
 
-  async getChildrenForParent(parentUserId: number): Promise<any[]> {
-    const user = await this.userRepo.findOne({
-      where: { id: parentUserId },
-      relations: ['role'],
-    });
+  /** Même source que GET /users/me/linked-students (user_linked_student). */
+  async getChildrenForParent(parentUserId: number): Promise<ParentChild[]> {
+    const user = await this.users.findOne(parentUserId).catch(() => null);
     if (!user) return [];
-    const roleName = user.role?.name ?? (typeof user.role === 'string' ? user.role : '');
-    if (roleName !== 'PARENT') return [];
-
-    const links = await this.studentParentRepo
-      .createQueryBuilder('sp')
-      .innerJoinAndSelect('sp.student', 's')
-      .leftJoinAndSelect('s.class', 'c')
-      .where('sp.user_id = :uid', { uid: parentUserId })
-      .orderBy('sp.created_at', 'ASC')
-      .getMany();
-
-    if (links.length) {
-      return links.map((sp) => {
-        const s = sp.student;
-        return {
-          id: s?.id,
-          first_name: s?.first_name,
-          last_name: s?.last_name,
-          order_number: s?.order_number ?? null,
-          student_code: s?.student_code ?? null,
-          class_id: s?.class?.id,
-          class_name: s?.class?.name,
-          photo_identity_student: s?.photo_identity_student,
-          relationship: sp.relationship,
-        };
-      });
-    }
-
-    const linked = await this.linkedStudentRepo.find({
-      where: { user: { id: parentUserId } },
-      relations: ['student', 'student.class'],
-    });
-    return linked.map((l) => {
-      const s = l.student;
-      return {
-        id: s?.id,
-        first_name: s?.first_name,
-        last_name: s?.last_name,
-        order_number: s?.order_number ?? null,
-        student_code: s?.student_code ?? null,
-        class_id: s?.class?.id,
-        class_name: s?.class?.name,
-        photo_identity_student: s?.photo_identity_student,
-        relationship: null,
-      };
-    });
+    const list = await this.users.getLinkedStudentsForFiche(parentUserId);
+    return list.map((s) => ({
+      id: s.id,
+      order_number: s.order_number ?? null,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      class_id: s.class_id ?? null,
+      class_name: s.class_name ?? null,
+      photo_identity_student: (s as { photo_identity_student?: string | null })
+        .photo_identity_student ?? null,
+    }));
   }
 }

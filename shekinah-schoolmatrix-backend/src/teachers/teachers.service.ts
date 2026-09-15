@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ClassTeacher } from './class-teacher.entity';
 import { TeacherSubject } from './teacher-subject.entity';
 import { TeacherClassSubject } from './teacher-class-subject.entity';
 import { ScheduleSlot } from './schedule-slot.entity';
+import { ScheduleMomentsService } from './schedule-moments.service';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { Class } from '../classes/class.entity';
@@ -15,6 +16,14 @@ import {
   TEACHER_ROLE_NAMES,
   isTeacherRoleName,
 } from '../roles/roles.constants';
+import {
+  isAttendanceLevel,
+  isListScheduleLevel,
+  isMaterialsLevel,
+  morningCycleFromLevel,
+} from '../roles/education-levels';
+import { isPreschoolClass } from '../utils/preschool';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class TeachersService {
@@ -35,7 +44,84 @@ export class TeachersService {
     private readonly roomRepo: Repository<Room>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    @InjectRepository(Class)
+    private readonly classRepo: Repository<Class>,
+    private readonly scheduleMoments: ScheduleMomentsService,
+    private readonly usersService: UsersService,
   ) {}
+
+  serializeTeacher(t: User) {
+    return {
+      id: t.id,
+      first_name: t.first_name,
+      last_name: t.last_name,
+      email: t.email,
+      phone: t.phone,
+      profile_photo_url: t.profile_photo_url ?? null,
+      active: t.active,
+    };
+  }
+
+  async searchStaffCandidates(q?: string): Promise<User[]> {
+    const blocked = [...TEACHER_ROLE_NAMES, 'PARENT'];
+    const qb = this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r')
+      .where('u.active = :active', { active: true })
+      .andWhere('(r.name IS NULL OR UPPER(r.name) NOT IN (:...blocked))', {
+        blocked,
+      })
+      .orderBy('u.last_name', 'ASC')
+      .addOrderBy('u.first_name', 'ASC')
+      .take(30);
+    const query = (q ?? '').trim();
+    if (query) {
+      const like = `%${query.replace(/[%_\\]/g, '')}%`;
+      qb.andWhere(
+        `(u.first_name ILIKE :like OR u.last_name ILIKE :like OR u.email ILIKE :like
+          OR COALESCE(u.phone, '') ILIKE :like
+          OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) ILIKE :like)`,
+        { like },
+      );
+    }
+    return qb.getMany();
+  }
+
+  async createTeacher(params: {
+    first_name?: string;
+    last_name?: string;
+    email: string;
+    phone?: string;
+    password: string;
+    profile_photo_url?: string;
+  }): Promise<User> {
+    return this.usersService.createUser({
+      first_name: params.first_name,
+      last_name: params.last_name,
+      email: params.email,
+      phone: params.phone,
+      password: params.password,
+      roleName: 'TEACHER',
+      profile_photo_url: params.profile_photo_url,
+      must_change_password: true,
+    });
+  }
+
+  async promoteToTeacher(userId: number): Promise<User> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['role'],
+    });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+    if (isTeacherRoleName(user.role?.name)) return user;
+    const role = (user.role?.name ?? '').toUpperCase();
+    if (role === 'PARENT') {
+      throw new BadRequestException(
+        'Un compte parent ne peut pas être promu professeur depuis la classe.',
+      );
+    }
+    return this.usersService.setUserRole(userId, 'TEACHER');
+  }
 
   /**
    * Emploi du temps d'un élève = celui de sa classe.
@@ -49,12 +135,106 @@ export class TeachersService {
     if (!student) throw new NotFoundException('Student not found');
 
     const classId = student.class?.id ?? null;
-    const slots = classId
-      ? await this.getScheduleSlots({
-          class_id: classId,
-          academic_year: academicYear,
-        })
-      : [];
+    const [slots, moments, duties] = classId
+      ? await Promise.all([
+          this.getScheduleSlots({
+            class_id: classId,
+            academic_year: academicYear,
+          }),
+          this.scheduleMoments.listClassMoments({
+            class_id: classId,
+            academic_year: academicYear,
+          }),
+          this.scheduleMoments.listDuties({ academic_year: academicYear }),
+        ])
+      : [[], [], []];
+
+    const cycle = morningCycleFromLevel(student.class?.level);
+    const relevantDuties = duties.filter((d) => {
+      const kind = (d.kind || '').toUpperCase();
+      const cycleMatch = !!cycle && d.cycle === cycle;
+      if (kind === 'FLAG' && d.class_id) return d.class_id === classId;
+      if (kind === 'SERVICE' || kind === 'PRIERE') return cycleMatch;
+      if (['ACCUEIL', 'ANIMATION', 'DEVOTION', 'DEFI', 'RENTREE'].includes(kind)) {
+        return cycleMatch;
+      }
+      if (kind === 'FLAG') return cycleMatch;
+      return false;
+    });
+
+    const merged = [
+      ...relevantDuties.map((d) => ({
+        id: `duty:${d.id}`,
+        kind: d.kind,
+        title: d.title,
+        day_of_week: d.day_of_week,
+        start_time: d.start_time,
+        end_time: d.end_time,
+        subject_id: null as string | null,
+        subject_name: d.title,
+        room_id: null as string | null,
+        room_name: d.class_name,
+        teacher_id: d.responsible_user_id,
+        teacher_name: d.responsible_name,
+        academic_year: d.academic_year,
+        materials: null as string | null,
+        is_school_wide: d.kind === 'FLAG',
+      })),
+      ...moments.map((m) => ({
+        id: `moment:${m.id}`,
+        kind: m.kind,
+        title: m.title,
+        day_of_week: m.day_of_week,
+        start_time: m.start_time,
+        end_time: m.end_time,
+        subject_id: null as string | null,
+        subject_name: m.title,
+        room_id: null as string | null,
+        room_name: null as string | null,
+        teacher_id: null as number | null,
+        teacher_name: null as string | null,
+        academic_year: m.academic_year,
+        materials: null as string | null,
+        is_school_wide: false,
+      })),
+      ...(isListScheduleLevel(student.class?.level)
+        ? []
+        : slots.map((s) => ({
+            id: s.id,
+            kind: 'COURSE' as const,
+            title: s.subject_name ?? 'Cours',
+            day_of_week: s.day_of_week,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            subject_id: s.subject_id ?? null,
+            subject_name: s.subject_name ?? null,
+            room_id: s.room_id ?? null,
+            room_name: s.room_name ?? null,
+            teacher_id: s.teacher_id ?? null,
+            teacher_name: s.teacher_name ?? null,
+            academic_year: s.academic_year,
+            materials: s.materials ?? null,
+            is_school_wide: false,
+          }))),
+    ].sort(
+      (a, b) =>
+        a.day_of_week - b.day_of_week ||
+        a.start_time.localeCompare(b.start_time),
+    );
+
+    const listMode = isListScheduleLevel(student.class?.level);
+    let day_lists: {
+      day_of_week: number;
+      subject_ids: string[];
+      subject_names: string[];
+      materials: string[];
+    }[] = [];
+    if (listMode && classId) {
+      day_lists = await this.scheduleMoments.listDayLists(
+        classId,
+        academicYear,
+      );
+    }
 
     return {
       student_id: student.id,
@@ -62,19 +242,15 @@ export class TeachersService {
       class_id: classId,
       class_name: student.class?.name ?? null,
       academic_year: academicYear ?? null,
-      slots: slots.map((s) => ({
-        id: s.id,
-        day_of_week: s.day_of_week,
-        start_time: s.start_time,
-        end_time: s.end_time,
-        subject_id: s.subject_id ?? null,
-        subject_name: s.subject_name ?? null,
-        room_id: s.room_id ?? null,
-        room_name: s.room_name ?? null,
-        teacher_id: s.teacher_id ?? null,
-        teacher_name: s.teacher_name ?? null,
-        academic_year: s.academic_year,
-      })),
+      schedule_mode: listMode ? 'list' : 'timed',
+      day_lists,
+      bring_items: day_lists.flatMap((d) =>
+        d.materials.map((label) => ({ id: `${d.day_of_week}:${label}`, label })),
+      ),
+      list_subjects: [
+        ...new Set(day_lists.flatMap((d) => d.subject_names)),
+      ],
+      slots: merged,
     };
   }
 
@@ -331,6 +507,7 @@ export class TeachersService {
       teacher_name: a.teacher
         ? `${a.teacher.first_name ?? ''} ${a.teacher.last_name ?? ''}`.trim()
         : '',
+      teacher_photo_url: a.teacher?.profile_photo_url ?? null,
       class_id: a.class?.id ?? a.class_id,
       class_name: a.class?.name ?? '',
       subject_id: a.subject?.id ?? a.subject_id,
@@ -391,7 +568,14 @@ export class TeachersService {
       order: { created_at: 'ASC' },
     });
     const seen = new Set<string>();
-    const result: { id: string; name: string }[] = [];
+    const result: {
+      id: string;
+      name: string;
+      level: string | null;
+      is_preschool: boolean;
+      can_take_attendance: boolean;
+      can_set_materials: boolean;
+    }[] = [];
     for (const a of list) {
       const cid = a.class?.id ?? (a as any).class_id;
       if (cid && !seen.has(cid)) {
@@ -399,6 +583,10 @@ export class TeachersService {
         result.push({
           id: cid,
           name: a.class?.name ?? '',
+          level: a.class?.level ?? null,
+          is_preschool: isPreschoolClass(a.class?.description, a.class?.level),
+          can_take_attendance: isAttendanceLevel(a.class?.level),
+          can_set_materials: isMaterialsLevel(a.class?.level),
         });
       }
     }
@@ -418,6 +606,7 @@ export class TeachersService {
     return list.map((a) => ({
       id: a.subject?.id ?? (a as any).subject_id,
       name: a.subject?.name ?? '',
+      preschool_eval: a.subject?.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     }));
   }
 
@@ -502,6 +691,7 @@ export class TeachersService {
       day_of_week: s.day_of_week,
       start_time: s.start_time,
       end_time: s.end_time,
+      materials: s.materials ?? null,
       created_at: s.created_at,
       updated_at: s.updated_at,
     }));
@@ -516,6 +706,7 @@ export class TeachersService {
     day_of_week: number;
     start_time: string;
     end_time: string;
+    materials?: string | null;
   }): Promise<ScheduleSlot> {
     const room = await this.resolveRoomForClass(params.class_id, params.room_id);
     const teacherId = await this.resolveTeacherIdForSlot(
@@ -533,6 +724,7 @@ export class TeachersService {
       day_of_week: params.day_of_week,
       start_time: params.start_time,
       end_time: params.end_time,
+      materials: params.materials?.trim() ? params.materials.trim() : null,
     });
     return this.scheduleSlotRepo.save(slot);
   }
@@ -548,6 +740,7 @@ export class TeachersService {
       day_of_week: number;
       start_time: string;
       end_time: string;
+      materials?: string | null;
     }>,
   ): Promise<ScheduleSlot> {
     const slot = await this.scheduleSlotRepo.findOne({
@@ -572,6 +765,9 @@ export class TeachersService {
     if (params.day_of_week !== undefined) slot.day_of_week = params.day_of_week;
     if (params.start_time !== undefined) slot.start_time = params.start_time;
     if (params.end_time !== undefined) slot.end_time = params.end_time;
+    if (params.materials !== undefined) {
+      slot.materials = params.materials?.trim() ? params.materials.trim() : null;
+    }
     return this.scheduleSlotRepo.save(slot);
   }
 
@@ -581,4 +777,189 @@ export class TeachersService {
     await this.scheduleSlotRepo.remove(slot);
     return { deleted: true };
   }
+
+  async teacherAssignedToClass(teacherId: number, classId: string): Promise<boolean> {
+    const viaSubject = await this.teacherClassSubjectRepo.findOne({
+      where: { teacher_id: teacherId, class_id: classId },
+    });
+    if (viaSubject) return true;
+    const viaClass = await this.classTeacherRepo.findOne({
+      where: { user_id: teacherId, class_id: classId },
+    });
+    return !!viaClass;
+  }
+
+  async assertTeacherAssignedToClass(teacherId: number, classId: string): Promise<void> {
+    const ok = await this.teacherAssignedToClass(teacherId, classId);
+    if (!ok) {
+      throw new ForbiddenException('Cette classe n’est pas dans votre périmètre.');
+    }
+  }
+
+  async assertTeacherCanTakeAttendance(teacherId: number, classId: string): Promise<void> {
+    await this.assertTeacherAssignedToClass(teacherId, classId);
+    const cls = await this.classRepo.findOne({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Classe introuvable');
+    if (!isAttendanceLevel(cls.level)) {
+      throw new ForbiddenException(
+        'L’appel sur l’application est réservé au préscolaire et aux 1er / 2e cycles fondamentaux.',
+      );
+    }
+  }
+
+  async updateMySlotMaterials(
+    teacherId: number,
+    slotId: string,
+    materials: string | null,
+  ): Promise<ScheduleSlot> {
+    const slot = await this.scheduleSlotRepo.findOne({
+      where: { id: slotId },
+      relations: ['class', 'teacher'],
+    });
+    if (!slot) throw new NotFoundException('Créneau introuvable');
+    const ownerId = slot.teacher?.id ?? (slot as { teacher_id?: number }).teacher_id;
+    if (ownerId !== teacherId) {
+      await this.assertTeacherAssignedToClass(
+        teacherId,
+        slot.class?.id ?? (slot as { class_id?: string }).class_id,
+      );
+    }
+    if (!isMaterialsLevel(slot.class?.level)) {
+      throw new ForbiddenException(
+        'La liste de matériel accompagne l’horaire du 1er et 2e cycle fondamental uniquement.',
+      );
+    }
+    slot.materials = materials?.trim() ? materials.trim() : null;
+    return this.scheduleSlotRepo.save(slot);
+  }
+
+  /**
+   * Anniversaires des élèves des salles où ce professeur est affecté
+   * (assignation classe/salle/matière + créneaux d’horaire).
+   * Calendrier Haïti (America/Port-au-Prince) : aujourd’hui et demain.
+   */
+  async getUpcomingBirthdaysForTeacher(teacherId: number): Promise<{
+    today: string;
+    tomorrow: string;
+    birthdays: {
+      student_id: string;
+      first_name: string;
+      last_name: string;
+      class_id: string | null;
+      class_name: string | null;
+      room_id: string | null;
+      room_name: string | null;
+      birth_date: string;
+      turning_age: number | null;
+      when: 'today' | 'tomorrow';
+    }[];
+  }> {
+    await this.findOneTeacher(teacherId);
+    const [assignments, slots] = await Promise.all([
+      this.teacherClassSubjectRepo.find({
+        where: { teacher: { id: teacherId } },
+        relations: ['room'],
+      }),
+      this.scheduleSlotRepo.find({
+        where: { teacher: { id: teacherId } },
+        relations: ['room'],
+      }),
+    ]);
+    const roomIds = [
+      ...new Set(
+        [
+          ...assignments.map((a) => a.room?.id ?? a.room_id ?? null),
+          ...slots.map((s) => s.room?.id ?? (s as { room_id?: string }).room_id ?? null),
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+    const today = haitiYmd(0);
+    const tomorrow = haitiYmd(1);
+    if (roomIds.length === 0) {
+      return { today: today.ymd, tomorrow: tomorrow.ymd, birthdays: [] };
+    }
+
+    const students = await this.studentRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.class', 'c')
+      .leftJoinAndSelect('s.room', 'r')
+      .where('s.room_id IN (:...roomIds)', { roomIds })
+      .andWhere('s.active = true')
+      .andWhere('s.archived_at IS NULL')
+      .andWhere('s.birth_date IS NOT NULL')
+      .andWhere(
+        `(
+          (EXTRACT(MONTH FROM s.birth_date) = :tm AND EXTRACT(DAY FROM s.birth_date) = :td)
+          OR
+          (EXTRACT(MONTH FROM s.birth_date) = :nm AND EXTRACT(DAY FROM s.birth_date) = :nd)
+        )`,
+        {
+          tm: today.month,
+          td: today.day,
+          nm: tomorrow.month,
+          nd: tomorrow.day,
+        },
+      )
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
+      .getMany();
+
+    const birthdays = students.map((s) => {
+      const birthYmd = toDateYmd(s.birth_date);
+      const [, bm, bd] = birthYmd.split('-').map(Number);
+      const when: 'today' | 'tomorrow' =
+        bm === tomorrow.month && bd === tomorrow.day ? 'tomorrow' : 'today';
+      const targetYear = when === 'tomorrow' ? tomorrow.year : today.year;
+      const birthYear = Number(birthYmd.slice(0, 4));
+      const turning_age =
+        Number.isFinite(birthYear) && birthYear > 1900 ? targetYear - birthYear : null;
+      return {
+        student_id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        class_id: s.class?.id ?? null,
+        class_name: s.class?.name ?? null,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
+        birth_date: birthYmd,
+        turning_age,
+        when,
+      };
+    });
+
+    return { today: today.ymd, tomorrow: tomorrow.ymd, birthdays };
+  }
+}
+
+function haitiYmd(offsetDays: number): {
+  year: number;
+  month: number;
+  day: number;
+  ymd: string;
+} {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Port-au-Prince',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const [y, m, d] = fmt.format(new Date()).split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
+  return {
+    year,
+    month,
+    day,
+    ymd: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  };
+}
+
+function toDateYmd(value: Date | string): string {
+  if (typeof value === 'string') return value.slice(0, 10);
+  const y = value.getUTCFullYear();
+  const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(value.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }

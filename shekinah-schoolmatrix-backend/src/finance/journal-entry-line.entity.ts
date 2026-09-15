@@ -4,6 +4,7 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  CreateDateColumn,
 } from 'typeorm';
 import { JournalEntry } from './journal-entry.entity';
 import { Account } from './account.entity';
@@ -30,4 +31,7 @@ export class JournalEntryLine {
 
   @Column({ type: 'text', nullable: true })
   line_label: string | null;
+
+  @CreateDateColumn()
+  created_at: Date;
 }

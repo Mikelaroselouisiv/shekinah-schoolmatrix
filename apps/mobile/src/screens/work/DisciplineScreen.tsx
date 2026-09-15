@@ -4,13 +4,13 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   ErrorBanner,
@@ -271,7 +271,7 @@ export function DisciplineScreen({ navigation }: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <FormScrollView contentContainerStyle={styles.content}>
         <Title>Discipline</Title>
 
         <View style={{ marginTop: 12 }}>
@@ -374,7 +374,7 @@ export function DisciplineScreen({ navigation }: Props) {
             ))}
           </View>
         ) : null}
-      </ScrollView>
+      </FormScrollView>
 
       <Modal visible={!!picker} animationType="slide" transparent>
         <Pressable style={styles.backdrop} onPress={() => setPicker(null)}>

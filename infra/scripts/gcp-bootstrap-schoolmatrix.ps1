@@ -21,7 +21,7 @@ param(
   [string] $CiSaName = 'github-actions',
   [string] $VmSaName = 'schoolmatrix-vm',
   [string] $GitHubOwner = 'Mikelaroselouisiv',
-  [string] $GitHubRepo = 'shekinah-schoolmatrix',
+  [string] $GitHubRepo = 'schoolmatrix',
   [switch] $SkipVm,
   [switch] $SkipWif
 )

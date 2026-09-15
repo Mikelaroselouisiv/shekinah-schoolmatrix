@@ -2,7 +2,7 @@ import axios, { type AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { resolveApiBaseUrl } from '../config/api';
 
-const TOKEN_KEY = 'shekinah_schoolmatrix_token';
+const TOKEN_KEY = 'schoolmatrix_token';
 
 export type SessionUser = {
   id?: number;
@@ -83,6 +83,9 @@ export async function clearToken(): Promise<void> {
 
 function axiosMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      return 'Impossible de joindre le serveur. Vérifiez votre connexion internet.';
+    }
     const data = err.response?.data as { message?: string | string[] } | undefined;
     const msg = data?.message;
     if (Array.isArray(msg)) return msg.join(', ');
@@ -117,35 +120,6 @@ export async function login(
 
 export async function logout(): Promise<void> {
   await clearToken();
-}
-
-/** `true` si la base n’a encore aucun utilisateur (setup ouvert). */
-export async function getSetupRequired(): Promise<boolean> {
-  try {
-    const { data, status } = await api.get<{ setupRequired?: boolean }>('/setup/status', {
-      validateStatus: (s) => s === 200 || s === 403,
-    });
-    if (status === 403) return false;
-    return data?.setupRequired === true;
-  } catch {
-    return false;
-  }
-}
-
-export async function createInitialAdmin(params: {
-  email: string;
-  phone?: string;
-  password: string;
-}): Promise<void> {
-  try {
-    await api.post('/setup/initial-admin', {
-      email: params.email.trim(),
-      phone: params.phone?.trim() || undefined,
-      password: params.password,
-    });
-  } catch (err) {
-    throw new Error(axiosMessage(err, 'Impossible de créer le premier administrateur'));
-  }
 }
 
 export async function getMe(): Promise<SessionUser | null> {
@@ -252,15 +226,39 @@ export function getImageUrl(storedUrl: string | null | undefined): string | null
 }
 
 export type DashboardStats = {
-  classes?: number;
-  students?: number;
-  teachers?: number;
+  classesCount: number;
+  studentsCount: number;
+  teachersCount: number;
 };
 
 export async function getDashboardStats(): Promise<DashboardStats | null> {
   try {
-    const { data } = await api.get<DashboardStats>('/school/dashboard-stats');
-    return data ?? null;
+    const { data } = await api.get<{
+      ok?: boolean;
+      classesCount?: number;
+      studentsCount?: number;
+      teachersCount?: number;
+      // anciens alias éventuels
+      classes?: number;
+      students?: number;
+      teachers?: number;
+    }>('/school/dashboard-stats');
+    if (!data) return null;
+    const classesCount = Number(data.classesCount ?? data.classes);
+    const studentsCount = Number(data.studentsCount ?? data.students);
+    const teachersCount = Number(data.teachersCount ?? data.teachers);
+    if (
+      Number.isNaN(classesCount) &&
+      Number.isNaN(studentsCount) &&
+      Number.isNaN(teachersCount)
+    ) {
+      return null;
+    }
+    return {
+      classesCount: Number.isFinite(classesCount) ? classesCount : 0,
+      studentsCount: Number.isFinite(studentsCount) ? studentsCount : 0,
+      teachersCount: Number.isFinite(teachersCount) ? teachersCount : 0,
+    };
   } catch {
     return null;
   }
@@ -274,10 +272,12 @@ export function getRoleName(user: SessionUser | null | undefined): string {
 export type StudentListItem = {
   id: string;
   order_number?: string | null;
+  management_code?: string | null;
   first_name: string;
   last_name: string;
   class_id?: string;
   class_name?: string;
+  class_level?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   photo_identity_student?: string | null;
@@ -302,6 +302,7 @@ export type StudentListItem = {
 export type LinkedStudent = {
   id: string;
   order_number: string | null;
+  management_code?: string | null;
   first_name: string;
   last_name: string;
   class_id: string;
@@ -314,6 +315,8 @@ export type ClassItem = {
   is_preschool?: boolean;
   description?: string | null;
   level?: string | null;
+  can_take_attendance?: boolean;
+  can_set_materials?: boolean;
 };
 
 
@@ -367,6 +370,8 @@ export type ExamResults = {
       order_index: number;
       coefficient: number;
       grade_value: number;
+      /** false = aucune note saisie ; grade_value vaut alors 0 par défaut. */
+      has_grade?: boolean;
     }[];
   }[];
 };
@@ -385,6 +390,40 @@ export type ScheduleSlot = {
   day_of_week?: number;
   start_time?: string;
   end_time?: string;
+  materials?: string | null;
+  kind?: string;
+  title?: string;
+  is_school_wide?: boolean;
+};
+
+export type ClassDayMoment = {
+  id: string;
+  class_id: string;
+  class_name?: string | null;
+  academic_year?: string | null;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  label?: string | null;
+};
+
+export type SchoolWeekDuty = {
+  id: string;
+  academic_year: string;
+  kind: string;
+  title: string;
+  cycle?: string | null;
+  class_id?: string | null;
+  class_name?: string | null;
+  class_level?: string | null;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  responsible_user_id: number | null;
+  responsible_name: string | null;
+  manual_name?: string | null;
 };
 
 export type ExamScheduleItem = {
@@ -418,6 +457,7 @@ export type RoomItem = {
   name: string;
   class_id?: string | null;
   capacity?: number | null;
+  student_count?: number;
   active?: boolean;
 };
 
@@ -426,6 +466,9 @@ export type TeacherItem = {
   first_name?: string | null;
   last_name?: string | null;
   email?: string;
+  phone?: string | null;
+  profile_photo_url?: string | null;
+  role?: string | null;
   active?: boolean;
 };
 
@@ -460,10 +503,14 @@ function unwrapList<T>(data: unknown): T[] {
       'expenses',
       'activities',
       'schedule_slots',
+      'schedule_moments',
+      'school_week_duties',
+      'school_materials',
       'exam_schedules',
       'extracurricular_activities',
       'rooms',
       'teachers',
+      'assignments',
       'photos',
       'users',
       'roles',
@@ -618,6 +665,198 @@ export async function deleteScheduleSlot(id: string): Promise<void> {
   await api.delete(`/schedule-slots/${id}`);
 }
 
+export async function listScheduleMoments(params?: {
+  class_id?: string;
+  academic_year?: string;
+  kind?: string;
+  day_of_week?: number;
+}): Promise<ClassDayMoment[]> {
+  try {
+    const { data } = await api.get('/schedule-moments', { params });
+    return unwrapList<ClassDayMoment>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function createScheduleMoments(body: {
+  class_id: string;
+  academic_year?: string;
+  kind: string;
+  days?: number[];
+  day_of_week?: number;
+  start_time: string;
+  end_time: string;
+  label?: string | null;
+}): Promise<void> {
+  await api.post('/schedule-moments', body);
+}
+
+export async function deleteScheduleMoment(id: string): Promise<void> {
+  await api.delete(`/schedule-moments/${id}`);
+}
+
+export async function listSchoolWeekDuties(params?: {
+  academic_year?: string;
+  kind?: string;
+}): Promise<SchoolWeekDuty[]> {
+  try {
+    const { data } = await api.get('/school-week-duties', { params });
+    return unwrapList<SchoolWeekDuty>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function getSchoolOpeningProgram(academicYear?: string): Promise<{
+  school_week_duties: SchoolWeekDuty[];
+  preschool_instructions: string[];
+  primary_instructions: string[];
+}> {
+  const { data } = await api.get('/school-week-duties', {
+    params: academicYear ? { academic_year: academicYear } : undefined,
+  });
+  return {
+    school_week_duties: unwrapList<SchoolWeekDuty>(data),
+    preschool_instructions: Array.isArray(data?.preschool_instructions)
+      ? data.preschool_instructions
+      : [],
+    primary_instructions: Array.isArray(data?.primary_instructions)
+      ? data.primary_instructions
+      : [],
+  };
+}
+
+export async function listSchoolWeekStaff(): Promise<{ id: number; name: string; role: string }[]> {
+  try {
+    const { data } = await api.get('/school-week-duties/staff');
+    return Array.isArray(data?.staff) ? data.staff : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertSchoolWeekDuties(body: {
+  academic_year: string;
+  days: {
+    day_of_week: number;
+    preschool?: {
+      accueil_ids?: number[];
+      flag_ids?: number[];
+      animation_ids?: number[];
+      service_names?: string[];
+    };
+    primary?: {
+      accueil_ids?: number[];
+      devotion_ids?: number[];
+      flag_class_id?: string | null;
+      defi_ids?: number[];
+      prayer_names?: string[];
+    };
+    flag_class_id?: string | null;
+    preschool_teacher_ids?: number[];
+    primary_teacher_ids?: number[];
+  }[];
+  preschool_instructions?: string[];
+  primary_instructions?: string[];
+}): Promise<void> {
+  await api.put('/school-week-duties', body);
+}
+
+export type ClassDayList = {
+  day_of_week: number;
+  subject_ids: string[];
+  subject_names: string[];
+  materials: string[];
+};
+
+export async function listClassDayLists(
+  classId: string,
+  academicYear?: string,
+): Promise<{ days: ClassDayList[]; catalog: string[] }> {
+  try {
+    const { data } = await api.get('/class-day-lists', {
+      params: { class_id: classId, academic_year: academicYear },
+    });
+    return {
+      days: Array.isArray(data?.days) ? data.days : [],
+      catalog: Array.isArray(data?.catalog) ? data.catalog : [],
+    };
+  } catch {
+    return { days: [], catalog: [] };
+  }
+}
+
+export async function replaceClassDayLists(body: {
+  class_id: string;
+  academic_year?: string | null;
+  days: {
+    day_of_week: number;
+    subject_ids?: string[];
+    materials?: string[];
+  }[];
+}): Promise<{ days: ClassDayList[]; catalog: string[] }> {
+  const { data } = await api.put('/class-day-lists', body);
+  return {
+    days: Array.isArray(data?.days) ? data.days : [],
+    catalog: Array.isArray(data?.catalog) ? data.catalog : [],
+  };
+}
+
+export async function getStudentSchedule(
+  studentId: string,
+  academicYear?: string,
+): Promise<{
+  slots: ScheduleSlot[];
+  schedule_mode?: string;
+  day_lists?: ClassDayList[];
+  bring_items?: { id: string; label: string }[];
+  list_subjects?: string[];
+}> {
+  const { data } = await api.get(`/schedule/student/${studentId}`, {
+    params: academicYear ? { academic_year: academicYear } : undefined,
+  });
+  return {
+    slots: Array.isArray(data?.slots) ? data.slots : [],
+    schedule_mode: data?.schedule_mode,
+    day_lists: Array.isArray(data?.day_lists) ? data.day_lists : [],
+    bring_items: Array.isArray(data?.bring_items) ? data.bring_items : [],
+    list_subjects: Array.isArray(data?.list_subjects) ? data.list_subjects : [],
+  };
+}
+
+export type SchoolMaterialItem = {
+  id: string;
+  kind: 'LIVRE' | 'CAHIER';
+  name: string;
+  label: string;
+  subject_id?: string | null;
+  subject_name?: string | null;
+};
+
+export async function listSchoolMaterials(): Promise<SchoolMaterialItem[]> {
+  try {
+    const { data } = await api.get('/school-materials');
+    return unwrapList<SchoolMaterialItem>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function createSchoolMaterial(body: {
+  kind: 'LIVRE' | 'CAHIER';
+  name: string;
+  subject_id?: string | null;
+}): Promise<SchoolMaterialItem> {
+  const { data } = await api.post<{ school_material?: SchoolMaterialItem }>('/school-materials', body);
+  if (!data?.school_material) throw new Error('Matériel non créé');
+  return data.school_material;
+}
+
+export async function deleteSchoolMaterial(id: string): Promise<void> {
+  await api.delete(`/school-materials/${id}`);
+}
+
 export async function listExamSchedules(params?: {
   class_id?: string;
 }): Promise<ExamScheduleItem[]> {
@@ -659,6 +898,22 @@ export async function createExtracurricularActivity(body: {
   dress_code?: string | null;
 }): Promise<void> {
   await api.post('/extracurricular-activities', body);
+}
+
+export async function updateExtracurricularActivity(
+  id: string,
+  body: {
+    academic_year_id?: string;
+    activity_date?: string;
+    start_time?: string;
+    end_time?: string;
+    class_id?: string;
+    occasion?: string;
+    participation_fee?: string | null;
+    dress_code?: string | null;
+  },
+): Promise<void> {
+  await api.patch(`/extracurricular-activities/${id}`, body);
 }
 
 export async function deleteExtracurricularActivity(id: string): Promise<void> {
@@ -784,6 +1039,8 @@ export type PreschoolGradeRow = {
   frequency: string | null;
   observation: string;
   grade_id: string | null;
+  assignment_id?: string | null;
+  decision?: string | null;
 };
 
 export async function getAcademicYears(): Promise<AcademicYear[]> {
@@ -801,6 +1058,93 @@ export async function getPeriods(academicYearId: string): Promise<PeriodItem[]> 
 export async function getTeacherClasses(): Promise<ClassItem[]> {
   const { data } = await api.get('/teachers/me/classes');
   return unwrapList<ClassItem>(data);
+}
+
+export type UpcomingBirthday = {
+  student_id: string;
+  first_name: string;
+  last_name: string;
+  class_id: string | null;
+  class_name: string | null;
+  room_id: string | null;
+  room_name: string | null;
+  birth_date: string;
+  turning_age: number | null;
+  when: 'today' | 'tomorrow';
+};
+
+export async function getUpcomingBirthdays(): Promise<{
+  today: string;
+  tomorrow: string;
+  birthdays: UpcomingBirthday[];
+}> {
+  const { data } = await api.get('/teachers/me/upcoming-birthdays');
+  return {
+    today: data?.today ?? '',
+    tomorrow: data?.tomorrow ?? '',
+    birthdays: data?.birthdays ?? [],
+  };
+}
+
+export type HomeworkKind = 'DEVOIR' | 'LECON';
+
+export type HomeworkAssignment = {
+  id: string;
+  kind: HomeworkKind;
+  title: string;
+  instructions: string | null;
+  due_date: string | null;
+  class_id: string | null;
+  class_name: string | null;
+  subject_name: string | null;
+  score?: string | null;
+  comment?: string | null;
+  students?: {
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    score: string | null;
+    comment: string | null;
+  }[];
+};
+
+export async function listHomework(classId?: string): Promise<HomeworkAssignment[]> {
+  const { data } = await api.get('/homework', { params: classId ? { class_id: classId } : undefined });
+  return data?.assignments || [];
+}
+
+export async function getHomework(id: string): Promise<HomeworkAssignment> {
+  const { data } = await api.get(`/homework/${id}`);
+  return data.assignment;
+}
+
+export async function createHomework(body: {
+  kind: HomeworkKind;
+  title: string;
+  instructions?: string | null;
+  due_date?: string | null;
+  class_id: string;
+  subject_id?: string | null;
+}): Promise<HomeworkAssignment> {
+  const { data } = await api.post('/homework', body);
+  return data.assignment;
+}
+
+export async function saveHomeworkGrade(
+  id: string,
+  body: { student_id: string; score?: string | null; comment?: string | null },
+): Promise<HomeworkAssignment> {
+  const { data } = await api.put(`/homework/${id}/grades`, body);
+  return data.assignment;
+}
+
+export async function getStudentHomework(studentId: string): Promise<HomeworkAssignment[]> {
+  const { data } = await api.get(`/homework/student/${studentId}`);
+  return data?.assignments || [];
+}
+
+export async function saveSlotMaterials(slotId: string, materials: string | null): Promise<void> {
+  await api.patch(`/teachers/me/schedule-slots/${slotId}/materials`, { materials });
 }
 
 export async function getTeacherSubjectsInClass(classId: string): Promise<SubjectItem[]> {
@@ -824,6 +1168,8 @@ export async function getGradesFormData(params: {
   can_edit: boolean;
   default_coefficient?: number | null;
   teacher?: { id: number; name: string } | null;
+  eval_mode?: 'LEVEL' | 'FREQUENCY';
+  is_last_period?: boolean;
 }> {
   const path = params.preschool ? '/grades/preschool/form-data' : '/grades/form-data';
   const { data } = await api.get(path, {
@@ -839,13 +1185,24 @@ export async function getGradesFormData(params: {
     can_edit?: boolean;
     default_coefficient?: number | null;
     teacher?: { id: number; name: string } | null;
+    eval_mode?: 'LEVEL' | 'FREQUENCY';
+    is_last_period?: boolean;
   };
   return {
     rows: payload.rows || [],
     can_edit: payload.can_edit !== false,
     default_coefficient: payload.default_coefficient ?? null,
     teacher: payload.teacher ?? null,
+    eval_mode: payload.eval_mode === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
+    is_last_period: !!payload.is_last_period,
   };
+}
+
+export async function setSubjectPreschoolEval(
+  id: string,
+  preschool_eval: 'LEVEL' | 'FREQUENCY',
+): Promise<void> {
+  await api.patch(`/subjects/${id}`, { preschool_eval });
 }
 
 export async function saveGrades(body: {
@@ -867,6 +1224,7 @@ export async function saveGrades(body: {
         frequency?: string;
         observation?: string;
       }[];
+  decisions?: { assignment_id: string; decision?: string | null }[];
 }): Promise<void> {
   const path = body.preschool ? '/grades/preschool/save' : '/grades/save';
   await api.post(path, {
@@ -875,6 +1233,7 @@ export async function saveGrades(body: {
     subject_id: body.subject_id,
     period_id: body.period_id,
     grades: body.grades,
+    ...(body.decisions ? { decisions: body.decisions } : {}),
   });
 }
 
@@ -897,6 +1256,7 @@ export type PaymentTransaction = {
   service_name?: string;
   amount_paid?: number;
   payment_date?: string;
+  cancelled_at?: string | null;
 };
 
 export async function getFeeServices(): Promise<FeeService[]> {
@@ -916,9 +1276,23 @@ export async function getPaymentTransactions(params?: {
   academic_year?: string;
   class_id?: string;
   student_id?: string;
-}): Promise<PaymentTransaction[]> {
-  const { data } = await api.get('/economat/transactions', { params });
-  return unwrapList<PaymentTransaction>(data);
+  limit?: number;
+  offset?: number;
+}): Promise<{ transactions: PaymentTransaction[]; has_more: boolean }> {
+  const { data } = await api.get('/economat/transactions', {
+    params: {
+      academic_year: params?.academic_year,
+      class_id: params?.class_id,
+      student_id: params?.student_id,
+      limit: params?.limit ?? 40,
+      offset: params?.offset ?? 0,
+    },
+  });
+  const payload = data as { transactions?: PaymentTransaction[]; has_more?: boolean };
+  return {
+    transactions: payload.transactions ?? unwrapList<PaymentTransaction>(data),
+    has_more: !!payload.has_more,
+  };
 }
 
 export async function recordPayment(body: {
@@ -931,6 +1305,10 @@ export async function recordPayment(body: {
   bank_account_id?: string | null;
 }): Promise<void> {
   await api.post('/economat/payments', body);
+}
+
+export async function cancelPayment(id: string): Promise<void> {
+  await api.post(`/economat/payments/${id}/cancel`);
 }
 
 export type LatenessItem = {
@@ -1072,14 +1450,6 @@ export async function listFinanceActivities(): Promise<FinanceActivity[]> {
   return unwrapList<FinanceActivity>(data);
 }
 
-export type AcademicDecisionCounts = {
-  admis?: number;
-  admis_ailleurs?: number;
-  redoubler?: number;
-  ajourne?: number;
-  renvoye?: number;
-};
-
 export type AcademicStats = {
   academic_year_id?: string | null;
   academic_year_name?: string | null;
@@ -1093,15 +1463,13 @@ export type AcademicStats = {
     graded_students?: number;
     school_average?: number | null;
     success_rate?: number | null;
-    decisions?: AcademicDecisionCounts;
-    reference_threshold?: {
-      min_average_admis?: number;
-      min_average_admis_ailleurs?: number;
-      min_average_redoubler?: number;
-      min_average_ajourne?: number;
-    };
   };
-  decisions?: AcademicDecisionCounts;
+  distribution?: {
+    insuffisant?: number;
+    passable?: number;
+    bien?: number;
+    excellent?: number;
+  };
   by_class?: {
     class_id: string;
     class_name: string;
@@ -1142,9 +1510,7 @@ export type AcademicStats = {
     latenesses?: number;
     deductions_count?: number;
     deductions_points?: number;
-    students_low_points?: number;
   };
-  insights?: { headline?: string; points?: string[] };
 };
 
 export type FinancialStats = {
@@ -1236,7 +1602,7 @@ export async function getFinancialStats(params: {
 }
 
 export type StudentWriteBody = {
-  order_number: string;
+  order_number?: string | null;
   first_name: string;
   last_name: string;
   class_id: string;
@@ -1290,6 +1656,8 @@ export type FormationStudent = {
   first_name: string;
   last_name: string;
   order_number?: string | null;
+  room_id?: string | null;
+  room_name?: string | null;
   decision?: string | null;
   average?: number | null;
   assignment_id?: string | null;
@@ -1321,6 +1689,18 @@ export async function setFormationDecision(
 ): Promise<void> {
   await api.patch(`/formation-classe/assignments/${assignmentId}/decision`, {
     decision,
+  });
+}
+
+export async function moveFormationStudent(
+  studentId: string,
+  academicYearId: string,
+  classId: string,
+): Promise<void> {
+  await api.post('/formation-classe/move-student', {
+    student_id: studentId,
+    academic_year_id: academicYearId,
+    class_id: classId,
   });
 }
 
@@ -1403,8 +1783,10 @@ export async function listSubjects(): Promise<SubjectOrg[]> {
 export async function createSubject(body: {
   name: string;
   code?: string;
-}): Promise<void> {
-  await api.post('/subjects', body);
+}): Promise<SubjectOrg> {
+  const { data } = await api.post<{ subject?: SubjectOrg }>('/subjects', body);
+  if (!data?.subject) throw new Error('Matière non créée');
+  return data.subject;
 }
 
 export async function updateSubject(
@@ -1416,6 +1798,27 @@ export async function updateSubject(
 
 export async function deleteSubject(id: string): Promise<void> {
   await api.delete(`/subjects/${id}`);
+}
+
+export type BringCatalogItem = { id: string; label: string };
+
+export async function listBringItemCatalog(): Promise<BringCatalogItem[]> {
+  const { data } = await api.get('/bring-item-catalog');
+  return Array.isArray(data?.catalog) ? data.catalog : [];
+}
+
+export async function createBringCatalogItem(label: string): Promise<BringCatalogItem> {
+  const { data } = await api.post<{ item?: BringCatalogItem }>('/bring-item-catalog', { label });
+  if (!data?.item) throw new Error('Matériel non créé');
+  return data.item;
+}
+
+export async function updateBringCatalogItem(id: string, label: string): Promise<void> {
+  await api.patch(`/bring-item-catalog/${id}`, { label });
+}
+
+export async function deleteBringCatalogItem(id: string): Promise<void> {
+  await api.delete(`/bring-item-catalog/${id}`);
 }
 
 export async function listClassesOrg(): Promise<ClassOrg[]> {
@@ -1434,8 +1837,10 @@ export async function createClass(body: {
   level?: string;
   section?: string;
   subject_ids?: string[];
-}): Promise<void> {
-  await api.post('/classes', body);
+}): Promise<ClassOrg> {
+  const { data } = await api.post<{ class?: ClassOrg }>('/classes', body);
+  if (!data?.class) throw new Error('Classe non créée');
+  return data.class;
 }
 
 export async function updateClass(
@@ -1461,8 +1866,10 @@ export async function createRoom(body: {
   description?: string;
   capacity?: number | null;
   class_id?: string | null;
-}): Promise<void> {
-  await api.post('/rooms', body);
+}): Promise<RoomItem> {
+  const { data } = await api.post<{ room?: RoomItem }>('/rooms', body);
+  if (!data?.room) throw new Error('Salle non créée');
+  return data.room;
 }
 
 export async function updateRoom(
@@ -1561,9 +1968,62 @@ export async function getTeacherDetail(id: number): Promise<TeacherDetail | null
   return data?.teacher ?? null;
 }
 
+export type TeacherAssignment = {
+  id: string;
+  teacher_id: number;
+  teacher_name: string;
+  teacher_photo_url?: string | null;
+  class_id: string;
+  subject_id: string;
+  subject_name: string;
+  room_id: string | null;
+  room_name: string;
+};
+
+export async function listTeacherAssignments(params?: {
+  class_id?: string;
+  room_id?: string;
+}): Promise<TeacherAssignment[]> {
+  const { data } = await api.get('/teachers/assignments', { params });
+  return unwrapList<TeacherAssignment>(data);
+}
+
+export async function searchStaffTeachers(q?: string): Promise<TeacherItem[]> {
+  const { data } = await api.get('/teachers/staff-search', {
+    params: q?.trim() ? { q: q.trim() } : undefined,
+  });
+  return unwrapList<TeacherItem>(data);
+}
+
+export async function promoteToTeacher(userId: number): Promise<TeacherItem> {
+  const { data } = await api.post<{ teacher?: TeacherItem }>('/teachers/promote', {
+    user_id: userId,
+  });
+  if (!data?.teacher) throw new Error('Promotion impossible');
+  return data.teacher;
+}
+
+export async function createTeacher(body: {
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  phone?: string;
+  password: string;
+  profile_photo_url?: string;
+}): Promise<TeacherItem> {
+  const { data } = await api.post<{ teacher?: TeacherItem }>('/teachers', body);
+  if (!data?.teacher) throw new Error('Compte professeur non créé');
+  return data.teacher;
+}
+
 export async function addTeacherClassSubject(
   teacherId: number,
-  body: { class_id: string; subject_id: string; room_id: string },
+  body: {
+    class_id: string;
+    room_id: string;
+    subject_id?: string;
+    subject_ids?: string[];
+  },
 ): Promise<void> {
   await api.post(`/teachers/${teacherId}/class-subjects`, body);
 }
@@ -1575,9 +2035,46 @@ export async function removeTeacherClassSubject(
   await api.delete(`/teachers/${teacherId}/class-subjects/${assignmentId}`);
 }
 
-export async function listUsers(): Promise<OrgUser[]> {
-  const { data } = await api.get('/users');
-  return unwrapList<OrgUser>(data);
+export type UsersPage = {
+  users: OrgUser[];
+  total: number;
+  page: number;
+  take: number;
+};
+
+export async function listUsers(params?: {
+  q?: string;
+  role?: string;
+  exclude_role?: string;
+  page?: number;
+  take?: number;
+}): Promise<UsersPage> {
+  try {
+    const { data } = await api.get('/users', {
+      params: {
+        page: params?.page ?? 1,
+        take: params?.take ?? 25,
+        ...(params?.q ? { q: params.q } : {}),
+        ...(params?.role ? { role: params.role } : {}),
+        ...(params?.exclude_role ? { exclude_role: params.exclude_role } : {}),
+      },
+    });
+    const payload = data as { total?: number; page?: number; take?: number };
+    return {
+      users: unwrapList<OrgUser>(data),
+      total: Number(payload?.total) || 0,
+      page: Number(payload?.page) || (params?.page ?? 1),
+      take: Number(payload?.take) || (params?.take ?? 25),
+    };
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de charger les utilisateurs'));
+  }
+}
+
+export async function getUser(id: number): Promise<OrgUser> {
+  const { data } = await api.get<{ user?: OrgUser }>(`/users/${id}`);
+  if (!data?.user) throw new Error('Utilisateur introuvable');
+  return data.user;
 }
 
 export async function setUserRole(userId: number, roleName: string): Promise<void> {
@@ -1627,8 +2124,12 @@ export async function deleteUser(id: number): Promise<void> {
 }
 
 export async function listRoles(): Promise<RoleItem[]> {
-  const { data } = await api.get('/roles');
-  return unwrapList<RoleItem>(data);
+  try {
+    const { data } = await api.get('/roles');
+    return unwrapList<RoleItem>(data);
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de charger les rôles'));
+  }
 }
 
 export async function findStudentByOrderNumber(

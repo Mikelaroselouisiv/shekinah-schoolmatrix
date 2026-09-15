@@ -90,7 +90,7 @@ export function ChildrenScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <ListRow
             title={studentDisplayName(item)}
-            subtitle={[item.order_number, item.class_name].filter(Boolean).join(' · ')}
+            subtitle={[item.management_code, item.class_name].filter(Boolean).join(' · ')}
             onPress={() =>
               navigation.navigate('StudentFiche', {
                 studentId: item.id,

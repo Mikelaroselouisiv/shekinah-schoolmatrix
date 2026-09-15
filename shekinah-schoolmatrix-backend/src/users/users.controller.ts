@@ -1,33 +1,29 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Param,
-  Body,
-  Query,
-  UseGuards,
-  Req,
-  ParseIntPipe,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Req, ParseIntPipe, ForbiddenException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
+import { ParentAccountService } from './parent-account.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
 import { User } from './user.entity';
 import { ROLES_USER_ADMIN } from '../roles/roles.constants';
+import { UploadsService } from '../uploads/uploads.service';
 
-type AuthRequest = {
-  user?: { userId?: number; sub?: number; id?: number; role?: string };
-};
+const PROFILE_PHOTO_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+];
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly uploadsService: UploadsService,
+    private readonly parentAccountService: ParentAccountService,
+  ) {}
 
   private toUserResponse(u: User, linkedStudentIds?: string[]) {
     const base = {
@@ -53,17 +49,19 @@ export class UsersController {
     return base;
   }
 
-  private authUserId(req: AuthRequest): number {
+  private authUserId(req: { user?: { userId?: number; sub?: number; id?: number } }): number {
     const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
     if (!userId) throw new ForbiddenException('Non authentifié');
     return userId as number;
   }
 
   /**
-   * Direction uniquement. Si le JWT porte un rôle faux ou absent, on confirme
-   * le rôle en base plutôt que de refuser un administrateur légitime.
+   * Direction uniquement. Si le JWT a un rôle faux/manquant (ex. login téléphone
+   * sans jointure role → PARENT inventé), on confirme le rôle en base.
    */
-  private async assertUserAdmin(req: AuthRequest): Promise<void> {
+  private async assertUserAdmin(req: {
+    user?: { userId?: number; sub?: number; id?: number; role?: string };
+  }) {
     const jwtRole = (req.user?.role ?? '').toUpperCase();
     if ((ROLES_USER_ADMIN as readonly string[]).includes(jwtRole)) return;
 
@@ -74,50 +72,100 @@ export class UsersController {
         const dbRole = (dbUser.role?.name ?? '').toUpperCase();
         if ((ROLES_USER_ADMIN as readonly string[]).includes(dbRole)) return;
       } catch {
-        /* compte introuvable : refus ci-dessous */
+        /* fall through */
       }
     }
     throw new ForbiddenException('Réservé à l’administration');
   }
 
   @Get('me')
-  async me(@Req() req: AuthRequest) {
+  async me(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
     const user = await this.usersService.findOne(this.authUserId(req));
     const linkedStudentIds = await this.usersService.getLinkedStudentIds(user.id);
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
-  @Get('me/linked-students')
-  async myLinkedStudents(@Req() req: AuthRequest) {
-    const list = await this.usersService.getLinkedStudentsForFiche(this.authUserId(req));
-    return { ok: true, linked_students: list };
-  }
-
-  /** Personnalisation profil (parent ou personnel). */
+  /** Mobile / site : nom, prénom, e-mail, téléphone (tout ou partie). */
   @Patch('me')
   async updateMe(
-    @Req() req: AuthRequest,
-    @Body()
-    body: Partial<{
-      first_name: string;
-      last_name: string;
-      email: string;
-      address: string;
-      phone: string;
-      whatsapp: string;
-      profile_photo_url: string;
-      cover_photo_url: string;
-    }>,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: Partial<{ first_name: string; last_name: string; email: string; phone: string; profile_photo_url: string }>,
   ) {
     const user = await this.usersService.updateOwnProfile(this.authUserId(req), body);
     return { ok: true, user: this.toUserResponse(user) };
   }
 
-  /** Changement de mot de passe (ex. quitter le mot de passe par défaut). */
-  @Post('me/change-password')
-  async changeMyPassword(
-    @Req() req: AuthRequest,
-    @Body() body: { current_password: string; new_password: string },
+  @Patch('me/name')
+  async updateMyName(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { first_name?: string; last_name?: string },
+  ) {
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      first_name: body.first_name,
+      last_name: body.last_name,
+    });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/email')
+  async updateMyEmail(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { email?: string },
+  ) {
+    if (!body.email?.trim()) throw new BadRequestException('E-mail requis');
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), { email: body.email });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/phone')
+  async updateMyPhone(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { phone?: string },
+  ) {
+    if (!body.phone?.trim()) throw new BadRequestException('Téléphone requis');
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), { phone: body.phone });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  /** Mobile / site : envoyer le fichier (champ multipart `file`). */
+  @Post('me/photo')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadMyPhoto(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @UploadedFile() file: { buffer: Buffer; mimetype: string; originalname?: string },
+  ) {
+    if (!file?.buffer) throw new BadRequestException('Aucun fichier envoyé');
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    if (!PROFILE_PHOTO_MIMES.includes(mimetype)) {
+      throw new BadRequestException('Type de fichier non autorisé. Utilisez JPEG, PNG, GIF ou WebP.');
+    }
+    const url = await this.uploadsService.saveFile(
+      file.buffer,
+      mimetype,
+      file.originalname ?? 'photo',
+    );
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      profile_photo_url: url,
+    });
+    return { ok: true, url, user: this.toUserResponse(user) };
+  }
+
+  /** Si l’app a déjà uploadé via POST /uploads : coller l’URL. */
+  @Patch('me/photo')
+  async setMyPhotoUrl(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { profile_photo_url?: string },
+  ) {
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      profile_photo_url: body.profile_photo_url ?? '',
+    });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/password')
+  async updateMyPassword(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { current_password?: string; new_password?: string },
   ) {
     const user = await this.usersService.changeOwnPassword(
       this.authUserId(req),
@@ -127,25 +175,18 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user) };
   }
 
-  /** Alias REST du changement de mot de passe, pour les clients récents. */
-  @Patch('me/password')
-  async updateMyPassword(
-    @Req() req: AuthRequest,
-    @Body() body: { current_password?: string; new_password?: string },
-  ) {
-    return this.changeMyPassword(req, {
-      current_password: body.current_password ?? '',
-      new_password: body.new_password ?? '',
-    });
+  @Get('me/linked-students')
+  async myLinkedStudents(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
+    const list = await this.usersService.getLinkedStudentsForFiche(this.authUserId(req));
+    return { ok: true, linked_students: list };
   }
 
-  /** Crée un compte enseignant par entrée (e-mail et mot de passe par défaut). */
+  /** Crée des comptes TEACHER (e-mail nom.prenom@domaine, mot de passe défaut, must_change_password). */
   @DenyParents()
   @Post('provision-teachers')
   async provisionTeachers(
-    @Req() req: AuthRequest,
-    @Body()
-    body: {
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+    @Body() body: {
       teachers: { last_name: string; first_name: string; phone: string }[];
       email_domain?: string;
       password?: string;
@@ -159,21 +200,31 @@ export class UsersController {
     return { ok: true, ...result };
   }
 
+  /**
+   * Rattache les comptes PARENT restés sans enfant à l’élève dont ils portent
+   * le nom (reprise de base, inscription en masse d’une version antérieure).
+   */
+  @DenyParents()
+  @Post('parents/repair-links')
+  async repairParentLinks(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.repairOrphanParentLinks();
+    return { ok: true, ...result };
+  }
+
   @DenyParents()
   @Get('admin-only')
   adminOnly() {
     return { ok: true, message: 'Admin access' };
   }
 
-  /**
-   * Annuaire. Sans paramètre, renvoie la liste complète comme avant, pour ne
-   * pas casser les Remote déjà installés. Dès qu'un filtre ou une page est
-   * demandé, la réponse est paginée et porte `total` / `page` / `take`.
-   */
+  /** Annuaire paginé (recherche nom / email / téléphone). Liens élèves : GET /users/:id. */
   @DenyParents()
   @Get()
   async listUsers(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Query('q') q?: string,
     @Query('role') role?: string,
     @Query('exclude_role') excludeRole?: string,
@@ -181,24 +232,6 @@ export class UsersController {
     @Query('take') take?: string,
   ) {
     await this.assertUserAdmin(req);
-    const paginated =
-      q !== undefined ||
-      role !== undefined ||
-      excludeRole !== undefined ||
-      page !== undefined ||
-      take !== undefined;
-
-    if (!paginated) {
-      const users = await this.usersService.findAll();
-      const withLinks = await Promise.all(
-        users.map(async (u) => {
-          const ids = await this.usersService.getLinkedStudentIds(u.id);
-          return this.toUserResponse(u, ids);
-        }),
-      );
-      return { ok: true, users: withLinks };
-    }
-
     const result = await this.usersService.findPage({
       q,
       role,
@@ -215,9 +248,37 @@ export class UsersController {
     };
   }
 
+  /**
+   * Purge de test : tous les comptes PARENT (+ liens élèves).
+   * Ne touche pas au staff. Sync via tombstones ORM.
+   */
+  @DenyParents()
+  @Delete('parents')
+  async deleteAllParents(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.deleteAllParentAccounts();
+    return { ok: true, ...result };
+  }
+
+  /** Purge PARENT sans aucun élève lié (orphelins après wipe élèves). */
+  @DenyParents()
+  @Delete('parents/orphans')
+  async deleteOrphanParents(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.deleteAllOrphanParentAccounts();
+    return { ok: true, ...result };
+  }
+
   @DenyParents()
   @Get(':id')
-  async one(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number) {
+  async one(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     await this.assertUserAdmin(req);
     const user = await this.usersService.findOne(id);
     const linkedStudentIds = await this.usersService.getLinkedStudentIds(id);
@@ -227,22 +288,21 @@ export class UsersController {
   @DenyParents()
   @Post()
   async createUser(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Body() body: {
-      first_name?: string;
-      last_name?: string;
-      email: string;
-      address?: string;
-      phone?: string;
-      whatsapp?: string;
-      password: string;
-      roleName?: string;
-      profile_photo_url?: string;
-      cover_photo_url?: string;
-      order_number?: string;
-      linked_student_ids?: string[];
-    },
-  ) {
+    first_name?: string;
+    last_name?: string;
+    email: string;
+    address?: string;
+    phone?: string;
+    whatsapp?: string;
+    password: string;
+    roleName?: string;
+    profile_photo_url?: string;
+    cover_photo_url?: string;
+    order_number?: string;
+    linked_student_ids?: string[];
+  }) {
     await this.assertUserAdmin(req);
     const user = await this.usersService.createUser({
       first_name: body.first_name,
@@ -262,11 +322,11 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
-  /** Sans ce garde, un parent pouvait se promouvoir SUPER_ADMIN. */
+  /** Changement de rôle : sans ce garde, un parent pouvait se promouvoir SUPER_ADMIN. */
   @DenyParents()
   @Patch(':id/role')
   async setUserRole(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { roleName: string },
   ) {
@@ -278,7 +338,7 @@ export class UsersController {
   @DenyParents()
   @Post(':id/reset-password')
   async resetPassword(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { newPassword: string },
   ) {
@@ -290,7 +350,7 @@ export class UsersController {
   @DenyParents()
   @Patch(':id')
   async updateUser(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: Partial<{
       first_name: string;
@@ -316,7 +376,7 @@ export class UsersController {
   @DenyParents()
   @Delete(':id')
   async deleteUser(
-    @Req() req: AuthRequest,
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
     @Param('id', ParseIntPipe) id: number,
   ) {
     await this.assertUserAdmin(req);

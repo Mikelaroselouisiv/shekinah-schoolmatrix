@@ -5,7 +5,7 @@
 
 **Stack cible :** Expo (React Native) + TypeScript + React Navigation · API cloud Nest (même contrat que desktop Remote).  
 **Règle d’or :** un jalon = une chose qui tourne sur appareil/simulateur + appels API réels (pas de mock durable).  
-**Marque :** l’app mobile s’appelle **Shekinah** — aucun libellé Eureka / Parallele dans l’UI, `app.json`, splash, stores ou messages utilisateur.
+**Marque :** l’app mobile s’appelle **Shekinah** — aucun libellé « Parallele » dans l’UI, `app.json`, splash, stores ou messages utilisateur.
 
 ---
 

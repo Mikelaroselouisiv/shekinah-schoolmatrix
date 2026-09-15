@@ -43,7 +43,7 @@ export class DisciplineService {
 
   async getAttendanceByClassAndDate(classId: string, date: string): Promise<any> {
     const students = await this.studentRepo.find({
-      where: { class: { id: classId } },
+      where: { class: { id: classId }, active: true },
       relations: ['class'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });

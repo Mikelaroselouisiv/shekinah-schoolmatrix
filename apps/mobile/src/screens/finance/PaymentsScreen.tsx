@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   EmptyState,
@@ -31,6 +32,7 @@ import {
   getFeeServices,
   getPaymentStatus,
   getPaymentTransactions,
+  cancelPayment,
   getStudents,
   type AcademicYear,
   type BankAccountOption,
@@ -68,6 +70,8 @@ export function PaymentsScreen({}: Props) {
   const [services, setServices] = useState<FeeService[]>([]);
   const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+  const [txHasMore, setTxHasMore] = useState(false);
+  const [txLoadingMore, setTxLoadingMore] = useState(false);
 
   const [academicYearName, setAcademicYearName] = useState(
     context?.academic_year?.name || '',
@@ -89,6 +93,7 @@ export function PaymentsScreen({}: Props) {
 
   const [bootLoading, setBootLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [picker, setPicker] = useState<PickerKind>(null);
@@ -222,21 +227,33 @@ export function PaymentsScreen({}: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId, academicYearName, serviceId]);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (mode: 'reset' | 'more' = 'reset') => {
+    if (mode === 'more') {
+      if (txLoadingMore || !txHasMore) return;
+      setTxLoadingMore(true);
+    }
     try {
-      const list = await getPaymentTransactions({
+      const data = await getPaymentTransactions({
         academic_year: filterYear || undefined,
         class_id: filterClass || undefined,
+        limit: 40,
+        offset: mode === 'more' ? transactions.length : 0,
       });
-      setTransactions(list);
+      setTransactions((prev) => (mode === 'more' ? [...prev, ...data.transactions] : data.transactions));
+      setTxHasMore(data.has_more);
     } catch {
-      setTransactions([]);
+      if (mode === 'reset') {
+        setTransactions([]);
+        setTxHasMore(false);
+      }
+    } finally {
+      setTxLoadingMore(false);
     }
-  }, [filterYear, filterClass]);
+  }, [filterYear, filterClass, txHasMore, txLoadingMore, transactions.length]);
 
   useEffect(() => {
-    void loadTransactions();
-  }, [loadTransactions]);
+    void loadTransactions('reset');
+  }, [filterYear, filterClass]);
 
   async function handleSave() {
     setError('');
@@ -288,6 +305,42 @@ export function PaymentsScreen({}: Props) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCancelPayment(id: string) {
+    Alert.alert('Supprimer', 'Supprimer ce paiement ?', [
+      { text: 'Non', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setCancellingId(id);
+            setError('');
+            try {
+              await cancelPayment(id);
+              setTransactions((prev) =>
+                prev.map((t) =>
+                  t.id === id ? { ...t, cancelled_at: new Date().toISOString() } : t,
+                ),
+              );
+              if (studentId && academicYearName) {
+                try {
+                  const status = await getPaymentStatus(studentId, academicYearName);
+                  setDues(status?.by_service || []);
+                } catch {
+                  /* ignore */
+                }
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Échec suppression');
+            } finally {
+              setCancellingId(null);
+            }
+          })();
+        },
+      },
+    ]);
   }
 
   function selectDueService(row: PaymentByService) {
@@ -372,7 +425,7 @@ export function PaymentsScreen({}: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <FormScrollView contentContainerStyle={styles.content}>
         <View style={styles.form}>
           <SelectRow
             label="Année scolaire"
@@ -496,8 +549,13 @@ export function PaymentsScreen({}: Props) {
           <EmptyState title="Aucun paiement" />
         ) : (
           transactions.map((t) => (
-            <View key={t.id} style={styles.txCard}>
-              <Text style={styles.txTitle}>
+            <View
+              key={t.id}
+              style={[styles.txCard, t.cancelled_at ? styles.txCardCancelled : null]}
+            >
+              <Text
+                style={[styles.txTitle, t.cancelled_at ? styles.txCancelledText : null]}
+              >
                 {t.student_name || 'Élève'} · {formatMoney(t.amount_paid)}
               </Text>
               <Muted>
@@ -510,10 +568,31 @@ export function PaymentsScreen({}: Props) {
                   .filter(Boolean)
                   .join(' · ')}
               </Muted>
+              {t.cancelled_at ? (
+                <Text style={styles.txCancelledLabel}>Supprimé</Text>
+              ) : (
+                <Pressable
+                  onPress={() => handleCancelPayment(t.id)}
+                  disabled={cancellingId === t.id}
+                  style={styles.txCancelBtn}
+                >
+                  <Text style={styles.txCancelText}>
+                    {cancellingId === t.id ? '...' : 'Supprimer'}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           ))
         )}
-      </ScrollView>
+        {txHasMore ? (
+          <Button
+            title={txLoadingMore ? 'Chargement…' : 'Plus'}
+            variant="ghost"
+            onPress={() => void loadTransactions('more')}
+            disabled={txLoadingMore}
+          />
+        ) : null}
+      </FormScrollView>
 
       <Modal visible={!!picker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>
@@ -696,7 +775,21 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  txCardCancelled: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
   txTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  txCancelledText: { color: '#B91C1C', textDecorationLine: 'line-through' },
+  txCancelledLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B91C1C',
+    textTransform: 'uppercase',
+  },
+  txCancelBtn: { marginTop: 8, alignSelf: 'flex-start' },
+  txCancelText: { fontSize: 13, fontWeight: '600', color: '#DC2626' },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15,23,42,0.45)',

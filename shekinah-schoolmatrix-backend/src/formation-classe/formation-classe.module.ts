@@ -10,6 +10,8 @@ import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.ent
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
 import { Period } from '../period/period.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
+import { ClassDayMoment } from '../teachers/class-day-moment.entity';
+import { SchoolWeekDuty } from '../teachers/school-week-duty.entity';
 import { Room } from '../rooms/room.entity';
 import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { FormationClasseService } from './formation-classe.service';
@@ -30,6 +32,8 @@ import { LevelScopeModule } from '../auth/level-scope.module';
       DisciplinaryMeasure,
       Period,
       ScheduleSlot,
+      ClassDayMoment,
+      SchoolWeekDuty,
       Room,
       SchoolProfile,
     ]),

@@ -1,10 +1,18 @@
 import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
-import { buildBadgesPdfBlob, fetchStudentsForRoomBadges } from "@/lib/badgeProduction";
-import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+import {
+  buildBadgesPdfBlob,
+  fetchStudentsForClassBadges,
+  fetchStudentsForRoomBadges,
+} from "@/lib/badgeProduction";
+import { getPrintableClassListPdfBlob } from "@/lib/classListPdf";
+import { EDUCATION_LEVELS, educationLevelLabel, learnerNoun } from "@/lib/educationLevels";
+
+type TabKey = "annee-actuelle" | "nouvelle-annee";
 
 type AcademicYear = {
   id: string;
@@ -55,6 +63,8 @@ type StudentInClass = {
 };
 
 const UNASSIGNED_ROOM_ID = "__sans_salle__";
+const PDF_BTN =
+  "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium";
 
 function schoolCode(s: StudentInClass): string {
   return (s.management_code || s.student_code || "").trim() || "—";
@@ -91,19 +101,9 @@ function nextYearPreview(name: string): string {
   return `${name.trim()} (suivant)`;
 }
 
-function pdfRows(list: StudentInClass[]) {
-  return list.map((s) => ({
-    school_code: schoolCode(s),
-    last_name: s.last_name,
-    first_name: s.first_name,
-    room_name: s.room_name || "Sans salle",
-    average: s.average != null ? s.average.toFixed(2) : "—",
-    decision_label: decisionLabel(s.decision),
-  }));
-}
-
 export function DashboardFormationClassePage() {
   const { school, refetch: refetchSchool } = useSchoolProfile();
+  const [tab, setTab] = useState<TabKey>("annee-actuelle");
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<RoomItem[]>([]);
@@ -115,6 +115,10 @@ export function DashboardFormationClassePage() {
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [error, setError] = useState("");
   const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
+  const [savingRoomStudentId, setSavingRoomStudentId] = useState<string | null>(null);
+  const [savingClassStudentId, setSavingClassStudentId] = useState<string | null>(null);
+  const [savingNameId, setSavingNameId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [computingDecisions, setComputingDecisions] = useState(false);
   const [showLaunchConfirm, setShowLaunchConfirm] = useState(false);
   const [launchAck, setLaunchAck] = useState(false);
@@ -123,6 +127,7 @@ export function DashboardFormationClassePage() {
 
   const selectedYear = academicYears.find((y) => y.id === selectedYearId);
   const isPreschoolClass = openClass?.is_preschool ?? false;
+  const isCurrentYearTab = tab === "annee-actuelle";
 
   const roomsByClass = useMemo(() => {
     const map = new Map<string, RoomItem[]>();
@@ -137,11 +142,13 @@ export function DashboardFormationClassePage() {
 
   const classGroups = useMemo(() => {
     const known = new Set(EDUCATION_LEVELS.map((l) => l.key as string));
-    const groups = EDUCATION_LEVELS.map((level) => ({
-      key: level.key,
-      label: level.label,
-      classes: classes.filter((c) => c.level === level.key),
-    })).filter((g) => g.classes.length > 0);
+    const groups: { key: string; label: string; classes: ClassItem[] }[] = EDUCATION_LEVELS.map(
+      (level) => ({
+        key: level.key,
+        label: level.label,
+        classes: classes.filter((c) => c.level === level.key),
+      }),
+    ).filter((g) => g.classes.length > 0);
     const other = classes.filter((c) => !c.level || !known.has(c.level));
     if (other.length) {
       groups.push({ key: "AUTRE", label: "Autres classes", classes: other });
@@ -283,6 +290,125 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  async function handleSetRoom(studentId: string, nextRoomId: string) {
+    const roomId = nextRoomId.trim() || null;
+    const current = classStudents.find((s) => s.id === studentId);
+    if (!current) return;
+    if ((current.room_id ?? null) === roomId) return;
+    const snapshot = classStudents;
+    const roomName = roomId
+      ? openClassRooms.find((r) => r.id === roomId)?.name ?? null
+      : null;
+    const updated = classStudents.map((s) =>
+      s.id === studentId ? { ...s, room_id: roomId, room_name: roomName } : s,
+    );
+    setSavingRoomStudentId(studentId);
+    setError("");
+    setClassStudents(updated);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${studentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ room_id: roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? updated.filter((s) => !s.room_id)
+          : updated.filter((s) => s.room_id === openRoomId);
+      if (stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setClassStudents(snapshot);
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingRoomStudentId(null);
+    }
+  }
+
+  async function handleSetClass(studentId: string, nextClassId: string) {
+    const classId = nextClassId.trim();
+    if (!classId || !openClass || !selectedYearId || classId === openClass.id) return;
+    const snapshot = classStudents;
+    const updated = classStudents.filter((s) => s.id !== studentId);
+    setSavingClassStudentId(studentId);
+    setError("");
+    setClassStudents(updated);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/formation-classe/move-student`, {
+        method: "POST",
+        body: JSON.stringify({
+          student_id: studentId,
+          academic_year_id: selectedYearId,
+          class_id: classId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? updated.filter((s) => !s.room_id)
+          : updated.filter((s) => s.room_id === openRoomId);
+      if (stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setClassStudents(snapshot);
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingClassStudentId(null);
+    }
+  }
+
+  async function handleSaveName(
+    student: StudentInClass,
+    patch: { first_name?: string; last_name?: string },
+  ) {
+    const first_name = (patch.first_name ?? student.first_name).trim();
+    const last_name = (patch.last_name ?? student.last_name).trim();
+    if (!first_name || !last_name) return;
+    if (first_name === student.first_name && last_name === student.last_name) return;
+    setSavingNameId(student.id);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${student.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ first_name, last_name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setClassStudents((list) =>
+        list.map((s) => (s.id === student.id ? { ...s, first_name, last_name } : s)),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingNameId(null);
+    }
+  }
+
+  async function handleArchiveStudent(student: StudentInClass) {
+    const ok = window.confirm(
+      `Retirer ${student.first_name} ${student.last_name} de la classe ?\n\nL’élève ne sera plus inscrit cette année. Son dossier restera consultable dans Fiche élève → Anciens élèves.`,
+    );
+    if (!ok) return;
+    setArchivingId(student.id);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${student.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { message?: string }).message || "Erreur");
+      const remaining = classStudents.filter((s) => s.id !== student.id);
+      setClassStudents(remaining);
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? remaining.filter((s) => !s.room_id)
+          : remaining.filter((s) => s.room_id === openRoomId);
+      if (openRoomId && stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   async function handleLaunchNextYear() {
     if (!selectedYearId || !launchAck) return;
     setLaunching(true);
@@ -296,7 +422,7 @@ export function DashboardFormationClassePage() {
       if (!res.ok) throw new Error(data.message || "Erreur");
       const next = data.next_year as { id: string; name: string } | undefined;
       setLaunchResult(
-        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.skipped ?? 0} exclus non inscrits, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
+        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.graduated ?? 0} anciens élèves (fin de cycle), ${data.skipped ?? 0} exclus archivés, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
       );
       setShowLaunchConfirm(false);
       setLaunchAck(false);
@@ -311,7 +437,22 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  function printableListBlob(list: StudentInClass[], roomName?: string | null) {
+    return getPrintableClassListPdfBlob({
+      school: { name: school?.name, email: school?.email, phone: school?.phone },
+      className: openClass?.name ?? "Classe",
+      roomName: roomName ?? null,
+      yearName: selectedYear?.name,
+      students: list.map((s) => ({
+        last_name: s.last_name,
+        first_name: s.first_name,
+        room_name: s.room_name,
+      })),
+    });
+  }
+
   function studentTable(list: StudentInClass[]) {
+    const colSpan = (isCurrentYearTab ? 5 : 7) + 1;
     return (
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -320,16 +461,22 @@ export function DashboardFormationClassePage() {
               <th className="px-4 py-3 font-medium text-slate-900">Code école</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Prénom</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Moyenne</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Décision</th>
+              {!isCurrentYearTab && (
+                <>
+                  <th className="px-4 py-3 font-medium text-slate-900">Moyenne</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Décision</th>
+                </>
+              )}
+              <th className="px-4 py-3 font-medium text-slate-900">Actions</th>
             </tr>
           </thead>
           <tbody>
             {list.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                  Aucun élève dans cette liste.
+                <td colSpan={colSpan} className="px-4 py-8 text-center text-slate-500">
+                  Aucun {learnerNoun(openClass?.level)} dans cette liste.
                 </td>
               </tr>
             ) : (
@@ -341,36 +488,118 @@ export function DashboardFormationClassePage() {
                   <td className="px-4 py-3 font-mono font-semibold text-slate-900">
                     {schoolCode(s)}
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{s.last_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.first_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.room_name || "Sans salle"}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    <input
+                      defaultValue={s.last_name}
+                      key={`ln-${s.id}-${s.last_name}`}
+                      disabled={savingNameId === s.id}
+                      onBlur={(e) => void handleSaveName(s, { last_name: e.target.value })}
+                      className="w-full min-w-[100px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      aria-label="Nom"
+                    />
+                  </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {s.average != null ? s.average.toFixed(2) : "—"}
+                    <input
+                      defaultValue={s.first_name}
+                      key={`fn-${s.id}-${s.first_name}`}
+                      disabled={savingNameId === s.id}
+                      onBlur={(e) => void handleSaveName(s, { first_name: e.target.value })}
+                      className="w-full min-w-[100px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      aria-label="Prénom"
+                    />
                   </td>
                   <td className="px-4 py-3">
-                    {isPreschoolClass ? (
+                    {classes.length === 0 || !openClass ? (
+                      <span className="text-slate-600">{openClass?.name ?? "—"}</span>
+                    ) : (
                       <select
-                        value={s.decision ?? ""}
-                        onChange={(e) => handleSetDecision(s.assignment_id, e.target.value)}
-                        disabled={!s.assignment_id || savingDecisionId === s.assignment_id}
-                        className="border border-[var(--app-border)] rounded px-2 py-1.5 text-sm min-w-[160px]"
+                        value={openClass.id}
+                        disabled={savingClassStudentId === s.id}
+                        onChange={(e) => void handleSetClass(s.id, e.target.value)}
+                        className="w-full min-w-[140px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
                       >
-                        <option value="">— Choisir —</option>
-                        {DECISION_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                        {classGroups.map((g) => (
+                          <optgroup key={g.key} label={g.label}>
+                            {g.classes.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {openClassRooms.length === 0 ? (
+                      <span className="text-slate-600">{s.room_name || "Sans salle"}</span>
+                    ) : (
+                      <select
+                        value={s.room_id ?? ""}
+                        disabled={savingRoomStudentId === s.id}
+                        onChange={(e) => void handleSetRoom(s.id, e.target.value)}
+                        className="w-full min-w-[140px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      >
+                        <option value="">
+                          {s.room_id ? "Sans salle" : "— Choisir une salle —"}
+                        </option>
+                        {openClassRooms.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
                           </option>
                         ))}
                       </select>
-                    ) : s.decision ? (
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${decisionBadgeClass(s.decision)}`}
-                      >
-                        {decisionLabel(s.decision)}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
                     )}
+                  </td>
+                  {!isCurrentYearTab && (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.average != null ? s.average.toFixed(2) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isPreschoolClass ? (
+                          <select
+                            value={s.decision ?? ""}
+                            onChange={(e) => handleSetDecision(s.assignment_id, e.target.value)}
+                            disabled={!s.assignment_id || savingDecisionId === s.assignment_id}
+                            className="border border-[var(--app-border)] rounded px-2 py-1.5 text-sm min-w-[160px]"
+                          >
+                            <option value="">— Choisir —</option>
+                            {DECISION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : s.decision ? (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${decisionBadgeClass(s.decision)}`}
+                          >
+                            {decisionLabel(s.decision)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    </>
+                  )}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        to={`/dashboard/fiche-eleve?student_id=${s.id}`}
+                        className="text-sm font-medium text-[var(--school-accent-1)] hover:underline"
+                      >
+                        Dossier
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={archivingId === s.id}
+                        onClick={() => void handleArchiveStudent(s)}
+                        className="text-sm font-medium text-red-700 hover:underline disabled:opacity-50"
+                      >
+                        {archivingId === s.id ? "Retrait..." : "Supprimer"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -385,20 +614,40 @@ export function DashboardFormationClassePage() {
     return <div className="animate-pulse text-slate-500">Chargement...</div>;
   }
 
-  const pdfColumnsBase = [
-    { header: "Code école", key: "school_code" },
-    { header: "Nom", key: "last_name" },
-    { header: "Prénom", key: "first_name" },
-  ];
-
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Formation de classe</h2>
 
+      <div className="flex gap-1 border-b border-[var(--app-border)]">
+        {(
+          [
+            ["annee-actuelle", "Année actuelle"],
+            ["nouvelle-annee", "Nouvelle année"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setTab(key);
+              setOpenClass(null);
+              setOpenRoomId(null);
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              tab === key
+                ? "bg-white border border-[var(--app-border)] border-b-0 text-slate-900"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>
       )}
-      {launchResult && (
+      {launchResult && tab === "nouvelle-annee" && (
         <div className="p-3 rounded-lg bg-emerald-50 text-emerald-800 text-sm">{launchResult}</div>
       )}
 
@@ -425,17 +674,19 @@ export function DashboardFormationClassePage() {
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          disabled={!selectedYearId}
-          onClick={() => {
-            setLaunchAck(false);
-            setShowLaunchConfirm(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-800 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Lancer l’année suivante
-        </button>
+        {tab === "nouvelle-annee" && (
+          <button
+            type="button"
+            disabled={!selectedYearId}
+            onClick={() => {
+              setLaunchAck(false);
+              setShowLaunchConfirm(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-800 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Lancer l’année suivante
+          </button>
+        )}
       </div>
 
       {!selectedYearId ? (
@@ -473,7 +724,7 @@ export function DashboardFormationClassePage() {
                         {clsRooms.length} salle{clsRooms.length !== 1 ? "s" : ""}
                       </span>
                       <span className="inline-flex rounded-full bg-[var(--school-accent-1)]/10 px-2 py-0.5 text-xs font-medium text-[var(--school-accent-1)]">
-                        {effectif} élève{effectif !== 1 ? "s" : ""}
+                        {effectif} {learnerNoun(cls.level, effectif !== 1)}
                       </span>
                     </div>
                   </button>
@@ -502,7 +753,7 @@ export function DashboardFormationClassePage() {
                 <p className="mt-0.5 text-sm text-slate-500">
                   {educationLevelLabel(openClass.level)}
                   {selectedYear ? ` · ${selectedYear.name}` : ""}
-                  {isPreschoolClass ? " — Décision manuelle (préscolaire)" : ""}
+                  {!isCurrentYearTab && isPreschoolClass ? " — Décision manuelle (préscolaire)" : ""}
                 </p>
               </div>
               <button
@@ -519,23 +770,24 @@ export function DashboardFormationClassePage() {
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {classStudents.length > 0 && (
                 <ExportPdfButton
-                  table={{
-                    title: `Liste complète — ${openClass.name}`,
-                    subtitle: `${selectedYear?.name ?? ""} · toutes salles`,
-                    columns: [
-                      ...pdfColumnsBase,
-                      { header: "Salle", key: "room_name" },
-                      { header: "Moyenne", key: "average" },
-                      { header: "Décision", key: "decision_label" },
-                    ],
-                    rows: pdfRows(classStudents),
-                  }}
                   filename={`liste-classe-${openClass.name}-${selectedYear?.name ?? "annee"}.pdf`}
                   label="Exporter la liste complète de la classe"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                  className={PDF_BTN}
+                  getBlob={async () => printableListBlob(classStudents)}
                 />
               )}
-              {!isPreschoolClass && (
+              {isCurrentYearTab && classStudents.length > 0 && (
+                <ExportBadgePdfButton
+                  label="Produire badges de la classe"
+                  filename={`badges-classe-${openClass.name}`}
+                  disabled={!school?.name}
+                  getBlob={async () => {
+                    const students = await fetchStudentsForClassBadges(openClass.id);
+                    return buildBadgesPdfBlob({ school, students });
+                  }}
+                />
+              )}
+              {!isCurrentYearTab && !isPreschoolClass && (
                 <button
                   type="button"
                   onClick={handleComputeDecisions}
@@ -564,7 +816,7 @@ export function DashboardFormationClassePage() {
                       >
                         <div className="font-semibold text-slate-900">{r.name}</div>
                         <div className="mt-2 text-sm text-slate-600">
-                          {count} élève{count !== 1 ? "s" : ""}
+                          {count} {learnerNoun(openClass.level, count !== 1)}
                           {r.capacity != null ? ` / ${r.capacity}` : ""}
                         </div>
                       </button>
@@ -578,14 +830,13 @@ export function DashboardFormationClassePage() {
                     >
                       <div className="font-semibold text-slate-700">Sans salle</div>
                       <div className="mt-2 text-sm text-slate-600">
-                        {unassignedStudents.length} élève
-                        {unassignedStudents.length !== 1 ? "s" : ""}
+                        {unassignedStudents.length} {learnerNoun(openClass.level, unassignedStudents.length !== 1)}
                       </div>
                     </button>
                   )}
                   {openClassRooms.length === 0 && unassignedStudents.length === 0 && (
                     <p className="col-span-full py-6 text-center text-slate-500 text-sm">
-                      Aucune salle ni élève pour cette classe.
+                      Aucune salle ni {learnerNoun(openClass.level)} pour cette classe.
                     </p>
                   )}
                 </div>
@@ -610,7 +861,7 @@ export function DashboardFormationClassePage() {
                   {openClass.name} · {openRoomName}
                 </h3>
                 <p className="mt-0.5 text-sm text-slate-500">
-                  {openRoomStudents.length} élève{openRoomStudents.length !== 1 ? "s" : ""}
+                  {openRoomStudents.length} {learnerNoun(openClass.level, openRoomStudents.length !== 1)}
                   {selectedYear ? ` · ${selectedYear.name}` : ""}
                 </p>
               </div>
@@ -625,22 +876,13 @@ export function DashboardFormationClassePage() {
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {openRoomStudents.length > 0 && (
                 <ExportPdfButton
-                  table={{
-                    title: `Liste — ${openClass.name} · ${openRoomName}`,
-                    subtitle: selectedYear?.name ?? "",
-                    columns: [
-                      ...pdfColumnsBase,
-                      { header: "Moyenne", key: "average" },
-                      { header: "Décision", key: "decision_label" },
-                    ],
-                    rows: pdfRows(openRoomStudents),
-                  }}
                   filename={`liste-salle-${openClass.name}-${openRoomName}-${selectedYear?.name ?? "annee"}.pdf`}
                   label="Exporter en PDF"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                  className={PDF_BTN}
+                  getBlob={async () => printableListBlob(openRoomStudents, openRoomName)}
                 />
               )}
-              {openRoomId !== UNASSIGNED_ROOM_ID && (
+              {isCurrentYearTab && openRoomId !== UNASSIGNED_ROOM_ID && (
                 <ExportBadgePdfButton
                   label="Produire badges de la salle"
                   filename={`badges-salle-${openClass.name}-${openRoomName}`}
@@ -652,7 +894,12 @@ export function DashboardFormationClassePage() {
                 />
               )}
             </div>
-            <div className="overflow-y-auto">{studentTable(openRoomStudents)}</div>
+            <div className="overflow-y-auto">
+              {error && (
+                <div className="m-4 p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>
+              )}
+              {studentTable(openRoomStudents)}
+            </div>
           </div>
         </div>
       )}
@@ -675,7 +922,8 @@ export function DashboardFormationClassePage() {
               <li>Les décisions sont recalculées selon les moyennes (sauf préscolaire).</li>
               <li>L’année, les périodes et les horaires (mêmes professeurs) sont recopiés.</li>
               <li>Les élèves admis passent à la classe suivante ; les autres redoublent.</li>
-              <li>Les élèves renvoyés ne sont pas inscrits.</li>
+              <li>Les élèves en dernière classe de secondaire (ou supérieur) admis deviennent anciens élèves — leur dossier reste consultable.</li>
+              <li>Les élèves renvoyés sont archivés (dossier conservé), pas inscrits l’année suivante.</li>
               <li>Vous pourrez ensuite faire de petites corrections à la main.</li>
             </ul>
             <label className="mt-4 flex items-start gap-2 text-sm text-slate-800">

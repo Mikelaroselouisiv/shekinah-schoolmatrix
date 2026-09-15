@@ -28,61 +28,19 @@ export class EconomatController {
   @Get('fee-services')
   async listFeeServices() {
     const list = await this.economatService.findAllFeeServices();
-    return {
-      ok: true,
-      fee_services: list.map((s) => ({
-        id: s.id,
-        name: s.name,
-        code: s.code,
-        active: s.active,
-        nature: s.nature,
-        billing_frequency: s.billing_frequency ?? 'ONCE',
-        billing_occurrences: s.billing_occurrences,
-      })),
-    };
+    return { ok: true, fee_services: list };
   }
 
   @DenyParents()
   @Post('fee-services')
-  async createFeeService(
-    @Body()
-    body: {
-      name: string;
-      code?: string;
-      nature?: string;
-      billing_frequency?: string;
-      billing_occurrences?: number | null;
-    },
-  ) {
-    const s = await this.economatService.createFeeService(body);
-    return {
-      ok: true,
-      fee_service: {
-        id: s.id,
-        name: s.name,
-        code: s.code,
-        active: s.active,
-        nature: s.nature,
-        billing_frequency: s.billing_frequency,
-        billing_occurrences: s.billing_occurrences,
-      },
-    };
+  async createFeeService(@Body() body: { name: string; code?: string; nature?: string }) {
+    const s = await this.economatService.createFeeService({ name: body.name, code: body.code, nature: body.nature });
+    return { ok: true, fee_service: { id: s.id, name: s.name, code: s.code, active: s.active, nature: s.nature } };
   }
 
   @DenyParents()
   @Patch('fee-services/:id')
-  async updateFeeService(
-    @Param('id') id: string,
-    @Body()
-    body: Partial<{
-      name: string;
-      code: string;
-      active: boolean;
-      nature: string;
-      billing_frequency: string;
-      billing_occurrences: number | null;
-    }>,
-  ) {
+  async updateFeeService(@Param('id') id: string, @Body() body: Partial<{ name: string; code: string; active: boolean; nature: string }>) {
     const s = await this.economatService.updateFeeService(id, body);
     return { ok: true, fee_service: s };
   }
@@ -192,19 +150,48 @@ export class EconomatController {
     };
   }
 
+  @DenyParents()
+  @Post('payments/:id/cancel')
+  async cancelPayment(@Param('id') id: string) {
+    const tx = await this.economatService.cancelPayment(id);
+    try {
+      await this.financeService.voidEconomatPayment(tx);
+    } catch {
+      // le paiement reste annulé même si l'écriture inverse échoue
+    }
+    return {
+      ok: true,
+      payment: {
+        id: tx.id,
+        cancelled_at: tx.cancelled_at,
+      },
+    };
+  }
+
   @ParentScopedStudent(STUDENT_QUERY)
   @Get('transactions')
   async listTransactions(
     @Query('student_id') studentId?: string,
     @Query('academic_year') academicYear?: string,
     @Query('class_id') classId?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('offset') offsetRaw?: string,
   ) {
-    const list = await this.economatService.findTransactions({
+    const limit = Math.min(Math.max(parseInt(limitRaw ?? '40', 10) || 40, 1), 100);
+    const offset = Math.max(parseInt(offsetRaw ?? '0', 10) || 0, 0);
+    const { items, total } = await this.economatService.findTransactions({
       student_id: studentId,
       academic_year: academicYear,
       class_id: classId,
+      limit,
+      offset,
     });
-    return { ok: true, transactions: list };
+    return {
+      ok: true,
+      transactions: items,
+      total,
+      has_more: offset + items.length < total,
+    };
   }
 
   @ParentScopedStudent({ in: 'param', key: 'studentId' })
@@ -212,8 +199,13 @@ export class EconomatController {
   async getStudentPaymentStatus(
     @Param('studentId') studentId: string,
     @Query('academic_year') academicYear?: string,
+    @Query('class_id') classId?: string,
   ) {
-    const status = await this.economatService.getStudentPaymentStatus(studentId, academicYear);
+    const status = await this.economatService.getStudentPaymentStatus(
+      studentId,
+      academicYear,
+      classId,
+    );
     return { ok: true, ...status };
   }
 

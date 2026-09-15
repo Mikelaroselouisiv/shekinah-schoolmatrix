@@ -20,9 +20,10 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { canEditStudent } from '../../lib/permissions';
+import { canEditStudent, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied, useCanBrowseStudents } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
+import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
 import {
   getAcademicYears,
   getClasses,
@@ -44,7 +45,7 @@ type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentsMain'>;
 type PickerKind = 'year' | 'class' | null;
 
 function useLinkedOnly(roleName: string): boolean {
-  return roleName === 'PARENT' || roleName === 'TEACHER';
+  return roleName === 'PARENT';
 }
 
 export function StudentsScreen({ navigation }: Props) {
@@ -53,6 +54,7 @@ export function StudentsScreen({ navigation }: Props) {
   const canBrowse = useCanBrowseStudents();
   const linkedOnly = useLinkedOnly(roleName);
   const canEnroll = canEditStudent(roleName, rolePermissions);
+  const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
 
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<(StudentListItem | LinkedStudent)[]>([]);
@@ -72,6 +74,9 @@ export function StudentsScreen({ navigation }: Props) {
     || context?.academic_year?.name
     || 'Année académique';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Classe';
+  const classLevel = classes.find((c) => c.id === classId)?.level;
+  const listHigherEd = isHigherEducationLevel(classLevel);
+  const listLearner = learnerNoun(classLevel);
   const filtersReady = !!yearId && !!classId;
 
   const loadLinked = useCallback(async () => {
@@ -157,10 +162,11 @@ export function StudentsScreen({ navigation }: Props) {
     return items.filter((s) => {
       const name = studentDisplayName(s).toLowerCase();
       const nisu = (s.order_number || '').toLowerCase();
+      const code = (s.management_code || '').toLowerCase();
       const cls = ('class_name' in s ? s.class_name || '' : '').toLowerCase();
-      return name.includes(q) || nisu.includes(q) || cls.includes(q);
+      return name.includes(q) || (canSeeNisu && nisu.includes(q)) || code.includes(q) || cls.includes(q);
     });
-  }, [items, query]);
+  }, [items, query, canSeeNisu]);
 
   if (!canBrowse) {
     return <AccessDenied />;
@@ -212,7 +218,9 @@ export function StudentsScreen({ navigation }: Props) {
           <SearchBar
             value={query}
             onChangeText={setQuery}
-            placeholder={linkedOnly ? 'Nom ou NISU…' : 'Nom ou NISU…'}
+            placeholder={
+              listHigherEd ? 'Nom…' : canSeeNisu ? 'Nom ou NISU…' : 'Nom ou code…'
+            }
           />
         ) : null}
 
@@ -227,10 +235,10 @@ export function StudentsScreen({ navigation }: Props) {
 
       {!linkedOnly && !filtersReady ? (
         <View style={styles.emptyWrap}>
-          <EmptyState title="Aucun élève" />
+          <EmptyState title={`Aucun ${listLearner}`} />
         </View>
       ) : loadingList ? (
-        <LoadingBlock label="Chargement des élèves…" />
+        <LoadingBlock label={`Chargement des ${learnerNoun(classLevel, true)}…`} />
       ) : (
         <FlatList
           data={filtered}
@@ -250,11 +258,18 @@ export function StudentsScreen({ navigation }: Props) {
               }}
             />
           }
-          ListEmptyComponent={<EmptyState title="Aucun élève" />}
+          ListEmptyComponent={<EmptyState title={`Aucun ${listLearner}`} />}
           renderItem={({ item }) => (
             <ListRow
               title={studentDisplayName(item)}
-              subtitle={[item.order_number, 'class_name' in item ? item.class_name : null]
+              subtitle={[
+                listHigherEd
+                  ? null
+                  : canSeeNisu
+                    ? item.order_number
+                    : item.management_code,
+                'class_name' in item ? item.class_name : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
               onPress={() =>

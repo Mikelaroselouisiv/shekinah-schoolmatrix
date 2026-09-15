@@ -81,19 +81,27 @@ export class Student {
   @JoinColumn({ name: 'room_id' })
   room: Room | null;
 
-  /** NISU — unique en Haïti (sensible : ne pas afficher sur badges / fiches publiques). */
+  /** NISU — identifiant sensible (Haïti). Usage interne / admin uniquement — pas sur badge ni fiche publique. */
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
   order_number: string | null;
 
   /**
-   * Code de gestion école (public) — badges, fiches, documents grand public.
-   * Attribué automatiquement à l’inscription (8 caractères alphanumériques, sans année).
+   * Code de gestion public (badge, fiche élève, listes visibles).
+   * Généré automatiquement à l’inscription — distinct du NISU.
    */
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
-  student_code: string | null;
+  management_code: string | null;
 
   @Column({ default: true })
   active: boolean;
+
+  /** Date d’archivage : l’élève n’est plus affecté à l’année en cours, le dossier reste. */
+  @Column({ type: 'timestamp', nullable: true })
+  archived_at: Date | null;
+
+  /** REMOVED = retiré d’une classe ; GRADUATED = fin de cycle (secondaire / supérieur). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  archive_reason: 'REMOVED' | 'GRADUATED' | null;
 
   @CreateDateColumn()
   created_at: Date;

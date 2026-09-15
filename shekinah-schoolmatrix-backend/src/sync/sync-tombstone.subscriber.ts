@@ -1,6 +1,6 @@
 /**
  * Subscriber TypeORM : toute suppression ORM d’une entité sync
- * écrit un tombstone + kick agent (propagation Server ↔ Cloud).
+ * écrit un tombstone + kick agent (propagation local ↔ cloud).
  */
 import { Injectable, Logger } from '@nestjs/common';
 import {
@@ -15,7 +15,9 @@ import { SyncTombstone } from './sync-tombstone.entity';
 
 @EventSubscriber()
 @Injectable()
-export class SyncTombstoneSubscriber implements EntitySubscriberInterface {
+export class SyncTombstoneSubscriber
+  implements EntitySubscriberInterface
+{
   private readonly logger = new Logger(SyncTombstoneSubscriber.name);
   private readonly targetToName = new Map<Function, SyncEntityName>();
 
@@ -44,7 +46,9 @@ export class SyncTombstoneSubscriber implements EntitySubscriberInterface {
     try {
       await this.syncService.markDeleted(name, entity.id);
     } catch (err: any) {
-      this.logger.warn(`tombstone ${name}/${entity.id}: ${err?.message || err}`);
+      this.logger.warn(
+        `tombstone ${name}/${entity.id}: ${err?.message || err}`,
+      );
     }
   }
 }

@@ -4,7 +4,7 @@ Chaque école = **son propre système** (pas un SaaS multi-tenant) : repo GitHub
 
 **Exception IA (agence) :** une seule `GEMINI_API_KEY` (et `GEMINI_MODEL` / `OPENAI_API_KEY` si utilisés) pour **tous** les clients. On ne demande pas une clé API à chaque école — on recopie la clé agence du prototype Parallele dans chaque fork (Secret Manager, `.env`, `defaults.env` Server).
 
-**Prototype source :** Shekinah SchoolMatrix.  
+**Prototype source :** Eureka SchoolMatrix.  
 **Feuille de route agent (source de vérité opérationnelle) :**
 
 `.cursor/skills/schoolmatrix-tenant-clone/SKILL.md`

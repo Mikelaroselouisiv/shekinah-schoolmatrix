@@ -18,7 +18,7 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { canEditStudent, canAccessPermission } from '../../lib/permissions';
+import { canEditStudent, canAccessPermission, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied } from '../../lib/access';
 import {
   formatDateJJMMAAAA,
@@ -30,10 +30,13 @@ import {
   getExamResults,
   getImageUrl,
   getPaymentStatus,
-  getScheduleSlots,
   getStudent,
+  getStudentHomework,
+  getStudentSchedule,
+  type ClassDayList,
   type DisciplineSummary,
   type ExamResults,
+  type HomeworkAssignment,
   type PaymentStatus,
   type ScheduleSlot,
   type StudentListItem,
@@ -43,18 +46,20 @@ import {
   readCachedStudentFiche,
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
+import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
 import type { StudentsStackParamList } from '../../navigation/types';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentFiche'>;
-type DetailTab = 'carnet' | 'infos' | 'famille';
+type DetailTab = 'carnet' | 'travaux' | 'infos' | 'famille';
 
 export function StudentFicheScreen({ navigation, route }: Props) {
   const { studentId, studentName } = route.params;
   const { context, theme } = useSchool();
   const { roleName, rolePermissions, linkedStudents } = useAuth();
   const canEdit = canEditStudent(roleName, rolePermissions);
+  const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
   const isLinkedChild = linkedStudents.some((s) => s.id === studentId);
   const canView =
     isLinkedChild ||
@@ -69,6 +74,8 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [grades, setGrades] = useState<ExamResults | null>(null);
   const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
+  const [dayLists, setDayLists] = useState<ClassDayList[]>([]);
+  const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -76,9 +83,9 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: studentName || 'Fiche élève',
+      title: studentName || `Fiche ${learnerNoun(student?.class_level)}`,
     });
-  }, [navigation, studentName]);
+  }, [navigation, studentName, student?.class_level]);
 
   const load = useCallback(async () => {
     setError('');
@@ -98,9 +105,22 @@ export function StudentFicheScreen({ navigation, route }: Props) {
       setPayment(p);
       setGrades(g);
       if (s?.class_id) {
-        setSchedule(await getScheduleSlots(s.class_id));
+        try {
+          const data = await getStudentSchedule(studentId, yearName);
+          setSchedule(data.slots ?? []);
+          setDayLists(data.day_lists ?? []);
+        } catch {
+          setSchedule([]);
+          setDayLists([]);
+        }
       } else {
         setSchedule([]);
+        setDayLists([]);
+      }
+      try {
+        setHomework(await getStudentHomework(studentId));
+      } catch {
+        setHomework([]);
       }
     } catch (err) {
       const cached = await readCachedStudentFiche(studentId);
@@ -195,7 +215,15 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           )}
           <Text style={styles.name}>{studentDisplayName(student)}</Text>
           <Text style={styles.meta}>
-            {[student.order_number, student.class_name, student.room_name]
+            {[
+              canSeeNisu && !isHigherEducationLevel(student.class_level) && student.order_number
+                ? `NISU ${student.order_number}`
+                : student.management_code
+                  ? `Code ${student.management_code}`
+                  : null,
+              student.class_name,
+              student.room_name,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </Text>
@@ -253,7 +281,30 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Emploi du temps</Text>
-          {sortedSchedule.length === 0 ? (
+          {dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length)
+            ? [1, 2, 3, 4, 5].map((day) => {
+                const slot = dayLists.find((d) => d.day_of_week === day);
+                return (
+                  <View key={day} style={styles.scheduleRow}>
+                    <View style={styles.scheduleDay}>
+                      <Text style={styles.scheduleDayText}>
+                        {(DAYS[day] || '—').slice(0, 3)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scheduleSubject}>
+                        {(slot?.subject_names ?? []).join(', ') || '—'}
+                      </Text>
+                      <Text style={styles.scheduleMeta}>
+                        {(slot?.materials ?? []).join(', ') || '—'}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })
+            : null}
+          {sortedSchedule.length === 0 &&
+          !dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length) ? (
             <Text style={styles.emptyLine}>—</Text>
           ) : (
             sortedSchedule.map((slot) => (
@@ -283,6 +334,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           <SegmentedControl
             options={[
               { id: 'carnet', label: 'Carnet' },
+              { id: 'travaux', label: 'Travaux' },
               { id: 'infos', label: 'Infos' },
               { id: 'famille', label: 'Famille' },
             ]}
@@ -297,16 +349,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                   <Text style={styles.detailTitle}>{sub.subject_name}</Text>
                   <Text style={styles.detailMeta}>
                     {sub.periods
-                      .map((p) => {
-                        const pts = p.grade_value;
-                        const coef = p.coefficient;
-                        if (pts == null) return `${p.period_name}: —`;
-                        if (coef && coef > 0) {
-                          const ten = Math.round((Number(pts) / Number(coef)) * 10 * 100) / 100;
-                          return `${p.period_name}: ${pts}/${coef} (${ten.toFixed(2)}/10)`;
-                        }
-                        return `${p.period_name}: ${pts}`;
-                      })
+                      .map((p) =>
+                        p.has_grade === false
+                          ? `${p.period_name}: —`
+                          : `${p.period_name}: ${p.grade_value}`,
+                      )
                       .join(' · ')}
                   </Text>
                 </View>
@@ -316,8 +363,31 @@ export function StudentFicheScreen({ navigation, route }: Props) {
             )
           ) : null}
 
+          {detailTab === 'travaux' ? (
+            homework.length ? (
+              homework.map((h) => (
+                <View key={h.id} style={styles.detailRow}>
+                  <Text style={styles.detailTitle}>
+                    {h.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'} · {h.title}
+                  </Text>
+                  <Text style={styles.detailMeta}>
+                    {[h.subject_name, h.due_date, h.score ? `Note ${h.score}` : null, h.comment]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyLine}>Aucun travail</Text>
+            )
+          ) : null}
+
           {detailTab === 'infos' ? (
             <>
+              {canSeeNisu && !isHigherEducationLevel(student.class_level) ? (
+                <Info label="NISU" value={student.order_number} />
+              ) : null}
+              <Info label="Code de gestion" value={student.management_code} />
               <Info label="Genre" value={student.gender} />
               <Info label="Naissance" value={formatDateJJMMAAAA(student.birth_date)} />
               <Info label="Lieu" value={student.birth_place} />

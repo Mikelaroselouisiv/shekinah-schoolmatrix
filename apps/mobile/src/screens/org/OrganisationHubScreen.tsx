@@ -27,16 +27,6 @@ const MODULES: {
     title: 'Classes',
     permission: 'classes',
   },
-  {
-    screen: 'OrgRooms',
-    title: 'Salles',
-    permission: 'rooms',
-  },
-  {
-    screen: 'OrgTeachers',
-    title: 'Professeurs',
-    permission: 'teachers',
-  },
 ];
 
 export function OrganisationHubScreen({ navigation }: Props) {

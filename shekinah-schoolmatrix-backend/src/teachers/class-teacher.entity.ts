@@ -5,6 +5,7 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  UpdateDateColumn,
   Unique,
 } from 'typeorm';
 import { Class } from '../classes/class.entity';
@@ -35,4 +36,7 @@ export class ClassTeacher {
 
   @CreateDateColumn()
   created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 }

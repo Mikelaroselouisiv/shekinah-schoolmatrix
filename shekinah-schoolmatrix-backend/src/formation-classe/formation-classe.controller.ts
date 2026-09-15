@@ -156,6 +156,24 @@ export class FormationClasseController {
     return { ok: true, ...result };
   }
 
+  @Post('move-student')
+  async moveStudent(
+    @Req() req: { user?: RequestActor },
+    @Body()
+    body: { student_id: string; academic_year_id: string; class_id: string },
+  ) {
+    if (!body?.student_id || !body?.academic_year_id || !body?.class_id) {
+      throw new BadRequestException('student_id, academic_year_id et class_id requis');
+    }
+    await this.levelScope.assertClassAccess(req.user, body.class_id);
+    const moved = await this.formationClasseService.moveStudentToClass(
+      body.student_id,
+      body.academic_year_id,
+      body.class_id,
+    );
+    return { ok: true, ...moved };
+  }
+
   @Post('add-student')
   async addStudent(
     @Req() req: { user?: RequestActor },

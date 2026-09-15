@@ -61,6 +61,42 @@ type Room = { id: string; name: string; class_id?: string | null; active?: boole
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
+type TeacherItem = { id: number; first_name?: string | null; last_name?: string | null };
+type ClassMoment = {
+  id: string;
+  class_id: string;
+  class_name?: string | null;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  label: string | null;
+};
+type SchoolDuty = {
+  id: string;
+  academic_year: string;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  responsible_user_id: number | null;
+  responsible_name: string | null;
+};
+
+function teacherName(t: TeacherItem): string {
+  return [t.first_name, t.last_name].filter(Boolean).join(" ") || `#${t.id}`;
+}
+
+const WEEKDAYS = [
+  { index: 1, label: "Lundi" },
+  { index: 2, label: "Mardi" },
+  { index: 3, label: "Mercredi" },
+  { index: 4, label: "Jeudi" },
+  { index: 5, label: "Vendredi" },
+  { index: 6, label: "Samedi" },
+];
 
 export default function SchedulePage() {
   const [tab, setTab] = useState<"cours" | "examens" | "parascolaires">("cours");
@@ -93,6 +129,22 @@ export default function SchedulePage() {
   const [examWeekStart, setExamWeekStart] = useState(mondayOf(todayIso()));
   const [examGridPeriod, setExamGridPeriod] = useState("");
 
+  const [teachers, setTeachers] = useState<TeacherItem[]>([]);
+  const [moments, setMoments] = useState<ClassMoment[]>([]);
+  const [duties, setDuties] = useState<SchoolDuty[]>([]);
+  const [devotionStart, setDevotionStart] = useState("07:30");
+  const [devotionEnd, setDevotionEnd] = useState("07:45");
+  const [devotionByDay, setDevotionByDay] = useState<Record<number, string>>({
+    1: "",
+    2: "",
+    3: "",
+    4: "",
+    5: "",
+    6: "",
+  });
+  const [savingDevotion, setSavingDevotion] = useState(false);
+  const [savingMoment, setSavingMoment] = useState(false);
+
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [activityForm, setActivityForm] = useState({
     academic_year_id: "",
@@ -109,20 +161,23 @@ export default function SchedulePage() {
 
   async function loadRefs() {
     try {
-      const [cRes, rRes, ayRes] = await Promise.all([
+      const [cRes, rRes, ayRes, tRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/rooms`),
         fetchWithAuth(`${API_BASE}/academic-years`),
+        fetchWithAuth(`${API_BASE}/teachers`),
       ]);
       const cData = await cRes.json();
       const rData = await rRes.json();
       const ayData = await ayRes.json();
+      const tData = await tRes.json();
       if (!cRes.ok) throw new Error(cData.message || "Erreur classes");
       if (!rRes.ok) throw new Error(rData.message || "Erreur salles");
       if (!ayRes.ok) throw new Error(ayData.message || "Erreur années scolaires");
       setClasses(cData.classes ?? []);
       setRooms(rData.rooms ?? []);
       setAcademicYears(ayData.academic_years ?? []);
+      setTeachers(tRes.ok ? (tData.teachers ?? []) : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
@@ -157,6 +212,39 @@ export default function SchedulePage() {
       setSlots(data.schedule_slots ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function loadMomentsAndDuties(overrideYearId?: string) {
+    try {
+      const params = new URLSearchParams();
+      const yearId = overrideYearId ?? academicYearFilter;
+      const yearName = academicYears.find((ay) => ay.id === yearId)?.name || defaultYearName;
+      if (yearName) params.set("academic_year", yearName);
+      if (classFilter) params.set("class_id", classFilter);
+      const [mRes, dRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/schedule-moments?${params}`),
+        fetchWithAuth(`${API_BASE}/school-week-duties?${yearName ? `academic_year=${encodeURIComponent(yearName)}&kind=DEVOTION` : "kind=DEVOTION"}`),
+      ]);
+      const mData = await mRes.json();
+      const dData = await dRes.json();
+      setMoments(mRes.ok ? (mData.schedule_moments ?? []) : []);
+      const list: SchoolDuty[] = dRes.ok ? (dData.school_week_duties ?? []) : [];
+      setDuties(list);
+      if (list.length > 0) {
+        setDevotionStart(list[0].start_time);
+        setDevotionEnd(list[0].end_time);
+        setDevotionByDay((prev) => {
+          const next = { ...prev };
+          for (const d of list) {
+            next[d.day_of_week] = d.responsible_user_id != null ? String(d.responsible_user_id) : "";
+          }
+          return next;
+        });
+      }
+    } catch {
+      setMoments([]);
+      setDuties([]);
     }
   }
 
@@ -208,7 +296,12 @@ export default function SchedulePage() {
     } catch {
       /* ignore */
     }
-    await Promise.all([loadSlots(defaultYearId), loadExams(), loadActivities(defaultYearId)]);
+    await Promise.all([
+      loadSlots(defaultYearId),
+      loadExams(),
+      loadActivities(defaultYearId),
+      loadMomentsAndDuties(defaultYearId),
+    ]);
     setLoading(false);
   }
 
@@ -221,6 +314,7 @@ export default function SchedulePage() {
       loadSlots();
       loadExams();
       loadActivities();
+      loadMomentsAndDuties();
     }
   }, [academicYearFilter, classFilter, roomFilter]);
 
@@ -300,6 +394,87 @@ export default function SchedulePage() {
       setGridError(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSavingCell(null);
+    }
+  }
+
+  async function handleSaveDevotion() {
+    const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+    if (!yearName) {
+      setError("Choisissez une année scolaire pour la dévotion.");
+      return;
+    }
+    setSavingDevotion(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school-week-duties`, {
+        method: "PUT",
+        body: JSON.stringify({
+          academic_year: yearName,
+          kind: "DEVOTION",
+          start_time: devotionStart,
+          end_time: devotionEnd,
+          days: WEEKDAYS.map((d) => ({
+            day_of_week: d.index,
+            responsible_user_id: devotionByDay[d.index] ? Number(devotionByDay[d.index]) : null,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setDuties(data.school_week_duties ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingDevotion(false);
+    }
+  }
+
+  async function handleCreateMoment(payload: {
+    kind: string;
+    start_time: string;
+    end_time: string;
+    label: string;
+    days: number[];
+  }) {
+    if (!gridRoom?.class_id) return;
+    const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+    setSavingMoment(true);
+    setGridError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/schedule-moments`, {
+        method: "POST",
+        body: JSON.stringify({
+          class_id: gridRoom.class_id,
+          academic_year: yearName || undefined,
+          kind: payload.kind,
+          start_time: payload.start_time,
+          end_time: payload.end_time,
+          label: payload.label || null,
+          days: payload.days,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      await loadMomentsAndDuties();
+    } catch (e) {
+      setGridError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingMoment(false);
+    }
+  }
+
+  async function handleDeleteMoment(id: string) {
+    if (!confirm("Supprimer ce moment ?")) return;
+    setSavingMoment(true);
+    setGridError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/schedule-moments/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      await loadMomentsAndDuties();
+    } catch (e) {
+      setGridError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingMoment(false);
     }
   }
 
@@ -554,6 +729,68 @@ export default function SchedulePage() {
       {/* Horaire des cours */}
       {tab === "cours" && (
         <section className="space-y-4">
+          <div className="rounded-xl border border-[var(--app-border)] bg-white p-4 space-y-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Dévotion — toute l’école</h3>
+              <p className="text-sm text-slate-500">
+                Un responsable par jour, créé une fois puis repris sur tous les horaires de classe.
+                Ce n’est pas un cours d’une heure.
+              </p>
+            </div>
+            {!(academicYearFilter || defaultYearId) ? (
+              <p className="text-sm text-amber-700">Choisissez une année scolaire pour enregistrer la dévotion.</p>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Début</label>
+                    <input
+                      type="time"
+                      value={devotionStart}
+                      onChange={(e) => setDevotionStart(e.target.value)}
+                      className="text-sm border border-[var(--app-border)] rounded px-2 py-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Fin</label>
+                    <input
+                      type="time"
+                      value={devotionEnd}
+                      onChange={(e) => setDevotionEnd(e.target.value)}
+                      className="text-sm border border-[var(--app-border)] rounded px-2 py-1.5"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {WEEKDAYS.map((d) => (
+                    <div key={d.index}>
+                      <label className="block text-xs text-slate-500 mb-0.5">{d.label}</label>
+                      <select
+                        value={devotionByDay[d.index] ?? ""}
+                        onChange={(e) =>
+                          setDevotionByDay((prev) => ({ ...prev, [d.index]: e.target.value }))
+                        }
+                        className="w-full text-sm border border-[var(--app-border)] rounded px-2 py-1.5"
+                      >
+                        <option value="">— Responsable —</option>
+                        {teachers.map((t) => (
+                          <option key={t.id} value={t.id}>{teacherName(t)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveDevotion()}
+                  disabled={savingDevotion}
+                  className="app-btn-primary text-sm py-2 disabled:opacity-60"
+                >
+                  {savingDevotion ? "Enregistrement…" : "Enregistrer la dévotion"}
+                </button>
+              </>
+            )}
+          </div>
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Salles</h3>
             <Link href="/dashboard/rooms" className="text-sm text-[var(--school-accent-1)] hover:underline">
@@ -753,6 +990,15 @@ export default function SchedulePage() {
           }}
           onSelectCourse={handleCourseCell}
           onSelectExam={handleExamCell}
+          classMoments={
+            gridRoom?.class_id
+              ? moments.filter((m) => m.class_id === gridRoom.class_id)
+              : []
+          }
+          schoolDuties={duties}
+          onCreateMoment={tab === "cours" ? handleCreateMoment : undefined}
+          onDeleteMoment={tab === "cours" ? handleDeleteMoment : undefined}
+          momentsBusy={savingMoment}
         />
       )}
     </div>

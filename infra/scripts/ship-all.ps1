@@ -351,7 +351,7 @@ Write-Host "Feeds MAJ :"
 Write-Host "  Remote: https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/remote/latest.yml"
 Write-Host "  Server: https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/server/latest.yml"
 Write-Host "API cloud  : http://34.118.138.96/"
-Write-Host "GitHub     : https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix"
+Write-Host "GitHub     : https://github.com/Mikelaroselouisiv/schoolmatrix"
 Write-Host ""
 Write-Host "Sur les machines installées : notification → télécharger → redémarrer."
 if ($DryRun) {

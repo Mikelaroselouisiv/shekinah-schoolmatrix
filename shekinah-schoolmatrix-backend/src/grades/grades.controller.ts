@@ -146,6 +146,7 @@ export class GradesController {
       subject_id: string;
       period_id: string;
       grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
+      decisions?: { assignment_id: string; decision?: string | null }[];
     },
   ) {
     if (isTeacherRoleName(req.user?.role)) {

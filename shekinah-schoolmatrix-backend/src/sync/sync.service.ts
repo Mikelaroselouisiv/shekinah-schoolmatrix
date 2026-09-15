@@ -25,6 +25,23 @@ import {
   listSyncEntityNames,
 } from './sync.entities';
 import { normalizeMediaFieldsInPlace } from '../uploads/media-url';
+import { Role } from '../roles/role.entity';
+import {
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
+import { Account } from '../finance/account.entity';
+import { Exercice } from '../finance/exercice.entity';
+import { User } from '../users/user.entity';
+
+/** Entités dont la FK prof est un id serial User (pas un UUID). */
+const TEACHER_USER_FK_ENTITIES = new Set<SyncEntityName>([
+  'TeacherClassSubject',
+  'ClassTeacher',
+  'TeacherSubject',
+  'ScheduleSlot',
+  'HomeworkAssignment',
+]);
 
 export type SyncWireRecord = {
   uuid: string;
@@ -32,13 +49,6 @@ export type SyncWireRecord = {
   deletedAt: string | null;
   data: Record<string, unknown>;
 };
-
-export type SyncApplyAction =
-  | 'created'
-  | 'updated'
-  | 'deleted'
-  | 'skipped'
-  | 'error';
 
 @Injectable()
 export class SyncService implements OnModuleInit {
@@ -48,6 +58,10 @@ export class SyncService implements OnModuleInit {
   /** Cache existence FK pendant un push (salle absente ≠ bloquer l’élève). */
   private fkExistCache = new Map<string, Set<string>>();
   private fkMissCache = new Map<string, Set<string>>();
+  /** role.name → id local (les ids ne voyagent pas : seed / renommage TEACHER). */
+  private roleByNameCache = new Map<string, number | null>();
+  /** User serial GCP → serial local (même e-mail, ids différents). */
+  private userIdAlias = new Map<number, number>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -128,7 +142,6 @@ export class SyncService implements OnModuleInit {
     }
     const when = deletedAt ?? new Date();
     const eid = String(entityId);
-    if (!eid) return;
     let row = await this.tombstoneRepo.findOne({
       where: { entity_name: entityName, entity_id: eid },
     });
@@ -151,15 +164,6 @@ export class SyncService implements OnModuleInit {
     if (opts?.kick !== false) this.syncKick.kick(`tombstone:${entityName}`);
   }
 
-  /** Alias historique conservé pour les services métier déjà écrits. */
-  async recordDelete(
-    entityType: SyncEntityName | string,
-    entityId: string | number,
-    deletedAt: Date = new Date(),
-  ): Promise<void> {
-    await this.markDeleted(entityType as SyncEntityName, entityId, deletedAt);
-  }
-
   private isLocalTruthNode(): boolean {
     const id = this.nodeId.toUpperCase();
     return (
@@ -180,7 +184,12 @@ export class SyncService implements OnModuleInit {
    * Pull deltas. Curseur composite (since + afterId) pour ne jamais rester
    * bloqué sur la même ligne (précision µs Postgres vs ms ISO).
    */
-  async pull(entityName: string, since?: string, take = 200, afterId?: string) {
+  async pull(
+    entityName: string,
+    since?: string,
+    take = 200,
+    afterId?: string,
+  ) {
     const def = SYNC_ENTITY_MAP.get(entityName as SyncEntityName);
     if (!def) {
       throw new BadRequestException(`Entité sync inconnue: ${entityName}`);
@@ -203,8 +212,21 @@ export class SyncService implements OnModuleInit {
       .take(limit);
 
     if (after) {
+      // Départage à égalité de timestamp : comparer l'id dans son type réel.
+      // En texte '100' > '99' est faux, donc un import qui crée plus de 99
+      // lignes dans la même transaction bloquait le curseur définitivement.
+      const idColumn = meta.primaryColumns[0];
+      const numericId =
+        (idColumn?.type === Number ||
+          ['int', 'int2', 'int4', 'int8', 'integer', 'smallint', 'bigint'].includes(
+            String(idColumn?.type),
+          )) &&
+        /^\d+$/.test(after);
+      const comparison = numericId
+        ? 'e.id > CAST(:afterId AS bigint)'
+        : 'CAST(e.id AS varchar) > :afterId';
       qb.where(
-        `(e.${timeProp} > CAST(:since AS timestamptz) OR (e.${timeProp} = CAST(:since AS timestamptz) AND CAST(e.id AS varchar) > :afterId))`,
+        `(e.${timeProp} > CAST(:since AS timestamptz) OR (e.${timeProp} = CAST(:since AS timestamptz) AND ${comparison}))`,
         { since: sinceStr, afterId: after },
       );
     } else {
@@ -265,11 +287,24 @@ export class SyncService implements OnModuleInit {
         data: this.toWireData(full, meta),
       };
     });
+    if (entityName === 'User') {
+      await this.attachUserRoleNames(records);
+    }
+    if (TEACHER_USER_FK_ENTITIES.has(entityName as SyncEntityName)) {
+      await this.attachTeacherEmails(records);
+    }
+    if (entityName === 'JournalEntry') {
+      await this.attachJournalEntryExerciceKeys(records);
+    }
+    if (entityName === 'JournalEntryLine') {
+      await this.attachJournalLineAccountCodes(records);
+    }
 
     // Curseur = dernier row lu (y compris deletes/lignes filtrés LWW).
     const lastRow: any = rows[rows.length - 1];
     const lastCursorTs =
-      cursorTsById.get(String(lastRow.id)) || this.toIso(lastRow[timeProp]);
+      cursorTsById.get(String(lastRow.id)) ||
+      this.toIso(lastRow[timeProp]);
     return {
       entity: entityName,
       records,
@@ -286,7 +321,10 @@ export class SyncService implements OnModuleInit {
   private async omitStaleTombstones(rows: any[]): Promise<any[]> {
     const kept: any[] = [];
     for (const row of rows) {
-      const liveAt = await this.liveRowUpdatedAt(row.entity_name, row.entity_id);
+      const liveAt = await this.liveRowUpdatedAt(
+        row.entity_name,
+        row.entity_id,
+      );
       if (
         liveAt &&
         !this.shouldApply(this.parseTime(row.deleted_at), liveAt, undefined)
@@ -312,7 +350,11 @@ export class SyncService implements OnModuleInit {
     return rows.filter((r: any) => {
       const deletedAt = tombAt.get(String(r.id));
       if (!deletedAt) return true;
-      return this.shouldApply(this.parseTime(r[timeProp]), deletedAt, undefined);
+      return this.shouldApply(
+        this.parseTime(r[timeProp]),
+        deletedAt,
+        undefined,
+      );
     });
   }
 
@@ -399,13 +441,14 @@ export class SyncService implements OnModuleInit {
       meta.columns.find((c) => c.propertyName === timeProp)?.databaseName ||
       timeProp;
     const idTexts = ids.map((id) => String(id));
-    const rows: Array<{ id: string; ts: string }> = await this.dataSource.query(
-      `SELECT id::text AS id,
-              trim(both '"' from to_json("${col}")::text) AS ts
-       FROM "${schema}"."${table}"
-       WHERE id::text = ANY($1::text[])`,
-      [idTexts],
-    );
+    const rows: Array<{ id: string; ts: string }> =
+      await this.dataSource.query(
+        `SELECT id::text AS id,
+                trim(both '"' from to_json("${col}")::text) AS ts
+         FROM "${schema}"."${table}"
+         WHERE id::text = ANY($1::text[])`,
+        [idTexts],
+      );
     for (const r of rows) {
       if (r.ts) map.set(String(r.id), r.ts);
     }
@@ -430,9 +473,10 @@ export class SyncService implements OnModuleInit {
     const meta = repo.metadata;
     this.fkExistCache.clear();
     this.fkMissCache.clear();
+    this.roleByNameCache.clear();
     const results: Array<{
       uuid: string;
-      action: SyncApplyAction;
+      action: 'created' | 'updated' | 'skipped' | 'deleted' | 'error';
       error?: string;
     }> = [];
 
@@ -539,7 +583,6 @@ export class SyncService implements OnModuleInit {
         out[f] = existing[f];
       }
     }
-    // Propriétés absentes du filaire cloud (ancienne version) → garder le local
     for (const f of fields) {
       if (
         !Object.prototype.hasOwnProperty.call(out, f) &&
@@ -573,10 +616,6 @@ export class SyncService implements OnModuleInit {
     );
   }
 
-  /**
-   * SchoolProfile = une seule ligne. LWW adopte l’UUID gagnant et
-   * supprime les doublons locaux.
-   */
   private async applySchoolProfileSingleton(
     repo: Repository<any>,
     meta: EntityMetadata,
@@ -618,14 +657,12 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
-    // Fusionner le contact local avant d’appliquer le filaire cloud (souvent null).
     const merged = this.mergeSchoolProfileData(
       newestLocal as Record<string, unknown>,
       record.data,
     );
 
     const existed = all.some((p) => String(p.id) === keepId);
-    // Réassigner les signatures avant suppression (évite CASCADE wipe).
     try {
       const localIds = all.map((p) => String(p.id));
       await this.dataSource.query(
@@ -638,7 +675,14 @@ export class SyncService implements OnModuleInit {
       /* table absente sur très vieux schémas */
     }
     await this.deleteProfilesExcept(repo, keepId);
-    await this.persist(repo, meta, keepId, merged, record.updatedAt, timeField);
+    await this.persist(
+      repo,
+      meta,
+      keepId,
+      merged,
+      record.updatedAt,
+      timeField,
+    );
     return existed ? 'updated' : 'created';
   }
 
@@ -764,8 +808,24 @@ export class SyncService implements OnModuleInit {
 
     this.applyingRemoteTombstone += 1;
     try {
+      // Nettoyage dépendances avant delete (schémas sans CASCADE / anciennes FK).
       if (entityName === 'User') {
-        await this.deleteUserDependencies(primaryId);
+        try {
+          await this.dataSource.query(
+            `DELETE FROM user_linked_student WHERE user_id = $1`,
+            [primaryId],
+          );
+        } catch {
+          /* table absente */
+        }
+        try {
+          await this.dataSource.query(
+            `DELETE FROM student_parent WHERE user_id = $1`,
+            [primaryId],
+          );
+        } catch {
+          /* table absente */
+        }
       }
       await targetRepo.delete(primaryId as any);
     } catch {
@@ -775,20 +835,6 @@ export class SyncService implements OnModuleInit {
       this.applyingRemoteTombstone -= 1;
     }
     return true;
-  }
-
-  /** Schémas sans CASCADE / anciennes FK : purger les liens avant le compte. */
-  private async deleteUserDependencies(userId: string | number): Promise<void> {
-    for (const table of ['user_linked_student', 'student_parent']) {
-      try {
-        await this.dataSource.query(
-          `DELETE FROM ${table} WHERE user_id = $1`,
-          [userId],
-        );
-      } catch {
-        /* table absente */
-      }
-    }
   }
 
   private async applyOne(
@@ -804,37 +850,33 @@ export class SyncService implements OnModuleInit {
     },
     sourceNodeId?: string,
   ): Promise<'created' | 'updated' | 'skipped' | 'deleted'> {
-    const primaryId = this.coercePrimaryId(meta, record.uuid);
-    const existing = await repo.findOne({
+    let primaryId = this.coercePrimaryId(meta, record.uuid);
+    let existing = await repo.findOne({
       where: { id: primaryId } as any,
       loadRelationIds: true,
     });
-    const incomingAt = this.parseTime(record.updatedAt);
-
-    // Delete explicite porté par l'enregistrement filaire (protocole hérité).
-    if (record.deletedAt) {
-      const deleteAt = this.parseTime(record.deletedAt);
-      if (existing) {
-        const existingAt = this.parseTime(existing[timeField]);
-        if (!this.shouldApply(deleteAt, existingAt, sourceNodeId)) {
-          return 'skipped';
-        }
-        this.applyingRemoteTombstone += 1;
-        try {
-          if (entityName === 'User') {
-            await this.deleteUserDependencies(primaryId);
-          }
-          await repo.delete(primaryId as any);
-        } catch {
-          return 'skipped';
-        } finally {
-          this.applyingRemoteTombstone -= 1;
-        }
+    let data = record.data;
+    if (entityName === 'User') {
+      data = await this.mapUserRoleForLocal(data);
+      const localId = await this.redirectUserToLocalEmail(primaryId, data);
+      if (localId != null) {
+        primaryId = localId;
+        existing = await repo.findOne({
+          where: { id: primaryId } as any,
+          loadRelationIds: true,
+        });
       }
-      await this.markDeleted(entityName, record.uuid, deleteAt, { kick: false });
-      return 'deleted';
     }
-
+    if (TEACHER_USER_FK_ENTITIES.has(entityName)) {
+      data = await this.mapTeacherUserFkForLocal(entityName, data);
+    }
+    if (entityName === 'JournalEntry') {
+      data = await this.mapJournalEntryExerciceForLocal(data);
+    }
+    if (entityName === 'JournalEntryLine') {
+      data = await this.mapJournalLineAccountForLocal(data);
+    }
+    const incomingAt = this.parseTime(record.updatedAt);
     const tombAt = await this.loadTombstoneDeletedAt(
       entityName,
       String(record.uuid),
@@ -850,7 +892,22 @@ export class SyncService implements OnModuleInit {
         this.applyingRemoteTombstone += 1;
         try {
           if (entityName === 'User') {
-            await this.deleteUserDependencies(primaryId);
+            try {
+              await this.dataSource.query(
+                `DELETE FROM user_linked_student WHERE user_id = $1`,
+                [primaryId],
+              );
+            } catch {
+              /* ignore */
+            }
+            try {
+              await this.dataSource.query(
+                `DELETE FROM student_parent WHERE user_id = $1`,
+                [primaryId],
+              );
+            } catch {
+              /* ignore */
+            }
           }
           await repo.delete(primaryId as any);
         } catch {
@@ -869,48 +926,62 @@ export class SyncService implements OnModuleInit {
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
-      await this.persist(
+      const wrote = await this.persistSyncedRow(
+        entityName,
         repo,
         meta,
         primaryId,
-        record.data,
+        data,
         record.updatedAt,
         timeField,
+        sourceNodeId,
       );
-      return 'created';
+      return wrote === 'skipped' ? 'skipped' : 'created';
     }
 
     if (!existing) {
-      await this.persist(
+      const wrote = await this.persistSyncedRow(
+        entityName,
         repo,
         meta,
         primaryId,
-        record.data,
+        data,
         record.updatedAt,
         timeField,
+        sourceNodeId,
       );
-      return 'created';
+      return wrote === 'skipped' ? 'skipped' : 'created';
     }
 
     const existingAt = this.parseTime(existing[timeField]);
 
     if (!this.shouldApply(incomingAt, existingAt, sourceNodeId)) {
+      if (entityName === 'User') {
+        await this.healUserRoleId(primaryId, record.data);
+      }
       return 'skipped';
     }
 
-    let data = record.data;
     if (entityName === 'SchoolSignature') {
       data = this.mergeSchoolSignatureData(
         existing as Record<string, unknown>,
-        record.data,
+        data,
       );
     }
 
-    await this.persist(repo, meta, primaryId, data, record.updatedAt, timeField);
-    return 'updated';
+    const wrote = await this.persistSyncedRow(
+      entityName,
+      repo,
+      meta,
+      primaryId,
+      data,
+      record.updatedAt,
+      timeField,
+      sourceNodeId,
+    );
+    return wrote === 'skipped' ? 'skipped' : 'updated';
   }
 
-  /** PK int (users) ou uuid string — le filaire est toujours string. */
   private coercePrimaryId(meta: EntityMetadata, uuid: string): string | number {
     const col = meta.primaryColumns[0];
     const t = col?.type;
@@ -939,10 +1010,6 @@ export class SyncService implements OnModuleInit {
     return uuid;
   }
 
-  /**
-   * Last-write-wins sur updatedAt.
-   * À égalité : le nœud local conserve ; le cloud accepte le local.
-   */
   private shouldApply(
     incomingAt: Date,
     existingAt: Date,
@@ -1037,8 +1104,23 @@ export class SyncService implements OnModuleInit {
     }
 
     const payload: Record<string, unknown> = { id: primaryId };
-    // Chemins uploads/… → URL GCS publique (affichage Server ↔ Remote).
     normalizeMediaFieldsInPlace(incoming);
+
+    for (const rel of meta.relations) {
+      if (!(rel.isManyToOne || (rel.isOneToOne && rel.isOwning))) continue;
+      const prop = rel.propertyName;
+      if (Object.prototype.hasOwnProperty.call(incoming, prop)) continue;
+      const joinProp = rel.joinColumns?.[0]?.propertyName;
+      const joinDb = rel.joinColumns?.[0]?.databaseName;
+      if (joinProp && Object.prototype.hasOwnProperty.call(incoming, joinProp)) {
+        incoming = { ...incoming, [prop]: incoming[joinProp] };
+      } else if (
+        joinDb &&
+        Object.prototype.hasOwnProperty.call(incoming, joinDb)
+      ) {
+        incoming = { ...incoming, [prop]: incoming[joinDb] };
+      }
+    }
 
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;
@@ -1047,7 +1129,9 @@ export class SyncService implements OnModuleInit {
       if (Object.prototype.hasOwnProperty.call(incoming, prop)) {
         const v = incoming[prop];
         payload[prop] =
-          typeof v === 'string' && v.trim() === '' && col.isNullable ? null : v;
+          typeof v === 'string' && v.trim() === '' && col.isNullable
+            ? null
+            : v;
       }
     }
 
@@ -1081,7 +1165,7 @@ export class SyncService implements OnModuleInit {
 
     const entity = repo.create(payload as any);
     try {
-      await repo.save(entity);
+      await repo.save(entity, { listeners: false });
     } catch (err) {
       if (!this.isForeignKeyViolation(err)) throw err;
       let dropped = false;
@@ -1094,7 +1178,7 @@ export class SyncService implements OnModuleInit {
         }
       }
       if (!dropped) throw err;
-      await repo.save(repo.create(payload as any));
+      await repo.save(repo.create(payload as any), { listeners: false });
     }
 
     if (typeof primaryId === 'number') {
@@ -1111,11 +1195,7 @@ export class SyncService implements OnModuleInit {
       if (/^\d+$/.test(t)) return Number(t);
       return t;
     }
-    if (
-      typeof fk === 'object' &&
-      fk !== null &&
-      'id' in (fk as { id?: unknown })
-    ) {
+    if (typeof fk === 'object' && fk !== null && 'id' in (fk as { id?: unknown })) {
       return this.coerceRelationId((fk as { id: unknown }).id);
     }
     return null;
@@ -1127,6 +1207,376 @@ export class SyncService implements OnModuleInit {
     if (rel.isNullable === true) return true;
     if (rel.isNullable === false) return false;
     return rel.joinColumns?.some((c) => c.isNullable) ?? false;
+  }
+
+  /**
+   * persist + fusion de la clé naturelle school_week_duty
+   * (une dévotion par année / jour : éviter 23505 et un curseur qui saute).
+   */
+  private async persistSyncedRow(
+    entityName: SyncEntityName,
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    primaryId: string | number,
+    data: Record<string, unknown>,
+    updatedAt: string | undefined,
+    timeField: 'updated_at' | 'created_at',
+    sourceNodeId?: string,
+  ): Promise<'ok' | 'skipped'> {
+    try {
+      await this.persist(repo, meta, primaryId, data, updatedAt, timeField);
+      return 'ok';
+    } catch (err) {
+      if (entityName === 'SchoolWeekDuty' && this.isUniqueViolation(err)) {
+        return this.reconcileSchoolWeekDutyUnique(
+          repo,
+          meta,
+          primaryId,
+          data,
+          updatedAt,
+          timeField,
+          sourceNodeId,
+        );
+      }
+      if (
+        (entityName === 'TeacherClassSubject' ||
+          entityName === 'ClassTeacher' ||
+          entityName === 'TeacherSubject' ||
+          entityName === 'ClassSubject') &&
+        this.isUniqueViolation(err)
+      ) {
+        return 'skipped';
+      }
+      if (entityName === 'Account' && this.isUniqueViolation(err)) {
+        return 'skipped';
+      }
+      if (entityName === 'User' && this.isUniqueViolation(err)) {
+        const localId = await this.redirectUserToLocalEmail(primaryId, data);
+        await this.healUserRoleId(localId ?? primaryId, data);
+        return 'skipped';
+      }
+      throw err;
+    }
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    const e = err as { code?: string; driverError?: { code?: string } };
+    return e?.code === '23505' || e?.driverError?.code === '23505';
+  }
+
+  /**
+   * `role_id` est local (seed / TEACHER renommé). Le filaire porte `role_name`.
+   * Sans ça, un Server frais voit les profs comme un autre rôle → annuaire vide,
+   * alors que Remote affiche les mêmes personnes sur les classes.
+   */
+  private async attachUserRoleNames(records: SyncWireRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    const roles = await this.dataSource.getRepository(Role).find();
+    const byId = new Map(roles.map((r) => [Number(r.id), r.name]));
+    for (const rec of records) {
+      const raw = rec.data.role;
+      const id =
+        typeof raw === 'number'
+          ? raw
+          : typeof raw === 'string' && /^\d+$/.test(raw)
+            ? Number(raw)
+            : null;
+      const name = id != null ? byId.get(id) : undefined;
+      if (name) rec.data.role_name = name;
+    }
+  }
+
+  private async mapUserRoleForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const name =
+      typeof data.role_name === 'string' ? data.role_name.trim() : '';
+    if (!name) return data;
+    const roleId = await this.resolveSyncedRoleId(name);
+    if (roleId == null) return data;
+    return { ...data, role: roleId };
+  }
+
+  private async healUserRoleId(
+    userId: string | number,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const name =
+      typeof data.role_name === 'string' ? data.role_name.trim() : '';
+    if (!name) return;
+    const roleId = await this.resolveSyncedRoleId(name);
+    if (roleId == null) return;
+    const id = typeof userId === 'number' ? userId : Number(userId);
+    const email =
+      typeof data.email === 'string' ? data.email.trim() : '';
+    if (Number.isFinite(id) && email) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1
+         WHERE role_id IS DISTINCT FROM $1
+           AND (id = $2 OR LOWER(email) = LOWER($3))`,
+        [roleId, id, email],
+      );
+      return;
+    }
+    if (Number.isFinite(id)) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS DISTINCT FROM $1`,
+        [roleId, id],
+      );
+      return;
+    }
+    if (email) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1
+         WHERE LOWER(email) = LOWER($2) AND role_id IS DISTINCT FROM $1`,
+        [roleId, email],
+      );
+    }
+  }
+
+  /**
+   * Même personne, ids serial différents (compte créé des deux côtés).
+   * Sans ça, teacher_class_subject.teacher_id pointe vers un id GCP
+   * absent du Server → FK, curseur avance, classes vides.
+   */
+  private async redirectUserToLocalEmail(
+    incomingId: string | number,
+    data: Record<string, unknown>,
+  ): Promise<number | null> {
+    const email =
+      typeof data.email === 'string' ? data.email.trim() : '';
+    const n = typeof incomingId === 'number' ? incomingId : Number(incomingId);
+    if (!email || !Number.isFinite(n)) return null;
+    const aliased = this.userIdAlias.get(n);
+    if (aliased != null) return aliased;
+    const local = await this.dataSource.getRepository(User).findOne({
+      where: { email },
+    });
+    if (!local || local.id === n) return null;
+    this.userIdAlias.set(n, local.id);
+    return local.id;
+  }
+
+  private async attachTeacherEmails(records: SyncWireRecord[]): Promise<void> {
+    const ids = new Set<number>();
+    for (const rec of records) {
+      const id = this.coerceRelationId(
+        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
+      );
+      if (typeof id === 'number') ids.add(id);
+    }
+    if (ids.size === 0) return;
+    const rows: Array<{ id: number; email: string | null }> =
+      await this.dataSource.query(
+        `SELECT id, email FROM users WHERE id = ANY($1::int[])`,
+        [Array.from(ids)],
+      );
+    const byId = new Map(rows.map((r) => [Number(r.id), r.email]));
+    for (const rec of records) {
+      const id = this.coerceRelationId(
+        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
+      );
+      if (typeof id !== 'number') continue;
+      const email = byId.get(id);
+      if (email) rec.data.teacher_email = email;
+    }
+  }
+
+  private async mapTeacherUserFkForLocal(
+    entityName: SyncEntityName,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const colKey = entityName === 'ClassTeacher' ? 'user_id' : 'teacher_id';
+    let incoming = this.coerceRelationId(
+      data.teacher ?? data[colKey],
+    );
+    if (typeof incoming === 'number' && this.userIdAlias.has(incoming)) {
+      incoming = this.userIdAlias.get(incoming) ?? incoming;
+    }
+    const email =
+      typeof data.teacher_email === 'string' ? data.teacher_email.trim() : '';
+
+    let localId: number | null = null;
+    if (typeof incoming === 'number') {
+      const hit: Array<{ id: number }> = await this.dataSource.query(
+        `SELECT id FROM users WHERE id = $1 LIMIT 1`,
+        [incoming],
+      );
+      if (hit.length) localId = incoming;
+    }
+    if (localId == null && email) {
+      const local = await this.dataSource.getRepository(User).findOne({
+        where: { email },
+      });
+      if (local) {
+        localId = local.id;
+        if (typeof incoming === 'number') this.userIdAlias.set(incoming, localId);
+      }
+    }
+    if (localId == null) return data;
+    return { ...data, teacher: localId, [colKey]: localId };
+  }
+
+  private async resolveSyncedRoleId(name: string): Promise<number | null> {
+    const key = name.toUpperCase().trim();
+    if (!key) return null;
+    if (this.roleByNameCache.has(key)) {
+      return this.roleByNameCache.get(key) ?? null;
+    }
+    const repo = this.dataSource.getRepository(Role);
+    const exact = await repo.findOne({ where: { name: key } });
+    if (exact) {
+      this.roleByNameCache.set(key, exact.id);
+      return exact.id;
+    }
+    if (isTeacherRoleName(key)) {
+      const alias = await repo.findOne({
+        where: { name: In(TEACHER_ROLE_NAMES) },
+      });
+      const id = alias?.id ?? null;
+      this.roleByNameCache.set(key, id);
+      return id;
+    }
+    this.roleByNameCache.set(key, null);
+    return null;
+  }
+
+  private async attachJournalEntryExerciceKeys(
+    records: SyncWireRecord[],
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const exercices = await this.dataSource.getRepository(Exercice).find();
+    const byId = new Map(exercices.map((e) => [e.id, e]));
+    for (const rec of records) {
+      const id = typeof rec.data.exercice === 'string' ? rec.data.exercice : null;
+      const ex = id ? byId.get(id) : undefined;
+      if (ex) {
+        rec.data.exercice_date_debut = ex.date_debut;
+        rec.data.exercice_date_fin = ex.date_fin;
+      }
+    }
+  }
+
+  private async mapJournalEntryExerciceForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const incomingId =
+      typeof data.exercice === 'string' ? data.exercice.trim() : '';
+    if (incomingId) {
+      const hit = await this.dataSource.getRepository(Exercice).findOne({
+        where: { id: incomingId },
+      });
+      if (hit) return data;
+    }
+    const debut =
+      typeof data.exercice_date_debut === 'string'
+        ? data.exercice_date_debut
+        : '';
+    const fin =
+      typeof data.exercice_date_fin === 'string' ? data.exercice_date_fin : '';
+    if (!debut || !fin) return data;
+    const local = await this.dataSource.getRepository(Exercice).findOne({
+      where: { date_debut: debut, date_fin: fin },
+    });
+    if (!local) return data;
+    return { ...data, exercice: local.id };
+  }
+
+  private async attachJournalLineAccountCodes(
+    records: SyncWireRecord[],
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const accounts = await this.dataSource.getRepository(Account).find();
+    const byId = new Map(accounts.map((a) => [a.id, a.code]));
+    for (const rec of records) {
+      const id = typeof rec.data.account === 'string' ? rec.data.account : null;
+      const code = id ? byId.get(id) : undefined;
+      if (code) rec.data.account_code = code;
+    }
+  }
+
+  private async mapJournalLineAccountForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const incomingId =
+      typeof data.account === 'string' ? data.account.trim() : '';
+    if (incomingId) {
+      const hit = await this.dataSource.getRepository(Account).findOne({
+        where: { id: incomingId },
+      });
+      if (hit) return data;
+    }
+    const code =
+      typeof data.account_code === 'string' ? data.account_code.trim() : '';
+    if (!code) return data;
+    const local = await this.dataSource.getRepository(Account).findOne({
+      where: { code },
+    });
+    if (!local) return data;
+    return { ...data, account: local.id };
+  }
+
+  /**
+   * FLAG : même (année, jour). RENTREE : même (année, cycle, jour, professeur).
+   */
+  private async reconcileSchoolWeekDutyUnique(
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    primaryId: string | number,
+    data: Record<string, unknown>,
+    updatedAt: string | undefined,
+    timeField: 'updated_at' | 'created_at',
+    sourceNodeId?: string,
+  ): Promise<'ok' | 'skipped'> {
+    const academic_year = String(data.academic_year ?? '').trim();
+    const kind = String(data.kind ?? 'RENTREE').trim();
+    const day_of_week = Number(data.day_of_week);
+    if (!academic_year || !Number.isInteger(day_of_week)) {
+      throw new BadRequestException(
+        'school_week_duty: clé naturelle incomplète (unique)',
+      );
+    }
+    const where =
+      kind === 'FLAG' && String(data.cycle ?? '') === 'PRIMAIRE'
+        ? { academic_year, kind: 'FLAG', cycle: 'PRIMAIRE', day_of_week }
+        : data.manual_name
+          ? {
+              academic_year,
+              kind,
+              day_of_week,
+              cycle: data.cycle ?? null,
+              manual_name: data.manual_name,
+            }
+          : {
+              academic_year,
+              kind,
+              day_of_week,
+              cycle: data.cycle ?? null,
+              responsible_user_id: data.responsible_user_id ?? null,
+            };
+    const other = await repo.findOne({
+      where: where as any,
+    });
+    if (!other || String(other.id) === String(primaryId)) {
+      throw new BadRequestException(
+        'school_week_duty: conflit unique sans ligne existante',
+      );
+    }
+    const incomingAt = this.parseTime(updatedAt);
+    const otherAt = this.parseTime(other[timeField]);
+    if (!this.shouldApply(incomingAt, otherAt, sourceNodeId)) {
+      await this.markDeleted('SchoolWeekDuty', primaryId);
+      return 'skipped';
+    }
+    await this.markDeleted('SchoolWeekDuty', other.id);
+    this.applyingRemoteTombstone += 1;
+    try {
+      await repo.delete(other.id);
+    } finally {
+      this.applyingRemoteTombstone -= 1;
+    }
+    await this.persist(repo, meta, primaryId, data, updatedAt, timeField);
+    return 'ok';
   }
 
   private isForeignKeyViolation(err: unknown): boolean {

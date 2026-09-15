@@ -1,16 +1,12 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Sessions renouvelables. Table locale au nœud : volontairement absente de
- * sync.entities.ts, une session ne se réplique pas entre l'école et le cloud.
- */
-export class RefreshToken1739000000016 implements MigrationInterface {
-  name = 'RefreshToken1739000000016';
+export class RefreshToken1739000000014 implements MigrationInterface {
+  name = 'RefreshToken1739000000014';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "refresh_token" (
-        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" integer NOT NULL,
         "token_hash" character varying(64) NOT NULL,
         "family_id" uuid NOT NULL,
@@ -39,13 +35,9 @@ export class RefreshToken1739000000016 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "IDX_refresh_token_family_id"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_refresh_token_family_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_refresh_token_user_id"`);
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "IDX_refresh_token_token_hash"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_refresh_token_token_hash"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "refresh_token"`);
   }
 }

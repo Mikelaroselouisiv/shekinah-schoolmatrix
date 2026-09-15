@@ -4,13 +4,13 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   EmptyState,
@@ -170,7 +170,7 @@ export function ExpensesScreen({}: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <FormScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <DateField label="Date" value={expenseDate} onChange={setExpenseDate} maximumDate={new Date()} />
           <Field label="Libellé" value={label} onChange={setLabel} />
@@ -226,7 +226,7 @@ export function ExpensesScreen({}: Props) {
             </View>
           ))
         )}
-      </ScrollView>
+      </FormScrollView>
 
       <Modal visible={!!picker} animationType="slide" transparent>
         <Pressable style={styles.backdrop} onPress={() => setPicker(null)}>

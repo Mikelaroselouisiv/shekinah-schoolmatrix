@@ -6,6 +6,7 @@ import { Grade } from './grade.entity';
 import { Student } from '../students/student.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { Period } from '../period/period.entity';
+import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { DEFAULT_BAREME, resolveBareme } from './grade-scale';
 
 @Injectable()
@@ -21,6 +22,8 @@ export class GradesService {
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
     @InjectRepository(Period)
     private readonly periodRepo: Repository<Period>,
+    @InjectRepository(StudentClassAssignment)
+    private readonly assignmentRepo: Repository<StudentClassAssignment>,
   ) {}
 
   async getTeacherForClassSubject(classId: string, subjectId: string): Promise<{ id: number; name: string } | null> {
@@ -106,7 +109,7 @@ export class GradesService {
     period_id: string;
   }): Promise<any> {
     const students = await this.studentRepo.find({
-      where: { class: { id: params.class_id } },
+      where: { class: { id: params.class_id }, active: true },
       relations: ['class'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
@@ -268,13 +271,24 @@ export class GradesService {
     }));
   }
 
-  async getStudentExamResults(studentId: string, academicYearId: string): Promise<any> {
+  async getStudentExamResults(
+    studentId: string,
+    academicYearId: string,
+    classIdOverride?: string | null,
+  ): Promise<any> {
     const student = await this.studentRepo.findOne({
       where: { id: studentId },
       relations: ['class'],
     });
     if (!student) throw new NotFoundException('Student not found');
-    const classId = student.class?.id;
+    let classId = classIdOverride || undefined;
+    if (!classId) {
+      const assignment = await this.assignmentRepo.findOne({
+        where: { student: { id: studentId }, academic_year: { id: academicYearId } },
+        relations: ['class'],
+      });
+      classId = assignment?.class?.id ?? student.class?.id;
+    }
     if (!classId) return { periods: [], subjects: [], academic_year_name: null };
 
     const [periods, coefficients, grades] = await Promise.all([
@@ -316,6 +330,7 @@ export class GradesService {
         points: Number(g.grade_value),
       });
       const val = Number(g.grade_value) || 0;
+      // Une ligne en base = note saisie, y compris un vrai zéro.
       const period = g.period as any;
       const orderIndex = period?.order_index ?? 0;
       const periodName = period?.name ?? '—';
@@ -331,6 +346,7 @@ export class GradesService {
           order_index: orderIndex,
           coefficient: coef,
           grade_value: val,
+          has_grade: true,
         });
       }
     }
@@ -340,12 +356,15 @@ export class GradesService {
       for (const p of periods) {
         const pid = String(p.id);
         if (existingPids.has(pid)) continue;
+        // Période sans note : grade_value reste à 0 pour la compatibilité des
+        // clients déjà déployés, has_grade=false dit que rien n'a été saisi.
         sub.periods.push({
           period_id: p.id,
           period_name: p.name ?? '—',
           order_index: p.order_index ?? 0,
           coefficient: coefBySubject.get(sub.subject_id)?.coefficient ?? 0,
           grade_value: 0,
+          has_grade: false,
         });
       }
       sub.periods.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
@@ -361,6 +380,7 @@ export class GradesService {
           order_index: p.order_index ?? 0,
           coefficient,
           grade_value: 0,
+          has_grade: false,
         });
       }
       subjectMap.set(sid, sub);

@@ -48,6 +48,10 @@ export class PaymentTransaction {
   @Column({ type: 'uuid', nullable: true })
   bank_account_id: string | null;
 
+  /** Paiement annulé : reste visible, exclu des totaux. */
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelled_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 }

@@ -9,6 +9,13 @@ import {
 import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 
+/**
+ * @deprecated Aucun code n'écrit ni ne lit plus cette table.
+ * Le rattachement parent → élève vit dans `user_linked_student`.
+ * Entité conservée uniquement pour ne pas casser les migrations existantes ;
+ * elle n'est plus enregistrée dans aucun module.
+ */
+
 @Entity('student_parent')
 export class StudentParent {
   @PrimaryGeneratedColumn('uuid')

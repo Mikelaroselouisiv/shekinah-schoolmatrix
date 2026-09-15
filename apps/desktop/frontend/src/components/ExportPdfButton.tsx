@@ -10,6 +10,8 @@ type ExportPdfButtonProps = {
   table?: PdfTableConfig;
   /** Export multi-sections (fiche, rapport) */
   sections?: PdfSection[];
+  /** Générateur personnalisé (listes imprimables, etc.). */
+  getBlob?: () => Promise<Blob>;
   mainTitle?: string;
   filename: string;
   label?: string;
@@ -23,6 +25,7 @@ type ExportPdfButtonProps = {
 export function ExportPdfButton({
   table,
   sections,
+  getBlob,
   mainTitle,
   filename,
   label = "Exporter en PDF",
@@ -32,7 +35,7 @@ export function ExportPdfButton({
   const [loading, setLoading] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
-  const canExport = Boolean(table || (sections && sections.length > 0));
+  const canExport = Boolean(getBlob || table || (sections && sections.length > 0));
 
   async function handleClick() {
     if (loading || disabled || !canExport) return;
@@ -40,7 +43,9 @@ export function ExportPdfButton({
     setPdfBlob(null);
     try {
       let blob: Blob;
-      if (table) {
+      if (getBlob) {
+        blob = await getBlob();
+      } else if (table) {
         blob = await getTablePdfBlob(table);
       } else if (sections?.length) {
         blob = await getSectionsPdfBlob(sections, mainTitle);

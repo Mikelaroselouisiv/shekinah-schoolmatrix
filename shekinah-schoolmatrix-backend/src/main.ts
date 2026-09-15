@@ -7,8 +7,6 @@ import { AppModule } from './app.module';
 import { resolveMediaUrl } from './uploads/media-url';
 
 async function bootstrap() {
-  // Défaut Express = 100 Ko : un lot de sync (50 élèves/utilisateurs) le dépasse
-  // et renvoie 413, ce qui fait tomber tout le cycle de réplication.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });

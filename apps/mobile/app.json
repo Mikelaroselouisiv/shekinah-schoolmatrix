@@ -2,36 +2,62 @@
   "expo": {
     "name": "Shekinah",
     "slug": "shekinah-schoolmatrix-mobile",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#F5F3F1"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shekinah.schoolmatrix",
-      "icon": "./assets/icon.png"
+      "buildNumber": "6",
+      "appleTeamId": "P227YQ54ZL",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "34.118.138.96": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true,
+              "NSExceptionRequiresForwardSecrecy": false
+            },
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "backgroundColor": "#000000",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#F5F3F1",
+        "foregroundImage": "./assets/logo.png"
       },
       "package": "com.shekinah.schoolmatrix",
+      "versionCode": 5,
+      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo.png"
     },
     "plugins": [
+      "./plugins/withCleartextTraffic",
+      "./plugins/withAndroidApkInstall",
+      "./plugins/withEmbedExpoModulesJSI",
+      "expo-file-system",
       "expo-secure-store",
       [
         "expo-image-picker",
@@ -40,13 +66,21 @@
           "cameraPermission": "Shekinah utilise la caméra pour photographier les élèves."
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#B85A48",
+          "defaultChannel": "birthdays"
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
-    "owner": "larosemike",
     "extra": {
       "eas": {
         "projectId": "a0014c42-75b1-4542-a1a9-042b1f2bd75b"
       }
-    }
+    },
+    "owner": "larosemike"
   }
 }

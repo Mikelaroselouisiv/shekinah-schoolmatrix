@@ -10,6 +10,7 @@ const { getAppEdition } = require('./edition.cjs');
 const { PUBLIC_API_BASE_URL, LOCAL_API_BASE_URL } = require('./update-feed.cjs');
 const { ensureServerStack } = require('./server-bootstrap.cjs');
 const { initUpdater } = require('./updater.cjs');
+const { restoreKeyboardFocus, registerKeyboardFocusIpc } = require('./keyboard-focus.cjs');
 
 const edition = getAppEdition();
 const apiBase =
@@ -17,6 +18,8 @@ const apiBase =
   (edition === 'server' ? LOCAL_API_BASE_URL : PUBLIC_API_BASE_URL);
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
+// Lab DEV : la fenêtre miroir a besoin de sa propre session, sinon elle partage
+// le token de la fenêtre école et les deux nœuds se confondent.
 const userDataOverride = (process.env.SCHOOLMATRIX_USER_DATA || '').trim();
 if (userDataOverride) {
   app.setPath(
@@ -26,53 +29,34 @@ if (userDataOverride) {
       : path.join(os.tmpdir(), userDataOverride),
   );
 } else if (isDev && /:3001\b/.test(apiBase)) {
-  app.setPath('userData', path.join(os.tmpdir(), 'shekinah-sm-dev-mirror'));
-}
-
-/** Windows taskbar / jumplist : avant ready. */
-if (process.platform === 'win32') {
-  app.setAppUserModelId(
-    edition === 'server'
-      ? 'com.shekinah.schoolmatrix.desktop.server'
-      : 'com.shekinah.schoolmatrix.desktop.remote',
-  );
+  app.setPath('userData', path.join(os.tmpdir(), 'eureka-sm-dev-mirror'));
 }
 
 let mainWindow = null;
 
 function resolveIcon() {
-  const buildDir = path.join(__dirname, '../../build');
-  const resources = process.resourcesPath || '';
-  // Windows : .ico d'abord (barre des tâches / cadre). PNG ensuite.
-  const candidates =
-    process.platform === 'win32'
-      ? [
-          path.join(buildDir, 'icon.ico'),
-          path.join(resources, 'icon.ico'),
-          path.join(buildDir, 'icon.png'),
-          path.join(resources, 'icon.png'),
-        ]
-      : [
-          path.join(buildDir, 'icon.png'),
-          path.join(buildDir, 'icon.ico'),
-          path.join(resources, 'icon.png'),
-        ];
+  const candidates = [
+    path.join(process.resourcesPath || '', 'icon.ico'),
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(__dirname, '../../build/icon.ico'),
+    path.join(__dirname, '../../build/icon.png'),
+  ];
   for (const p of candidates) {
-    if (!p || !fs.existsSync(p)) continue;
-    const img = nativeImage.createFromPath(p);
-    if (img && !img.isEmpty()) return img;
+    if (p && fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) return img;
+    }
   }
   return undefined;
 }
 
 function createWindow() {
-  const icon = resolveIcon();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
     show: false,
     title: edition === 'server' ? 'SchoolMatrix Server' : 'SchoolMatrix Remote',
-    icon,
+    icon: resolveIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -83,15 +67,16 @@ function createWindow() {
     },
   });
 
-  if (icon) {
-    try {
-      mainWindow.setIcon(icon);
-    } catch {
-      /* ignore */
-    }
-  }
-
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.webContents.focus();
+      } catch {
+        /* ignore */
+      }
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -133,6 +118,7 @@ ipcMain.on('app:get-edition-sync', (event) => {
 ipcMain.on('app:get-api-base-sync', (event) => {
   event.returnValue = apiBase;
 });
+registerKeyboardFocusIpc(ipcMain, BrowserWindow, dialog);
 
 /** Fetch binaire hors renderer (pas de CORS) — logos / photos badges PDF. */
 ipcMain.handle('app:fetch-media', async (_event, url) => {
@@ -157,6 +143,13 @@ async function boot() {
       ? 'Shekinah SchoolMatrix Server'
       : 'Shekinah SchoolMatrix Remote',
   );
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(
+      edition === 'server'
+        ? 'com.shekinah.schoolmatrix.desktop.server'
+        : 'com.shekinah.schoolmatrix.desktop.remote',
+    );
+  }
 
   createWindow();
   setAppMenu();
@@ -165,11 +158,12 @@ async function boot() {
   if (edition === 'server' && !isDev) {
     const stack = await ensureServerStack();
     if (!stack.ok && mainWindow) {
-      dialog.showMessageBox(mainWindow, {
+      await dialog.showMessageBox(mainWindow, {
         type: 'warning',
         title: 'API locale',
         message: stack.message || 'Impossible de démarrer la stack Server.',
       });
+      restoreKeyboardFocus(mainWindow);
     }
   }
 

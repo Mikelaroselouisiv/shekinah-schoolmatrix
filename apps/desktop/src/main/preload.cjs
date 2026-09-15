@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('schoolmatrixDesktop', {
   apiBase,
   /** Télécharge une image (GCS / API) depuis le process principal — sans CORS. */
   fetchMedia: (url) => ipcRenderer.invoke('app:fetch-media', url),
+  confirmSync: (message) => ipcRenderer.sendSync('app:confirm-sync', message),
+  alertSync: (message) => ipcRenderer.sendSync('app:alert-sync', message),
+  restoreKeyboardFocus: () => ipcRenderer.sendSync('app:restore-keyboard-focus'),
   updater: {
     getState: () => ipcRenderer.invoke('updater:get-state'),
     check: () => ipcRenderer.invoke('updater:check'),

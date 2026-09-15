@@ -25,9 +25,9 @@ export class ScheduleSlot {
   @JoinColumn({ name: 'subject_id' })
   subject: Subject;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'teacher_id' })
-  teacher: User;
+  teacher: User | null;
 
   @ManyToOne(() => Room, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'room_id' })
@@ -44,6 +44,10 @@ export class ScheduleSlot {
 
   @Column({ type: 'varchar', length: 5 })
   end_time: string;
+
+  /** Matériel à apporter (une ligne par item). 1er / 2e cycle fondamental. */
+  @Column({ type: 'text', nullable: true })
+  materials: string | null;
 
   @CreateDateColumn()
   created_at: Date;

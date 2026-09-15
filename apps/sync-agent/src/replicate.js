@@ -24,6 +24,14 @@ function readCursor(cursors, entity) {
   };
 }
 
+function isUnknownSyncEntity(err) {
+  const status = err?.response?.status;
+  const body = err?.response?.data
+    ? JSON.stringify(err.response.data)
+    : err?.message || '';
+  return status === 400 && /Entit[eé] sync inconnue|unknown sync entity/i.test(body);
+}
+
 /**
  * Pull deltas from `from` and push them to `to`.
  * Curseur avancé même si certaines lignes échouent (une salle / un NISU
@@ -63,7 +71,16 @@ export async function replicateDirection({
       };
       if (cursor.id) params.afterId = cursor.id;
 
-      const { data } = await from.get('/sync/pull', { params });
+      let data;
+      try {
+        ({ data } = await from.get('/sync/pull', { params }));
+      } catch (err) {
+        if (isUnknownSyncEntity(err)) {
+          summary.entities[entity] = { skippedUnknown: true };
+          break;
+        }
+        throw err;
+      }
       const records = data.records || [];
       if (records.length === 0) {
         if (data.nextCursor) {
@@ -88,6 +105,14 @@ export async function replicateDirection({
         const detail = err?.response?.data
           ? JSON.stringify(err.response.data)
           : err?.message || String(err);
+        if (isUnknownSyncEntity(err)) {
+          summary.entities[entity] = {
+            pulled,
+            skippedUnknown: true,
+            cursor: cursors[entity],
+          };
+          break;
+        }
         if (status === 413 || /too large|entity\.too\.large/i.test(detail)) {
           throw new Error(
             `${entity}: lot sync trop gros (${records.length} lignes, HTTP 413). ${detail}`,
@@ -109,6 +134,21 @@ export async function replicateDirection({
           .slice(0, 5)
           .map((r) => `${r.uuid}: ${r.error || 'error'}`);
         errorSamples.push(...failed);
+      }
+
+      // Tout le lot a échoué (ex. FK teacher_id) : ne pas avancer le
+      // curseur, sinon les assignations sont perdues pour de bon.
+      if (batchApplied === 0 && batchErrors > 0) {
+        summary.entities[entity] = {
+          pulled,
+          applied,
+          skipped,
+          errors,
+          blocked: true,
+          cursor: cursors[entity],
+          ...(errorSamples.length ? { errorSamples } : {}),
+        };
+        break;
       }
 
       cursor = {

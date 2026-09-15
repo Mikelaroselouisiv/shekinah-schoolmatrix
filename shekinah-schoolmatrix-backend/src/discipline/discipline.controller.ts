@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Put, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Put, Param, Body, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { DisciplineService } from './discipline.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
@@ -6,24 +6,40 @@ import {
   DenyParents,
   ParentScopedStudent,
 } from '../auth/parent-scope.decorator';
+import { TeachersService } from '../teachers/teachers.service';
+import { isTeacherRoleName } from '../roles/roles.constants';
 
 const STUDENT_QUERY = { in: 'query', key: 'student_id' } as const;
+
+type AuthReq = { user?: { userId?: number; sub?: number; id?: number; role?: string } };
 
 @Controller('discipline')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class DisciplineController {
-  constructor(private readonly disciplineService: DisciplineService) {}
+  constructor(
+    private readonly disciplineService: DisciplineService,
+    private readonly teachersService: TeachersService,
+  ) {}
+
+  private async assertTeacherAttendance(req: AuthReq, classId?: string) {
+    if (!classId || !isTeacherRoleName(req.user?.role)) return;
+    const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!uid) throw new ForbiddenException('Non authentifié');
+    await this.teachersService.assertTeacherCanTakeAttendance(uid, classId);
+  }
 
   /** Feuille de présence de toute la classe : outil enseignant, pas parent. */
   @DenyParents()
   @Get('attendance')
   async getAttendance(
+    @Req() req: AuthReq,
     @Query('class_id') classId?: string,
     @Query('date') date?: string,
   ) {
     if (!classId || !date) {
       return { ok: true, class_id: classId, date, students: [] };
     }
+    await this.assertTeacherAttendance(req, classId);
     return this.disciplineService.getAttendanceByClassAndDate(classId, date);
   }
 
@@ -43,13 +59,21 @@ export class DisciplineController {
 
   @DenyParents()
   @Post('attendance')
-  async setAttendance(@Body() body: { class_id: string; date: string; student_id: string; status: string }) {
+  async setAttendance(
+    @Req() req: AuthReq,
+    @Body() body: { class_id: string; date: string; student_id: string; status: string },
+  ) {
+    await this.assertTeacherAttendance(req, body.class_id);
     return this.disciplineService.setAttendance(body.class_id, body.date, body.student_id, body.status);
   }
 
   @DenyParents()
   @Post('attendance/bulk')
-  async setBulkAttendance(@Body() body: { class_id: string; date: string; records: { student_id: string; status: string }[] }) {
+  async setBulkAttendance(
+    @Req() req: AuthReq,
+    @Body() body: { class_id: string; date: string; records: { student_id: string; status: string }[] },
+  ) {
+    await this.assertTeacherAttendance(req, body.class_id);
     return this.disciplineService.setBulkAttendance(body.class_id, body.date, body.records);
   }
 

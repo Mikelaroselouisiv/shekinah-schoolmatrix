@@ -1,51 +1,101 @@
-﻿import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { API_BASE, fetchWithAuth } from "@/services/api";
+﻿import { useEffect, useMemo, useState } from "react";
+import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
+import { ClassConfigModal, type ClassListItem } from "@/components/ClassConfigModal";
 import { buildBadgesPdfBlob, fetchStudentsForClassBadges } from "@/lib/badgeProduction";
-import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+import { EDUCATION_LEVELS, educationLevelLabel, learnerNoun } from "@/lib/educationLevels";
 
-type ClassItem = {
-  id: string;
-  name: string;
-  description: string | null;
-  level: string | null;
-  room_count?: number;
-  rooms?: Array<{ id: string; name: string; capacity: number | null }>;
-  student_count?: number;
+type Assignment = {
+  teacher_id: number;
+  teacher_name: string;
+  teacher_photo_url?: string | null;
+  class_id: string;
 };
 
-type Subject = { id: string; name: string };
+function TeacherStack({ teachers }: { teachers: { name: string; photo?: string | null }[] }) {
+  if (teachers.length === 0) {
+    return <p className="text-xs text-slate-400">Aucun professeur</p>;
+  }
+  return (
+    <div className="flex items-center min-w-0">
+      <div className="flex -space-x-2">
+        {teachers.slice(0, 4).map((t, i) => {
+          const src = getImageUrl(t.photo ?? undefined);
+          const initials = t.name
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((w) => w[0]?.toUpperCase() ?? "")
+            .join("");
+          return src ? (
+            <img
+              key={`${t.name}-${i}`}
+              src={src}
+              alt=""
+              title={t.name}
+              className="h-8 w-8 rounded-full object-cover border-2 border-white bg-white shadow-sm"
+            />
+          ) : (
+            <div
+              key={`${t.name}-${i}`}
+              title={t.name}
+              className="h-8 w-8 rounded-full border-2 border-white bg-teal-50 text-[10px] font-semibold text-teal-800 flex items-center justify-center shadow-sm"
+            >
+              {initials || "?"}
+            </div>
+          );
+        })}
+      </div>
+      {teachers.length > 4 ? (
+        <span className="ml-2 shrink-0 text-xs font-medium text-slate-500">+{teachers.length - 4}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function StatChip({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: "teal" | "amber";
+}) {
+  const cls =
+    tone === "teal"
+      ? "bg-teal-50 text-teal-800 ring-1 ring-teal-100"
+      : "bg-amber-50 text-amber-900 ring-1 ring-amber-100";
+  return (
+    <div className={`min-w-0 flex-1 rounded-xl px-3 py-2 ${cls}`}>
+      <p className="text-lg font-semibold leading-none">{value}</p>
+      <p className="mt-1 text-[11px] font-medium opacity-80 truncate">{label}</p>
+    </div>
+  );
+}
 
 export function DashboardClassesPage() {
   const { school } = useSchoolProfile();
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [classes, setClasses] = useState<ClassListItem[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<ClassItem | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [level, setLevel] = useState("");
-  const [subjectIds, setSubjectIds] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [panel, setPanel] = useState<ClassListItem | "new" | null>(null);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [classesRes, subjectsRes] = await Promise.all([
+      const [classesRes, assignRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
-        fetchWithAuth(`${API_BASE}/subjects`),
+        fetchWithAuth(`${API_BASE}/teachers/assignments`),
       ]);
       const classesData = await classesRes.json();
-      const subjectsData = await subjectsRes.json();
+      const assignData = await assignRes.json();
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur");
-      if (!subjectsRes.ok) throw new Error(subjectsData.message || "Erreur");
       setClasses(classesData.classes ?? []);
-      setSubjects(subjectsData.subjects ?? []);
+      setAssignments(assignRes.ok ? assignData.assignments ?? [] : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de chargement");
     } finally {
@@ -57,48 +107,8 @@ export function DashboardClassesPage() {
     load();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const body = {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        level: level || undefined,
-        subject_ids: subjectIds,
-      };
-      if (editing) {
-        const res = await fetchWithAuth(`${API_BASE}/classes/${editing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Erreur");
-      } else {
-        const res = await fetchWithAuth(`${API_BASE}/classes`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Erreur");
-      }
-      setShowForm(false);
-      setEditing(null);
-      setName("");
-      setDescription("");
-      setLevel("");
-      setSubjectIds([]);
-      load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Supprimer cette classe ?")) return;
+  async function handleDelete(id: string, className: string) {
+    if (!confirm(`Supprimer la classe « ${className} » ?`)) return;
     setError("");
     try {
       const res = await fetchWithAuth(`${API_BASE}/classes/${id}`, { method: "DELETE" });
@@ -112,178 +122,151 @@ export function DashboardClassesPage() {
     }
   }
 
-  async function openEdit(c: ClassItem) {
-    setEditing(c);
-    setName(c.name);
-    setDescription(c.description ?? "");
-    setLevel(c.level ?? "");
-    setSubjectIds([]);
-    setShowForm(true);
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/classes/${c.id}`);
-      const data = await res.json();
-      if (res.ok) setSubjectIds(data.class?.subject_ids ?? []);
-    } catch {
-      /* ignore */
+  const grouped = useMemo(() => {
+    const byLevel = new Map<string, ClassListItem[]>();
+    for (const c of classes) {
+      const key = c.level || "_";
+      const list = byLevel.get(key) ?? [];
+      list.push(c);
+      byLevel.set(key, list);
     }
-  }
-
-  function openCreate() {
-    setEditing(null);
-    setName("");
-    setDescription("");
-    setLevel("");
-    setSubjectIds([]);
-    setShowForm(true);
-  }
-
-  function toggleSubject(id: string) {
-    setSubjectIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
-
-  function toggleAllSubjects() {
-    if (subjectIds.length === subjects.length) {
-      setSubjectIds([]);
-    } else {
-      setSubjectIds(subjects.map((s) => s.id));
+    const ordered: { key: string; label: string; items: ClassListItem[] }[] = [];
+    for (const l of EDUCATION_LEVELS) {
+      const items = byLevel.get(l.key);
+      if (items?.length) ordered.push({ key: l.key, label: l.label, items });
     }
+    const unknown = byLevel.get("_");
+    if (unknown?.length) ordered.push({ key: "_", label: "Autres", items: unknown });
+    return ordered;
+  }, [classes]);
+
+  function teachersForClass(classId: string) {
+    const seen = new Set<number>();
+    const list: { name: string; photo?: string | null }[] = [];
+    for (const a of assignments) {
+      if (a.class_id !== classId || seen.has(a.teacher_id)) continue;
+      seen.add(a.teacher_id);
+      list.push({ name: a.teacher_name, photo: a.teacher_photo_url });
+    }
+    return list;
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold text-slate-900">Gestion des classes</h2>
-        <button onClick={openCreate} className="app-btn-primary">Ajouter une classe</button>
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/80 px-5 py-4 shadow-sm">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">Organisation</p>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Classes</h2>
+          <p className="mt-1 max-w-xl text-sm text-slate-500">
+            Une carte par classe. Ouvrez-la pour régler matières, salles, professeurs et élèves.
+          </p>
+        </div>
+        <button onClick={() => setPanel("new")} className="app-btn-primary shadow-sm">
+          Ajouter une classe
+        </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
-          <h3 className="font-semibold text-slate-900">{editing ? "Modifier" : "Nouvelle classe"}</h3>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" required />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optionnel" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Niveau</label>
-            <select
-              value={level}
-              onChange={(e) => setLevel(e.target.value)}
-              required
-              className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 bg-white"
-            >
-              <option value="">Choisir le niveau…</option>
-              {EDUCATION_LEVELS.map((l) => (
-                <option key={l.key} value={l.key}>{l.label}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-500">
-              Le directeur pédagogique et le secrétaire de ce cycle ne voient que ces classes.
-            </p>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-slate-700">Matières</label>
-              {subjects.length > 0 && (
-                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={subjects.length > 0 && subjectIds.length === subjects.length}
-                    onChange={toggleAllSubjects}
-                  />
-                  Tout cocher
-                </label>
-              )}
+      {error ? <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">{error}</div> : null}
+
+      {classes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
+          <p className="text-slate-700 font-medium">Aucune classe pour le moment</p>
+          <p className="mt-1 text-sm text-slate-500">Créez la première pour ouvrir le panneau de configuration.</p>
+        </div>
+      ) : (
+        grouped.map((group) => (
+          <section key={group.key} className="space-y-3">
+            <div className="flex items-center gap-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {group.label}
+              </h3>
+              <span className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-400">
+                {group.items.length} classe{group.items.length > 1 ? "s" : ""}
+              </span>
             </div>
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--app-border)] p-3 space-y-2">
-              {subjects.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  Aucune matière.{" "}
-                  <Link to="/dashboard/subjects" className="text-[var(--school-accent-1)] hover:underline">
-                    Créer des matières
-                  </Link>
-                </p>
-              ) : (
-                subjects.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={subjectIds.includes(s.id)}
-                      onChange={() => toggleSubject(s.id)}
-                    />
-                    {s.name}
-                  </label>
-                ))
-              )}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {group.items.map((c) => {
+                const teachers = teachersForClass(c.id);
+                const rooms = c.room_count ?? 0;
+                const students = c.student_count ?? 0;
+                return (
+                  <article
+                    key={c.id}
+                    className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+                  >
+                    <button type="button" onClick={() => setPanel(c)} className="w-full text-left">
+                      <div className="flex">
+                        <span className="w-1.5 shrink-0 bg-[var(--school-accent-1)]" />
+                        <div className="min-w-0 flex-1 p-4 pb-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h4 title={c.name} className="truncate text-base font-bold text-slate-900">
+                                {c.name}
+                              </h4>
+                              <p className="mt-0.5 text-xs text-slate-500">{educationLevelLabel(c.level)}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <StatChip value={rooms} label={rooms > 1 ? "salles" : "salle"} tone="teal" />
+                            <StatChip
+                              value={students}
+                              label={learnerNoun(c.level, students !== 1)}
+                              tone="amber"
+                            />
+                          </div>
+                          <div className="mt-3 rounded-xl bg-slate-50 px-2.5 py-2 ring-1 ring-slate-100">
+                            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-teal-800">
+                              Professeurs
+                            </p>
+                            <TeacherStack teachers={teachers} />
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
+                      <ExportBadgePdfButton
+                        label="Badges"
+                        filename={`badges-${c.name}`}
+                        disabled={!c.student_count}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white disabled:opacity-40"
+                        getBlob={async () => {
+                          const studentsList = await fetchStudentsForClassBadges(c.id);
+                          return buildBadgesPdfBlob({ school, students: studentsList });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPanel(c)}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-white"
+                      >
+                        Configurer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(c.id, c.name)}
+                        className="ml-auto rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          </div>
-          {editing && (editing.room_count ?? 0) > 0 && (
-            <p className="text-sm text-slate-500">
-              Salles : {(editing.rooms ?? []).map((r) => r.name).join(", ") || editing.room_count}
-            </p>
-          )}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3">
-            <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">{saving ? "Enregistrement..." : "Enregistrer"}</button>
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null); }} className="app-btn-secondary">Annuler</button>
-          </div>
-        </form>
+          </section>
+        ))
       )}
 
-      {error && !showForm && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
-
-      <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-            <tr>
-              <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Niveau</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Salles</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Élèves</th>
-              <th className="px-4 py-3 font-medium text-slate-900 w-64">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {classes.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucune classe</td></tr>
-            ) : (
-              classes.map((c) => (
-                <tr key={c.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{educationLevelLabel(c.level)}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {c.room_count
-                      ? `${c.room_count} — ${(c.rooms ?? []).map((r) => r.name).join(", ")}`
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{c.student_count ?? "-"}</td>
-                  <td className="px-4 py-3 flex flex-wrap items-center gap-2">
-                    <ExportBadgePdfButton
-                      label="Badges"
-                      filename={`badges-${c.name}`}
-                      disabled={!c.student_count}
-                      className="text-sm text-[var(--school-accent-1)] hover:underline border-0 bg-transparent px-0 py-0"
-                      getBlob={async () => {
-                        const students = await fetchStudentsForClassBadges(c.id);
-                        return buildBadgesPdfBlob({ school, students });
-                      }}
-                    />
-                    <button onClick={() => openEdit(c)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
-                    <button onClick={() => handleDelete(c.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {panel ? (
+        <ClassConfigModal
+          initial={panel}
+          onClose={() => setPanel(null)}
+          onSaved={() => load()}
+        />
+      ) : null}
     </div>
   );
 }

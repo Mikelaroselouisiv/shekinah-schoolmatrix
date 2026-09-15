@@ -17,6 +17,7 @@
     "dev:sync-lab": "npm --prefix ../apps/sync-agent run start:lab",
     "dev:desktop": "npm --prefix ../apps/desktop run dev",
     "dev:desktop:mirror": "npm --prefix ../apps/desktop run dev:mirror",
+    "seed:dev": "node scripts/seed-dev-demo.js",
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "nest build && node dist/main.js",

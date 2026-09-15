@@ -8,7 +8,7 @@ Remplace AWS S3 pour SchoolMatrix.
 |-----|--------|
 | Bucket | `gs://shekinah-schoolmatrix-assets` |
 | Préfixe fichiers | `schoolmatrix/uploads/`, `schoolmatrix/profiles/`, `schoolmatrix/backups/` |
-| Installers (Phase 4) | `installers/remote/`, `installers/server/` |
+| Installers (Phase 4) | `installers/remote/`, `installers/server/`, `installers/mobile/` |
 
 ## Variables d’environnement
 

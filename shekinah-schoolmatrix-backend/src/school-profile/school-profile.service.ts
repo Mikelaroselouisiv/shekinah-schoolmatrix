@@ -15,7 +15,6 @@ import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { TEACHER_ROLE_NAMES } from '../roles/roles.constants';
-import { SyncService } from '../sync/sync.service';
 
 export type DashboardStats = {
   classesCount: number;
@@ -69,7 +68,6 @@ export class SchoolProfileService implements OnModuleInit {
     @InjectRepository(Role)
     private readonly roleRepo: Repository<Role>,
     private readonly syncKick: SyncKickService,
-    private readonly syncService: SyncService,
   ) {}
 
   async onModuleInit() {
@@ -319,9 +317,6 @@ export class SchoolProfileService implements OnModuleInit {
 
     const toDelete = existing.filter((e) => !keepIds.has(e.id));
     if (toDelete.length) {
-      for (const row of toDelete) {
-        await this.syncService.recordDelete('SchoolSignature', row.id);
-      }
       await this.signatureRepo.remove(toDelete);
     }
 
@@ -332,7 +327,6 @@ export class SchoolProfileService implements OnModuleInit {
   async deleteSignature(id: string): Promise<void> {
     const row = await this.signatureRepo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Signature introuvable');
-    await this.syncService.recordDelete('SchoolSignature', id);
     await this.signatureRepo.remove(row);
     this.syncKick.kick('school-signature');
   }

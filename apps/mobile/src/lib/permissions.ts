@@ -14,8 +14,6 @@ import {
 export const ROLES_FULL: string[] = [
   'SUPER_ADMIN',
   'DIRECTEUR_GENERAL',
-  'DIRECTEUR_ADMINISTRATIF',
-  'ADMINISTRATEUR',
   'SCHOOL_ADMIN',
 ];
 
@@ -23,21 +21,23 @@ export const ROLES_FULL: string[] = [
 export const ROLES_STUDENT_EDIT: string[] = [
   ...ROLES_FULL,
   'DIRECTEUR_PEDAGOGIQUE',
-  'CENSEUR',
-  'ADMIN_PRESCOLAIRE',
-  'ADMIN_FONDAMENTAL',
-  'ADMIN_SECONDAIRE',
   'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
   'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
   'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
   'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
   'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
   'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
-  'SECRETAIRE_GENERAL',
-  'SECRETAIRE_FORMATION_SUPERIEURE',
+  'CENSEUR',
+  'ADMIN_PRESCOLAIRE',
+  'ADMIN_FONDAMENTAL',
+  'ADMIN_SECONDAIRE',
 ];
 
-const TEACHER_ROLE_NAMES = [
+/**
+ * Une école peut renommer le rôle TEACHER (ex. « PROFESSEUR ») : le role_id
+ * reste le même, seul le libellé change. Reconnaître les alias.
+ */
+export const TEACHER_ROLE_NAMES: string[] = [
   'TEACHER',
   'PROFESSEUR',
   'PROFESSEURE',
@@ -46,27 +46,23 @@ const TEACHER_ROLE_NAMES = [
   'ENSEIGNANTE',
 ];
 
-function isTeacherRole(role?: string | null): boolean {
+export function isTeacherRole(role?: string | null): boolean {
   return TEACHER_ROLE_NAMES.includes((role ?? '').toUpperCase().trim());
 }
 
-const ROLES_HORAIRES_ET_NOTES = [
-  'DIRECTEUR_PEDAGOGIQUE',
-  'CENSEUR',
+export function isParentRole(role?: string | null): boolean {
+  return (role ?? '').toUpperCase().trim() === 'PARENT';
+}
+
+const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
+const ROLES_HORAIRES_SEUL = [
   'ADMIN_PRESCOLAIRE',
   'ADMIN_FONDAMENTAL',
   'ADMIN_SECONDAIRE',
-  'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
-  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
-  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
-  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
-  'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
-  'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
 ];
-const ROLES_SECRETAIRE = ['SECRETAIRE_GENERAL', 'SECRETAIRE_FORMATION_SUPERIEURE'];
 const ROLES_ECONOME = ['ECONOME'];
 const ROLES_COMPTABLE = ['COMPTABLE'];
-const ROLES_DISCIPLINE = ['DISCIPLINE', 'SURVEILLANT_GENERAL'];
+const ROLES_DISCIPLINE = ['DISCIPLINE'];
 const ROLES_PHOTOGRAPHY = ['PHOTOGRAPHER'];
 
 type NavItem = {
@@ -76,25 +72,26 @@ type NavItem = {
 
 const DESKTOP_NAV: NavItem[] = [
   { permissionKey: 'subjects', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
-  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
+  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'academic-years', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'teachers', allowedRoles: [...ROLES_FULL] },
   {
     permissionKey: 'schedule',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL],
   },
-  { permissionKey: 'students', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE] },
+  { permissionKey: 'students', allowedRoles: [...ROLES_FULL] },
   {
     permissionKey: 'grades',
     allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
   },
+  { permissionKey: 'teacher-hub', allowedRoles: [...TEACHER_ROLE_NAMES] },
   { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE] },
-  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES] },
+  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'finance', allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME] },
   {
     permissionKey: 'stats-academiques',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES],
   },
   {
     permissionKey: 'stats-financieres',
@@ -105,9 +102,10 @@ const DESKTOP_NAV: NavItem[] = [
     allowedRoles: [
       ...ROLES_FULL,
       ...ROLES_HORAIRES_ET_NOTES,
-      ...ROLES_SECRETAIRE,
+      ...ROLES_HORAIRES_SEUL,
       ...ROLES_ECONOME,
       'PARENT',
+      ...TEACHER_ROLE_NAMES,
     ],
   },
   { permissionKey: 'photography', allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY] },
@@ -131,8 +129,22 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
   if (permissionKey === 'rooms') {
     return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
   }
+  if (permissionKey === 'classes') {
+    return (
+      rolePermissions.includes('classes') ||
+      rolePermissions.includes('rooms') ||
+      rolePermissions.includes('teachers')
+    );
+  }
   if (permissionKey === 'stats-academiques') {
-    return rolePermissions.includes('stats-academiques');
+    return (
+      rolePermissions.includes('stats-academiques') ||
+      rolePermissions.includes('grades') ||
+      rolePermissions.includes('classes')
+    );
+  }
+  if (permissionKey === 'teacher-hub') {
+    return rolePermissions.includes('teacher-hub') || rolePermissions.includes('grades');
   }
   return rolePermissions.includes(permissionKey);
 }
@@ -143,7 +155,7 @@ export function canAccessPermission(
   rolePermissions?: string[],
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
-  if (permissionKey === 'stats-academiques' && isTeacherRole(roleName)) return true;
+  if (isTeacherRole(roleName) && permissionKey === 'teacher-hub') return true;
   if (rolePermissions && rolePermissions.length > 0) {
     return canSeeByPermissions(permissionKey, rolePermissions);
   }
@@ -169,6 +181,37 @@ export function canEditStudent(
   if (rolePermissions?.includes('full_access')) return true;
   if (rolePermissions?.includes('students')) return true;
   return ROLES_STUDENT_EDIT.includes(roleName);
+}
+
+/** NISU : direction, pédagogie, secrétariat — pas parent, prof, économe. */
+export function canSeeStudentNisu(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes('full_access')) return true;
+  const role = (roleName ?? '').toUpperCase().trim();
+  if (
+    isTeacherRole(role) ||
+    isParentRole(role) ||
+    role === 'ECONOME' ||
+    role === 'COMPTABLE' ||
+    role === 'DISCIPLINE' ||
+    role === 'SURVEILLANT_GENERAL' ||
+    role === 'PHOTOGRAPHER'
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  if (ROLES_STUDENT_EDIT.includes(role)) return true;
+  if (
+    role === 'SECRETAIRE_GENERAL' ||
+    role === 'SECRETAIRE_FORMATION_SUPERIEURE' ||
+    role === 'ADMINISTRATEUR' ||
+    role === 'DIRECTEUR_ADMINISTRATIF'
+  ) {
+    return true;
+  }
+  return !!rolePermissions?.includes('students') || !!rolePermissions?.includes('formation-classe');
 }
 
 export function canSeeFinanceTab(

@@ -5,6 +5,7 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Student } from '../students/student.entity';
 import { FeeService } from './fee-service.entity';
@@ -30,4 +31,7 @@ export class StudentServiceExemption {
 
   @CreateDateColumn()
   created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 }

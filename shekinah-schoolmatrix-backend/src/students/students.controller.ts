@@ -9,12 +9,15 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
   UseInterceptors,
   UploadedFile,
   Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
+import { StudentsDossierService } from './students-dossier.service';
+import { serializeStudent } from './student.serialize';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import {
@@ -23,14 +26,32 @@ import {
 } from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
 import { LevelScopeService, type RequestActor } from '../auth/level-scope.service';
+import {
+  canAccessStudentDossierComplet,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class StudentsController {
   constructor(
     private readonly studentsService: StudentsService,
+    private readonly dossierService: StudentsDossierService,
     private readonly levelScope: LevelScopeService,
   ) {}
+
+  private actorRole(user?: RequestActor): string {
+    if (!user?.role) return '';
+    return typeof user.role === 'string' ? user.role : user.role.name ?? '';
+  }
+
+  private assertDossierComplet(user?: RequestActor) {
+    const role = this.actorRole(user);
+    if (canAccessStudentDossierComplet(role)) return;
+    throw new ForbiddenException(
+      'Le dossier scolaire complet est réservé à la direction, à la pédagogie et au secrétariat.',
+    );
+  }
 
   /** Liste de toute l'école : jamais accessible depuis un compte parent. */
   @DenyParents()
@@ -39,48 +60,52 @@ export class StudentsController {
     @Req() req: { user?: RequestActor },
     @Query('class_id') classId?: string,
     @Query('room_id') roomId?: string,
+    @Query('status') status?: 'active' | 'alumni' | 'all',
   ) {
     if (classId) await this.levelScope.assertClassAccess(req.user, classId);
+    if (status === 'alumni') this.assertDossierComplet(req.user);
     const students = await this.levelScope.filterByClassId(
       req.user,
       await this.studentsService.findAll({
         classId: classId || undefined,
         roomId: roomId || undefined,
+        status: status || 'active',
       }),
       (s) => s.class?.id,
     );
     return {
       ok: true,
-      students: students.map((s) => ({
-        id: s.id,
-        order_number: s.order_number,
-        student_code: s.student_code,
-        first_name: s.first_name,
-        last_name: s.last_name,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        birth_date: s.birth_date,
-        birth_place: s.birth_place,
-        gender: s.gender,
-        photo_identity_student: s.photo_identity_student,
-        photo_identity_mother: s.photo_identity_mother,
-        photo_identity_father: s.photo_identity_father,
-        photo_identity_responsible: s.photo_identity_responsible,
-        mother_name: s.mother_name,
-        mother_phone: s.mother_phone,
-        father_name: s.father_name,
-        father_phone: s.father_phone,
-        responsible_name: s.responsible_name,
-        responsible_phone: s.responsible_phone,
-        class_id: s.class?.id,
-        class_name: s.class?.name,
-        room_id: s.room?.id ?? null,
-        room_name: s.room?.name ?? null,
-        active: s.active,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-      })),
+      students: students.map((s) => serializeStudent(s)),
+    };
+  }
+
+  /** Recherche progressive — ne charge pas toute l’école. */
+  @DenyParents()
+  @Get('search')
+  async search(
+    @Req() req: { user?: RequestActor },
+    @Query('q') q?: string,
+    @Query('status') status?: 'active' | 'alumni' | 'all',
+    @Query('limit') limit?: string,
+  ) {
+    const role = this.actorRole(req.user);
+    if (status === 'alumni') this.assertDossierComplet(req.user);
+    if (isTeacherRoleName(role) && status === 'alumni') {
+      this.assertDossierComplet(req.user);
+    }
+    const found = await this.studentsService.search({
+      q,
+      status: status || 'active',
+      limit: limit ? Number(limit) : 20,
+    });
+    const students = await this.levelScope.filterByClassId(
+      req.user,
+      found,
+      (s) => s.class?.id,
+    );
+    return {
+      ok: true,
+      students: students.map((s) => serializeStudent(s)),
     };
   }
 
@@ -101,13 +126,23 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
-        student_code: s.student_code,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         class_id: s.class?.id,
         class_name: s.class?.name,
       },
     };
+  }
+
+  @DenyParents()
+  @Get(':id/dossier')
+  async dossier(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+    this.assertDossierComplet(req.user);
+    const current = await this.studentsService.findOne(id);
+    await this.levelScope.assertClassAccess(req.user, current.class?.id);
+    const dossier = await this.dossierService.getDossier(id);
+    return { ok: true, ...dossier };
   }
 
   @ParentScopedStudent({ in: 'param', key: 'id' })
@@ -120,35 +155,8 @@ export class StudentsController {
     return {
       ok: true,
       student: {
-        id: s.id,
-        order_number: s.order_number,
-        student_code: s.student_code,
-        first_name: s.first_name,
-        last_name: s.last_name,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        birth_date: s.birth_date,
-        birth_place: s.birth_place,
-        gender: s.gender,
-        photo_identity_student: s.photo_identity_student,
-        photo_identity_mother: s.photo_identity_mother,
-        photo_identity_father: s.photo_identity_father,
-        photo_identity_responsible: s.photo_identity_responsible,
-        mother_name: s.mother_name,
-        mother_phone: s.mother_phone,
-        father_name: s.father_name,
-        father_phone: s.father_phone,
-        responsible_name: s.responsible_name,
-        responsible_phone: s.responsible_phone,
-        class_id: s.class?.id,
-        class_name: s.class?.name,
-        room_id: s.room?.id ?? null,
-        room_name: s.room?.name ?? null,
+        ...serializeStudent(s),
         is_preschool: isPreschool,
-        active: s.active,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
       },
     };
   }
@@ -239,47 +247,10 @@ export class StudentsController {
     @Body() body: Record<string, unknown>,
   ) {
     await this.levelScope.assertClassAccess(req.user, body.class_id as string | undefined);
-    const { student: s, parent_account } = await this.studentsService.create(body as any);
+    const s = await this.studentsService.create(body as any);
     return {
       ok: true,
-      student: {
-        id: s.id,
-        order_number: s.order_number,
-        student_code: s.student_code,
-        first_name: s.first_name,
-        last_name: s.last_name,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        birth_date: s.birth_date,
-        birth_place: s.birth_place,
-        gender: s.gender,
-        photo_identity_student: s.photo_identity_student,
-        photo_identity_mother: s.photo_identity_mother,
-        photo_identity_father: s.photo_identity_father,
-        photo_identity_responsible: s.photo_identity_responsible,
-        mother_name: s.mother_name,
-        mother_phone: s.mother_phone,
-        father_name: s.father_name,
-        father_phone: s.father_phone,
-        responsible_name: s.responsible_name,
-        responsible_phone: s.responsible_phone,
-        class_id: s.class?.id,
-        room_id: s.room?.id ?? null,
-        room_name: s.room?.name ?? null,
-        active: s.active,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-      },
-      parent_account: parent_account
-        ? {
-            id: parent_account.user.id,
-            email: parent_account.email,
-            phone: parent_account.phone,
-            created: parent_account.created,
-            temporary_password: parent_account.temporary_password,
-          }
-        : null,
+      student: serializeStudent(s),
     };
   }
 
@@ -298,42 +269,16 @@ export class StudentsController {
     const s = await this.studentsService.update(id, body as any);
     return {
       ok: true,
-      student: {
-        id: s.id,
-        order_number: s.order_number,
-        student_code: s.student_code,
-        first_name: s.first_name,
-        last_name: s.last_name,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        birth_date: s.birth_date,
-        birth_place: s.birth_place,
-        gender: s.gender,
-        photo_identity_student: s.photo_identity_student,
-        photo_identity_mother: s.photo_identity_mother,
-        photo_identity_father: s.photo_identity_father,
-        photo_identity_responsible: s.photo_identity_responsible,
-        mother_name: s.mother_name,
-        mother_phone: s.mother_phone,
-        father_name: s.father_name,
-        father_phone: s.father_phone,
-        responsible_name: s.responsible_name,
-        responsible_phone: s.responsible_phone,
-        class_id: s.class?.id,
-        room_id: s.room?.id ?? null,
-        room_name: s.room?.name ?? null,
-        active: s.active,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-      },
+      student: serializeStudent(s),
     };
   }
 
   @DenyParents()
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    await this.studentsService.delete(id);
-    return { ok: true, deleted: true };
+  async delete(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+    const current = await this.studentsService.findOne(id);
+    await this.levelScope.assertClassAccess(req.user, current.class?.id);
+    const s = await this.studentsService.archive(id, 'REMOVED');
+    return { ok: true, archived: true, deleted: true, student: serializeStudent(s) };
   }
 }

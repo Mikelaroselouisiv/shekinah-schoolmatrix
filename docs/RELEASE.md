@@ -8,7 +8,7 @@
 1. **Développer** (backend Nest, `apps/desktop`, sync-agent, docs…)
 2. **Quand c’est fini** → une seule commande : `ship-all.ps1`
 3. Le pipeline met **à jour partout** :
-   - code sur **GitHub** (`origin` → `Mikelaroselouisiv/shekinah-schoolmatrix`)
+   - code sur **GitHub** (`origin` → `Mikelaroselouisiv/schoolmatrix`)
    - **API cloud** (Artifact Registry + VM `schoolmatrix-api`) — pour les apps **Remote**
    - **installateurs Remote + Server** sur GCS → notifications de MAJ
 
@@ -37,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch 
 powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit -DryRun
 ```
 
-Prérequis : `gcloud` config `schoolmatrix-shekinah`, `gsutil`, Node 20, Docker (pour Server local), optionnel `gh`.
+Prérequis : `gcloud` config `schoolmatrix`, `gsutil`, Node 20, Docker (pour Server local), optionnel `gh`.
 
 ## Pipelines GitHub Actions
 
@@ -51,13 +51,26 @@ Prérequis : `gcloud` config `schoolmatrix-shekinah`, `gsutil`, Node 20, Docker 
 
 - Remote : https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/remote/latest.yml  
 - Server : https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/server/latest.yml  
+- Mobile APK : https://storage.googleapis.com/shekinah-schoolmatrix-assets/installers/mobile/latest.json  
 
-Les apps installées notifient → téléchargent → redémarrent.
+Les apps installées notifient → téléchargent → redémarrent (desktop) / ouvrent l’APK (mobile).
+
+### Mobile (Expo APK)
+
+```powershell
+# Bump version + versionCode → eas build --wait --json → download artifacts.buildUrl → GCS
+powershell -ExecutionPolicy Bypass -File infra/scripts/ship-mobile.ps1 -Bump patch
+
+# Upload APK + latest.json seulement
+powershell -ExecutionPolicy Bypass -File infra/scripts/upload-mobile-apk.ps1 -ApkPath ./path/to.apk
+```
+
+Ne pas utiliser `eas build:download` pour les APK (utiliser `artifacts.buildUrl` ; `--json` peut être un tableau).
 
 ## Autre machine de dev
 
 ```powershell
-git clone https://github.com/Mikelaroselouisiv/shekinah-schoolmatrix.git
+git clone https://github.com/Mikelaroselouisiv/schoolmatrix.git
 git pull
 # … développer …
 powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit

@@ -18,9 +18,9 @@ function envInt(name: string, fallback: number): number {
 /**
  * Limitation des tentatives de connexion, en mémoire du processus.
  *
- * Volontairement indexée sur l'IDENTIFIANT saisi, pas sur l'IP : une école
- * derrière une seule IP publique serait entièrement bloquée dès qu'un parent
- * se trompe de mot de passe.
+ * Volontairement indexée sur l'IDENTIFIANT saisi, pas sur l'IP : le front
+ * WordPress appelle l'API depuis une seule IP serveur, une limite par IP
+ * stricte bloquerait toute l'école dès qu'un parent se trompe.
  *
  * Un second compteur par IP existe, beaucoup plus large et désactivable
  * (LOGIN_MAX_FAILURES_PER_IP=0), pour freiner le balayage multi-comptes.
@@ -119,9 +119,7 @@ export class LoginThrottleService {
     bucket.failures += 1;
     if (bucket.failures >= max) {
       bucket.lockedUntil = now + this.lockMs;
-      this.logger.warn(
-        `Connexions bloquées ${this.lockMs / MINUTE} min pour « ${key} ».`,
-      );
+      this.logger.warn(`Connexions bloquées ${this.lockMs / MINUTE} min pour « ${key} ».`);
     }
   }
 

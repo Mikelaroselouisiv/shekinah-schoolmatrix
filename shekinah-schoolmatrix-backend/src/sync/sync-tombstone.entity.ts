@@ -1,9 +1,6 @@
 /**
  * Tombstone de sync : trace une suppression hard pour la propager
- * Server ↔ Cloud (last-write-wins sur deleted_at vs updated_at cible).
- *
- * La table est elle-même une entité répliquée : d'où `id` + `updated_at`,
- * indispensables au curseur de pull.
+ * local ↔ cloud (last-write-wins sur deleted_at vs updated_at cible).
  */
 import {
   Entity,
@@ -15,9 +12,7 @@ import {
 } from 'typeorm';
 
 @Entity('sync_tombstone')
-@Index('UQ_sync_tombstone_entity', ['entity_name', 'entity_id'], {
-  unique: true,
-})
+@Index('UQ_sync_tombstone_entity', ['entity_name', 'entity_id'], { unique: true })
 export class SyncTombstone {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -11,7 +11,7 @@ alwaysApply: true
 |-----------|--------|-----------------|
 | API Nest | `shekinah-schoolmatrix-backend` | `npm run dev:backend` |
 | Desktop Electron | `apps/desktop` | `npm run dev:desktop` |
-| Postgres DEV | conteneur `shekinah-db-dev` :5436 | `npm run dev:db` |
+| Postgres DEV | conteneur `shekinah-db-dev` :5435 | `npm run dev:db` |
 | Sync-agent (optionnel) | `apps/sync-agent` | `npm run dev:sync-agent` |
 
 Docs : `README.md`, `docs/DEV.md`, `docs/ENVIRONMENTS.md`.
