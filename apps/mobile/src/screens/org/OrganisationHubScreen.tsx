@@ -4,6 +4,7 @@ import { ListRow, Screen, Title } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { canAccessPermission, ROLES_FULL } from '../../lib/permissions';
 import type { MoreStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'OrganisationHub'>;
 
@@ -54,5 +55,5 @@ export function OrganisationHubScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
 });

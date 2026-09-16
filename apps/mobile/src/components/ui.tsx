@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -14,9 +14,10 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  parseJJMMAAAAToIso,
   parseYYYYMMDD,
+  toDisplayDateJJMMAAAA,
   toYYYYMMDD,
-  yyyymmddToJJMMAAAA,
 } from '../lib/format';
 import { colors } from '../theme/tokens';
 import { useSchool } from '../context/SchoolContext';
@@ -76,7 +77,7 @@ export function TextField({
   );
 }
 
-/** Champ date — valeur API YYYY-MM-DD, affichage JJ/MM/AAAA + picker natif. */
+/** Champ date — API YYYY-MM-DD ; saisie JJ/MM/AAAA + calendrier. */
 export function DateField({
   label,
   value,
@@ -91,32 +92,57 @@ export function DateField({
   minimumDate?: Date;
 }) {
   const [open, setOpen] = useState(false);
+  const [text, setText] = useState(() => toDisplayDateJJMMAAAA(value));
   const selected = parseYYYYMMDD(value) || new Date();
 
-  function onValueChange(_event: unknown, date: Date) {
+  useEffect(() => {
+    setText(toDisplayDateJJMMAAAA(value));
+  }, [value]);
+
+  function commitText(raw: string) {
+    setText(raw);
+    const iso = parseJJMMAAAAToIso(raw);
+    if (iso) onChange(iso);
+    else if (!raw.trim()) onChange('');
+  }
+
+  function onPickerChange(_event: unknown, date: Date) {
     if (Platform.OS === 'android') setOpen(false);
-    onChange(toYYYYMMDD(date));
+    const iso = toYYYYMMDD(date);
+    onChange(iso);
+    setText(toDisplayDateJJMMAAAA(iso));
   }
 
   return (
     <View style={styles.field}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <Pressable
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [styles.input, styles.dateInput, pressed && { opacity: 0.88 }]}
-      >
-        <Text style={[styles.dateValue, !value && { color: colors.textMuted }]}>
-          {value ? yyyymmddToJJMMAAAA(value) : 'Choisir une date'}
-        </Text>
-        <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
-      </Pressable>
+      <View style={[styles.input, styles.dateInput]}>
+        <TextInput
+          value={text}
+          onChangeText={commitText}
+          placeholder="JJ/MM/AAAA"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numbers-and-punctuation"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.dateValue}
+        />
+        <Pressable
+          onPress={() => setOpen(true)}
+          hitSlop={10}
+          style={({ pressed }) => [styles.dateCalendarBtn, pressed && { opacity: 0.7 }]}
+          accessibilityLabel="Ouvrir le calendrier"
+        >
+          <Ionicons name="calendar-outline" size={22} color={colors.textMuted} />
+        </Pressable>
+      </View>
 
       {open && Platform.OS === 'android' ? (
         <DateTimePicker
           value={selected}
           mode="date"
           display="default"
-          onValueChange={onValueChange}
+          onValueChange={onPickerChange}
           onDismiss={() => setOpen(false)}
           maximumDate={maximumDate}
           minimumDate={minimumDate}
@@ -138,7 +164,7 @@ export function DateField({
                 value={selected}
                 mode="date"
                 display="spinner"
-                onValueChange={onValueChange}
+                onValueChange={onPickerChange}
                 maximumDate={maximumDate}
                 minimumDate={minimumDate}
                 style={{ alignSelf: 'center' }}
@@ -405,6 +431,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     flex: 1,
+    padding: 0,
+  },
+  dateCalendarBtn: {
+    paddingLeft: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   dateModalBackdrop: {
     flex: 1,

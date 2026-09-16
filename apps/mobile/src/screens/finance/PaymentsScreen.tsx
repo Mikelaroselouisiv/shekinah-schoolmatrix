@@ -47,6 +47,7 @@ import { recordPaymentWithQueue } from '../../lib/mutationQueue';
 import { useNetwork } from '../../context/NetworkContext';
 import type { FinanceStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<FinanceStackParamList, 'Payments'>;
 
@@ -663,7 +664,7 @@ function SelectRow({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   form: {
     marginTop: 14,
     backgroundColor: colors.surface,

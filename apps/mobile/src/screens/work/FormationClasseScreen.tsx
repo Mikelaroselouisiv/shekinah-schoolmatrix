@@ -37,6 +37,7 @@ import {
 import type { WorkStackParamList } from '../../navigation/types';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props =
   | NativeStackScreenProps<WorkStackParamList, 'FormationClasse'>
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
-  list: { paddingHorizontal: 20, paddingBottom: 48 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   card: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,

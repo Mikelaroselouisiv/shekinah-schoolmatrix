@@ -35,6 +35,7 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 import {
   SUBJECT_AUDIENCES,
   isSubjectAudience,
@@ -367,7 +368,7 @@ export function OrgSubjectsScreen({}: Props) {
 
 const styles = StyleSheet.create({
   top: { paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
-  list: { paddingHorizontal: 20, paddingBottom: 48 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   card: {
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,

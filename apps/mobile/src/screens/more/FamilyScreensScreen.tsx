@@ -7,6 +7,7 @@ import { screensForFamilyVisible } from '../../lib/permissions';
 import { openProductScreen } from '../../lib/moreNavigation';
 import type { MobileFamilyId } from '../../../spec/productMap';
 import type { MoreStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'FamilyScreens'>;
 
@@ -44,5 +45,5 @@ export function FamilyScreensScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 8 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(8), paddingTop: 8 },
 });

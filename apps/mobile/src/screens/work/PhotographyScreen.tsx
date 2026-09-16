@@ -41,6 +41,7 @@ import {
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Photography'>;
 type PickerKind = 'class' | 'room' | null;
@@ -433,7 +434,7 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
-  list: { paddingHorizontal: 20, paddingBottom: 40 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -452,7 +453,7 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   mutedSmall: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   chevron: { fontSize: 22, color: colors.textMuted },
-  detail: { paddingHorizontal: 20, paddingBottom: 48 },
+  detail: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   backRow: { marginBottom: 8 },
   backText: { fontWeight: '700', fontSize: 15 },
   studentName: { fontSize: 22, fontWeight: '800', color: colors.text },

@@ -30,6 +30,7 @@ import {
 import { colors, softTint } from '../../theme/tokens';
 import { WORK_TAB_BY_ROLE, getScreen } from '../../../spec/productMap';
 import type { AppTabParamList, HomeStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Nav = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, 'HomeMain'>,
@@ -240,7 +241,7 @@ function Kpi({ label, value }: { label: string; value?: number }) {
 const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
-    paddingBottom: 48,
+    paddingBottom: listBottomPadding(24),
   },
   top: {
     paddingHorizontal: 24,

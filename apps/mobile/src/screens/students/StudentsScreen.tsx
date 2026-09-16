@@ -40,6 +40,7 @@ import {
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
 import type { StudentsStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentsMain'>;
 type PickerKind = 'year' | 'class' | null;
@@ -367,7 +368,7 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 15, color: colors.text, fontWeight: '700', marginTop: 2 },
   enrollBtn: { marginTop: 10, marginBottom: 4 },
-  list: { paddingHorizontal: 20, paddingBottom: 32 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(8) },
   emptyWrap: { paddingHorizontal: 20, paddingTop: 24 },
   backdrop: {
     flex: 1,

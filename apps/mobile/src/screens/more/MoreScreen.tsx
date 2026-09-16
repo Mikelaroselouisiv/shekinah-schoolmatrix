@@ -17,6 +17,7 @@ import {
 import { colors } from '../../theme/tokens';
 import type { MoreStackParamList } from '../../navigation/types';
 import type { MobileFamilyId } from '../../../spec/productMap';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'MoreMain'>;
 
@@ -186,7 +187,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 48,
+    paddingBottom: listBottomPadding(24),
   },
   profile: {
     flexDirection: 'row',

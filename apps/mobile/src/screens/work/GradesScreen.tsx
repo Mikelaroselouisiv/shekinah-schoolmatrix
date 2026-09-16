@@ -384,7 +384,9 @@ export function GradesScreen({}: Props) {
         <FlatList
           data={listData as { student_id: string }[]}
           keyExtractor={(item) => item.student_id}
-          contentContainerStyle={[styles.list, { paddingBottom: 110 + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={[styles.list, { paddingBottom: 140 + insets.bottom }]}
           ListEmptyComponent={<EmptyState title="Aucun élève" />}
           renderItem={({ item }) =>
             isPreschool ? (

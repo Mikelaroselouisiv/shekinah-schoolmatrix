@@ -34,6 +34,7 @@ import {
   learnerNoun,
 } from '../../lib/educationLevels';
 import { ClassConfigSheet } from './ClassConfigSheet';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'OrgClasses'>;
 
@@ -264,7 +265,7 @@ const styles = StyleSheet.create({
     color: '#0F766E',
   },
   title: { fontSize: 24, fontWeight: '800', color: colors.text },
-  list: { paddingHorizontal: 20, paddingBottom: 48 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

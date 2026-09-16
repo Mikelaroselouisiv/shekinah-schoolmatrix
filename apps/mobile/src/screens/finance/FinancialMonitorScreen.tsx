@@ -32,6 +32,7 @@ import type { FinanceStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
 import { BanksPanel } from './BanksPanel';
 import { AccountingPanel } from './AccountingPanel';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<FinanceStackParamList, 'FinancialMonitor'>;
 type SubTab = 'moniteur' | 'banques' | 'comptabilite';
@@ -397,7 +398,7 @@ function SelectChip({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 48 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 4 },
   chip: {
     minWidth: '46%',

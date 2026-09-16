@@ -60,6 +60,37 @@ export function yyyymmddToJJMMAAAA(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/** YYYY-MM-DD → JJ/MM/AAAA pour champ éditable (vide → ""). */
+export function toDisplayDateJJMMAAAA(isoDate: string | null | undefined): string {
+  if (!isoDate || !String(isoDate).trim()) return '';
+  const s = String(isoDate).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * JJ/MM/AAAA ou JJ-MM-AAAA → YYYY-MM-DD (null si invalide).
+ * Accepte aussi YYYY-MM-DD déjà formaté.
+ */
+export function parseJJMMAAAAToIso(jjMmAaaa: string): string | null {
+  const trimmed = jjMmAaaa.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const dd = Number(d);
+  const mm = Number(m);
+  const yyyy = Number(y);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  const dt = new Date(yyyy, mm - 1, dd, 12, 0, 0, 0);
+  if (dt.getFullYear() !== yyyy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) {
+    return null;
+  }
+  return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
 export function studentDisplayName(s: {
   first_name?: string;
   last_name?: string;

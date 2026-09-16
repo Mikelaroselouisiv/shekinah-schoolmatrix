@@ -49,6 +49,7 @@ import { colors } from '../../theme/tokens';
 import { isHigherEducationLevel, isMaterialsCycle, learnerNoun } from '../../lib/educationLevels';
 import { isListScheduleLevel } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -533,7 +534,7 @@ function Info({ label, value }: { label: string; value?: string | null }) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   hero: {
     alignItems: 'center',
     paddingTop: 8,
