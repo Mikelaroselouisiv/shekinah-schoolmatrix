@@ -814,6 +814,9 @@ export async function getStudentSchedule(
   day_lists?: ClassDayList[];
   bring_items?: { id: string; label: string }[];
   list_subjects?: string[];
+  class_level?: string | null;
+  room_id?: string | null;
+  room_name?: string | null;
 }> {
   const { data } = await api.get(`/schedule/student/${studentId}`, {
     params: academicYear ? { academic_year: academicYear } : undefined,
@@ -824,6 +827,9 @@ export async function getStudentSchedule(
     day_lists: Array.isArray(data?.day_lists) ? data.day_lists : [],
     bring_items: Array.isArray(data?.bring_items) ? data.bring_items : [],
     list_subjects: Array.isArray(data?.list_subjects) ? data.list_subjects : [],
+    class_level: data?.class_level ?? null,
+    room_id: data?.room_id ?? null,
+    room_name: data?.room_name ?? null,
   };
 }
 

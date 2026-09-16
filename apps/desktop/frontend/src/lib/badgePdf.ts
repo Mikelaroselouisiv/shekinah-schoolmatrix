@@ -72,8 +72,43 @@ function lighten(rgb: [number, number, number], amount: number): [number, number
   ];
 }
 
+function darken(rgb: [number, number, number], amount: number): [number, number, number] {
+  return [
+    Math.round(rgb[0] * (1 - amount)),
+    Math.round(rgb[1] * (1 - amount)),
+    Math.round(rgb[2] * (1 - amount)),
+  ];
+}
+
+function isDark(rgb: [number, number, number]): boolean {
+  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 < 155;
+}
+
+function applyRgb(doc: jsPDF, c: [number, number, number], kind: "fill" | "draw" | "text") {
+  if (kind === "fill") doc.setFillColor(c[0], c[1], c[2]);
+  else if (kind === "draw") doc.setDrawColor(c[0], c[1], c[2]);
+  else doc.setTextColor(c[0], c[1], c[2]);
+}
+
+function clipRoundRect(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(radius, 0);
+  ctx.arcTo(w, 0, w, h, radius);
+  ctx.arcTo(w, h, 0, h, radius);
+  ctx.arcTo(0, h, 0, 0, radius);
+  ctx.arcTo(0, 0, w, 0, radius);
+  ctx.closePath();
+  ctx.clip();
+}
+
 const GCS_PUBLIC_UPLOADS =
-  "https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads";
+  "https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads";
 
 /** Extrait le nom de fichier uploads/… depuis un chemin ou une URL GCS. */
 function extractUploadFilename(stored: string): string | null {
@@ -176,6 +211,7 @@ async function loadImageBlob(
 
 /**
  * Recadre / ajuste une image via canvas (blob: → pas de canvas « tainted »).
+ * `radiusPx` produit des coins arrondis transparents (cadre photo).
  */
 async function prepareImage(
   stored: string | null | undefined,
@@ -184,6 +220,8 @@ async function prepareImage(
   mode: "contain" | "cover",
   background: string | null,
   loader: BadgeImageLoader,
+  radiusPx = 0,
+  opacity = 1,
 ): Promise<string | null> {
   if (typeof document === "undefined") return null;
   const blob = await loadImageBlob(stored, loader);
@@ -203,11 +241,11 @@ async function prepareImage(
             resolve(null);
             return;
           }
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (radiusPx > 0) clipRoundRect(ctx, canvas.width, canvas.height, radiusPx);
           if (background) {
             ctx.fillStyle = background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-          } else {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
           }
           const nw = img.naturalWidth || img.width;
           const nh = img.naturalHeight || img.height;
@@ -221,7 +259,10 @@ async function prepareImage(
               : Math.min(canvas.width / nw, canvas.height / nh);
           const w = nw * scale;
           const h = nh * scale;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
           ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+          ctx.restore();
           resolve(canvas.toDataURL("image/png"));
         } catch {
           resolve(null);
@@ -247,6 +288,62 @@ function ellipsize(doc: jsPDF, text: string, maxWidth: number): string {
   return `${out}…`;
 }
 
+function wrapLines(doc: jsPDF, text: string, maxWidth: number, maxLines: number): string[] {
+  const t = (text || "").trim();
+  if (!t) return [];
+  if (maxLines <= 1 || doc.getTextWidth(t) <= maxWidth) {
+    return [ellipsize(doc, t, maxWidth)];
+  }
+  const words = t.split(/\s+/);
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of words) {
+    const trial = cur ? `${cur} ${word}` : word;
+    if (doc.getTextWidth(trial) <= maxWidth) {
+      cur = trial;
+      continue;
+    }
+    if (cur) lines.push(cur);
+    if (lines.length >= maxLines - 1) {
+      lines.push(ellipsize(doc, word, maxWidth));
+      return lines.slice(0, maxLines);
+    }
+    cur = word;
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, maxLines);
+}
+
+function safeImage(
+  doc: jsPDF,
+  data: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  try {
+    doc.addImage(data, "PNG", x, y, w, h, undefined, "FAST");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Carte CR80 paysage (gabarit type carte scolaire PVC) :
+ * photo identité 3:4 à gauche, textes à droite, logo filigrane
+ * collé au bord droit, signature large en bas à droite.
+ *
+ *  ┌──────────────────────────────────────────────┐
+ *  │           NOM DE L'ÉCOLE (MAJUSCULES)        │
+ *  │           tél  ·  adresse                    │
+ *  │  ┌──────┐  NOM                    [logo]│    │
+ *  │  │ 3:4  │  Prénom                       │    │
+ *  │  └──────┘                                    │
+ *  │  Classe (large)     Salle    [signature]     │
+ *  └──────────────────────────────────────────────┘
+ */
 function drawOneBadge(
   doc: jsPDF,
   school: BadgeSchoolInfo,
@@ -261,174 +358,152 @@ function drawOneBadge(
   const H = BADGE_H_MM;
   const primary = hexToRgb(school.primary_color);
   const secondary = hexToRgb(school.secondary_color || school.primary_color);
-  const pale = lighten(primary, 0.92);
-  const margin = 2.8;
-  const footerH = 2;
-  const sigBlockH = 12;
+  const pale = lighten(primary, 0.88);
+  const frame = darken(primary, 0.12);
+  const ink: [number, number, number] = [15, 23, 42];
+  const muted: [number, number, number] = [100, 116, 139];
+  const onPrimary: [number, number, number] = isDark(primary) ? [255, 255, 255] : ink;
+  const slateSoft: [number, number, number] = [248, 250, 252];
 
-  doc.setFillColor(255, 255, 255);
+  const m = 2.4;
+  const headerH = 12.6;
+  const accentH = 0.5;
+
+  applyRgb(doc, [255, 255, 255], "fill");
   doc.rect(0, 0, W, H, "F");
 
-  // ——— En-tête ———
-  const headerH = 13.5;
-  doc.setFillColor(primary[0], primary[1], primary[2]);
+  applyRgb(doc, primary, "fill");
   doc.rect(0, 0, W, headerH, "F");
-  doc.setFillColor(secondary[0], secondary[1], secondary[2]);
-  doc.rect(0, headerH, W, 0.7, "F");
+  applyRgb(doc, secondary, "fill");
+  doc.rect(0, headerH, W, accentH, "F");
 
-  const logoBox = 10;
-  const logoX = margin;
-  const logoY = (headerH - logoBox) / 2;
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(logoX, logoY, logoBox, logoBox, 1, 1, "F");
-  if (assets.logo) {
-    try {
-      doc.addImage(
-        assets.logo,
-        "PNG",
-        logoX + 0.45,
-        logoY + 0.45,
-        logoBox - 0.9,
-        logoBox - 0.9,
-        undefined,
-        "FAST",
-      );
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const headerTextX = logoX + logoBox + 2.2;
-  const headerTextW = W - headerTextX - margin;
-  doc.setTextColor(255, 255, 255);
+  const titleMaxW = W - 2 * m;
+  const schoolTitle = (school.name || "École").trim().toUpperCase();
+  applyRgb(doc, onPrimary, "text");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  doc.text(ellipsize(doc, school.name || "École", headerTextW), headerTextX, 6.2);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(5);
-  const contact = [school.phone, school.address].filter(Boolean).join("  ·  ");
+  let titleSize = 11.2;
+  doc.setFontSize(titleSize);
+  while (titleSize > 7.2 && doc.getTextWidth(schoolTitle) > titleMaxW) {
+    titleSize -= 0.35;
+    doc.setFontSize(titleSize);
+  }
+  const titleLines = wrapLines(doc, schoolTitle, titleMaxW, 2);
+  let nameY = titleLines.length === 1 ? 8.15 : 6.15;
+  for (const line of titleLines) {
+    doc.text(line, W / 2, nameY, { align: "center" });
+    nameY += titleSize * 0.32 + 0.2;
+  }
+
+  const phone = (school.phone || "").trim();
+  const address = (school.address || "").trim();
+  const contact = [phone, address].filter(Boolean).join("   ·   ");
   if (contact) {
-    doc.text(ellipsize(doc, contact, headerTextW), headerTextX, 10.4);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    applyRgb(doc, onPrimary, "text");
+    doc.text(ellipsize(doc, contact, titleMaxW), W / 2, headerH - 1.45, { align: "center" });
   }
 
-  // ——— Corps : photo + infos (toute la largeur restante pour le nom) ———
-  const bodyTop = headerH + 0.7 + 2;
-  const sigTop = H - footerH - sigBlockH - 0.8;
-  const bodyBottom = sigTop - 1.2;
+  const bottomPad = 0.95;
+  const footerH = 9.6;
+  const photoW = 22.2;
+  const photoH = photoW * (4 / 3);
+  const photoX = m;
+  const photoY = headerH + accentH + 0.4;
+  const inset = 0.4;
+  const innerW = photoW - inset * 2;
+  const innerH = innerW * (4 / 3);
+  const innerX = photoX + inset;
+  const innerY = photoY + (photoH - innerH) / 2;
 
-  const photoW = 23;
-  const photoH = Math.min(photoW, Math.max(18, bodyBottom - bodyTop));
-  const photoX = margin;
-  const photoY = bodyTop;
-
-  doc.setFillColor(pale[0], pale[1], pale[2]);
-  doc.roundedRect(photoX, photoY, photoW, photoH, 1.2, 1.2, "F");
-  doc.setDrawColor(primary[0], primary[1], primary[2]);
-  doc.setLineWidth(0.35);
-  doc.roundedRect(photoX, photoY, photoW, photoH, 1.2, 1.2, "S");
-
-  if (assets.photo) {
-    try {
-      doc.addImage(
-        assets.photo,
-        "PNG",
-        photoX + 0.45,
-        photoY + 0.45,
-        photoW - 0.9,
-        photoH - 0.9,
-        undefined,
-        "FAST",
-      );
-    } catch {
-      doc.setFontSize(6.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text("Photo", photoX + photoW / 2, photoY + photoH / 2 + 1, { align: "center" });
-    }
-  } else {
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Photo", photoX + photoW / 2, photoY + photoH / 2 + 1, { align: "center" });
-  }
-
-  const infoX = photoX + photoW + 3;
-  const infoW = W - infoX - margin;
-  let y = bodyTop + 3.5;
+  applyRgb(doc, frame, "fill");
+  doc.roundedRect(photoX - 0.35, photoY - 0.35, photoW + 0.7, photoH + 0.7, 1.25, 1.25, "F");
+  applyRgb(doc, [255, 255, 255], "fill");
+  doc.roundedRect(photoX, photoY, photoW, photoH, 1.05, 1.05, "F");
 
   const first = (student.first_name || "").trim();
   const last = (student.last_name || "").trim();
+  const photoDrawn = assets.photo && safeImage(doc, assets.photo, innerX, innerY, innerW, innerH);
+  if (!photoDrawn) {
+    applyRgb(doc, pale, "fill");
+    doc.roundedRect(innerX, innerY, innerW, innerH, 0.85, 0.85, "F");
+    const initials = `${(first[0] || "É").toUpperCase()}${(last[0] || "").toUpperCase()}`;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    applyRgb(doc, primary, "text");
+    doc.text(initials, photoX + photoW / 2, photoY + photoH / 2 + 2.2, { align: "center" });
+  }
 
+  const infoX = photoX + photoW + 2.6;
+
+  const logoSize = 16.5;
+  const logoX = W - m - logoSize;
+  const logoY = photoY + 2.2;
+  if (assets.logo) {
+    safeImage(doc, assets.logo, logoX, logoY, logoSize, logoSize);
+  }
+
+  const nameMaxW = Math.max(22, logoX - infoX - 1.8);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  // Nom sur toute la largeur disponible (plus de colonne VISA à droite)
-  doc.text(ellipsize(doc, first || "Élève", infoW), infoX, y);
-  y += 4.4;
+  doc.setFontSize(12);
+  applyRgb(doc, ink, "text");
+  doc.text(ellipsize(doc, last.toUpperCase() || "—", nameMaxW), infoX, photoY + 11.6);
 
-  doc.setFontSize(10);
-  doc.setTextColor(primary[0], primary[1], primary[2]);
-  doc.text(ellipsize(doc, last.toUpperCase() || "—", infoW), infoX, y);
-  y += 5;
+  doc.setFontSize(9.4);
+  applyRgb(doc, primary, "text");
+  doc.text(ellipsize(doc, first || "Élève", nameMaxW), infoX, photoY + 16.4);
 
-  if (student.management_code) {
-    doc.setFillColor(pale[0], pale[1], pale[2]);
-    doc.roundedRect(infoX, y - 2.6, Math.min(infoW, 30), 4.2, 0.8, 0.8, "F");
+  applyRgb(doc, primary, "draw");
+  doc.setLineWidth(0.4);
+  doc.line(infoX, photoY + 17.7, infoX + 12, photoY + 17.7);
+
+  const gap = 1.15;
+  const sigBlockW = 32;
+  const sigBlockH = 14.4;
+  const salleW = 14;
+  const classW = W - 2 * m - salleW - sigBlockW - gap * 2;
+  const metaH = footerH;
+  const metaY = H - bottomPad - metaH;
+  const sigX = W - m - sigBlockW;
+  const sigY = H - bottomPad - sigBlockH;
+
+  function drawMetaBox(x: number, w: number, label: string, value: string, maxLines: number) {
+    applyRgb(doc, slateSoft, "fill");
+    doc.roundedRect(x, metaY, w, metaH, 0.9, 0.9, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
-    doc.setTextColor(primary[0], primary[1], primary[2]);
-    doc.text(`N° ${student.management_code}`, infoX + 1.5, y);
-    y += 5.8;
-  } else {
-    y += 1.2;
-  }
-
-  const metaW = (infoW - 2) / 2;
-  const metas: Array<[string, string, number]> = [
-    ["CLASSE", student.class_name || "—", infoX],
-    ["SALLE", student.room_name || "—", infoX + metaW + 2],
-  ];
-  for (const [label, value, x] of metas) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.2);
-    doc.setTextColor(100, 116, 139);
-    doc.text(label, x, y);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(30, 41, 59);
-    doc.text(ellipsize(doc, value, metaW), x, y + 3.1);
-  }
-
-  // ——— Visa bas droite : signature → ligne → « Directeur ou Directrice » ———
-  const sigImgW = 24;
-  const sigImgH = 8;
-  const sigBlockW = 28;
-  const sigImgX = W - margin - sigBlockW + (sigBlockW - sigImgW) / 2;
-  const sigY = sigTop;
-
-  if (assets.sig) {
-    try {
-      doc.addImage(assets.sig, "PNG", sigImgX, sigY, sigImgW, sigImgH, undefined, "FAST");
-    } catch {
-      /* ignore */
+    doc.setFontSize(4.2);
+    applyRgb(doc, muted, "text");
+    doc.text(label, x + 1.3, metaY + 2.5);
+    doc.setFontSize(6.8);
+    applyRgb(doc, ink, "text");
+    const lines = wrapLines(doc, value || "—", w - 2.4, maxLines);
+    let ly = metaY + (maxLines > 1 && lines.length > 1 ? 5.0 : 6.5);
+    for (const line of lines) {
+      doc.text(line, x + 1.3, ly);
+      ly += 2.7;
     }
   }
 
-  const lineY = sigY + sigImgH + 0.5;
-  doc.setDrawColor(148, 163, 184);
-  doc.setLineWidth(0.3);
-  doc.line(W - margin - sigBlockW, lineY, W - margin, lineY);
+  drawMetaBox(m, classW, "CLASSE", student.class_name || "—", 2);
+  drawMetaBox(m + classW + gap, salleW, "SALLE", student.room_name || "—", 1);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(4.2);
-  doc.setTextColor(100, 116, 139);
-  doc.text("Directeur ou Directrice", W - margin - sigBlockW / 2, lineY + 2.4, {
-    align: "center",
-  });
+  applyRgb(doc, [255, 255, 255], "fill");
+  doc.rect(sigX, sigY, sigBlockW, sigBlockH, "F");
 
-  // ——— Pied ———
-  doc.setFillColor(secondary[0], secondary[1], secondary[2]);
-  doc.rect(0, H - footerH, W, footerH, "F");
-  doc.setFillColor(primary[0], primary[1], primary[2]);
-  doc.rect(0, H - footerH, W * 0.35, footerH, "F");
+  const sigImgW = 30;
+  const sigImgH = 10.6;
+  const lineY = sigY + sigBlockH - 2.45;
+  const sigImgY = lineY - sigImgH;
+  if (assets.sig) {
+    safeImage(doc, assets.sig, sigX + (sigBlockW - sigImgW) / 2, sigImgY, sigImgW, sigImgH);
+  }
+  applyRgb(doc, primary, "draw");
+  doc.setLineWidth(0.28);
+  doc.line(sigX + 0.3, lineY, sigX + sigBlockW - 0.3, lineY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(4.1);
+  applyRgb(doc, muted, "text");
+  doc.text("Direction", sigX + sigBlockW / 2, lineY + 2.15, { align: "center" });
 }
 
 /**
@@ -448,20 +523,25 @@ export async function getStudentBadgesPdfBlob(params: {
   }
 
   const loader: BadgeImageLoader = { resolveUrl, apiBase, token };
-  const PX = 14;
+  const PX = 16;
+  const photoWmm = 22.2 - 0.8;
+  const photoHmm = photoWmm * (4 / 3);
+  const logoMm = 16.5;
 
   const logoPrepared = await prepareImage(
     school.logo_url,
-    10 * PX,
-    10 * PX,
+    logoMm * PX,
+    logoMm * PX,
     "contain",
-    "#ffffff",
+    null,
     loader,
+    0,
+    0.6,
   );
   const sigPrepared = await prepareImage(
     signature?.image_url ?? null,
-    22 * PX,
-    7.5 * PX,
+    30 * PX,
+    10.6 * PX,
     "contain",
     null,
     loader,
@@ -476,14 +556,14 @@ export async function getStudentBadgesPdfBlob(params: {
   for (let i = 0; i < students.length; i++) {
     if (i > 0) doc.addPage([BADGE_W_MM, BADGE_H_MM], "landscape");
     const student = students[i];
-    // Photos identité déjà carrées à l’upload
     const photoPrepared = await prepareImage(
       student.photo_url,
-      23 * PX,
-      23 * PX,
+      photoWmm * PX,
+      photoHmm * PX,
       "cover",
-      "#f1f5f9",
+      null,
       loader,
+      0.7 * PX,
     );
     drawOneBadge(doc, school, student, {
       logo: logoPrepared,

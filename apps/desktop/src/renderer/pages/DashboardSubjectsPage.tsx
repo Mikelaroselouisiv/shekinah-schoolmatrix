@@ -121,7 +121,11 @@ export function DashboardSubjectsPage() {
   }
 
   function openEdit(s: Subject) {
-    const group = isSubjectAudience(s.audience) ? s.audience : "PRIMAIRE";
+    const group = isSubjectAudience(s.audience)
+      ? s.audience
+      : s.section
+        ? "PRESCOLAIRE"
+        : "PRIMAIRE";
     setOpenBlock(group);
     setEditing(s);
     setName(s.name);
@@ -213,9 +217,14 @@ export function DashboardSubjectsPage() {
       ) : null}
 
       {SUBJECT_AUDIENCES.map((group) => {
-        const rows = subjects.filter(
-          (s) => (isSubjectAudience(s.audience) ? s.audience : "PRIMAIRE") === group.key,
-        );
+        const rows = subjects.filter((s) => {
+          const assigned = isSubjectAudience(s.audience)
+            ? s.audience
+            : s.section
+              ? "PRESCOLAIRE"
+              : "PRIMAIRE";
+          return assigned === group.key;
+        });
         const preschool = group.key === "PRESCOLAIRE";
         return (
           <AppAccordion

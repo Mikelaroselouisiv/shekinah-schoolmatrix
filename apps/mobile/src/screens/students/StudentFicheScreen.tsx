@@ -46,10 +46,17 @@ import {
   readCachedStudentFiche,
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
-import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
+import { isHigherEducationLevel, isMaterialsCycle, learnerNoun } from '../../lib/educationLevels';
+import { isListScheduleLevel } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+function scheduleDayRank(day?: number): number {
+  const i = DAY_ORDER.indexOf(day ?? -1);
+  return i < 0 ? 99 : i;
+}
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentFiche'>;
 type DetailTab = 'carnet' | 'travaux' | 'infos' | 'famille';
@@ -75,6 +82,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [grades, setGrades] = useState<ExamResults | null>(null);
   const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
   const [dayLists, setDayLists] = useState<ClassDayList[]>([]);
+  const [scheduleMode, setScheduleMode] = useState<'list' | 'timed' | null>(null);
   const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -107,15 +115,33 @@ export function StudentFicheScreen({ navigation, route }: Props) {
       if (s?.class_id) {
         try {
           const data = await getStudentSchedule(studentId, yearName);
-          setSchedule(data.slots ?? []);
-          setDayLists(data.day_lists ?? []);
+          const mode =
+            data.schedule_mode === 'list' || data.schedule_mode === 'timed'
+              ? data.schedule_mode
+              : isListScheduleLevel(s.class_level)
+                ? 'list'
+                : 'timed';
+          setScheduleMode(mode);
+          if (mode === 'list') {
+            setDayLists(data.day_lists ?? []);
+            setSchedule([]);
+          } else {
+            setDayLists([]);
+            const roomId = s.room_id ?? data.room_id ?? null;
+            const slots = (data.slots ?? []).filter(
+              (slot) => !roomId || !slot.room_id || slot.room_id === roomId,
+            );
+            setSchedule(slots);
+          }
         } catch {
           setSchedule([]);
           setDayLists([]);
+          setScheduleMode(null);
         }
       } else {
         setSchedule([]);
         setDayLists([]);
+        setScheduleMode(null);
       }
       try {
         setHomework(await getStudentHomework(studentId));
@@ -141,14 +167,18 @@ export function StudentFicheScreen({ navigation, route }: Props) {
     void load();
   }, [load]);
 
+  const listSchedule =
+    scheduleMode === 'list' ||
+    (scheduleMode == null && isListScheduleLevel(student?.class_level));
+
   const sortedSchedule = useMemo(
     () =>
       schedule
         .slice()
         .sort(
           (a, b) =>
-            (a.day_of_week ?? 0) - (b.day_of_week ?? 0) ||
-            String(a.start_time).localeCompare(String(b.start_time)),
+            scheduleDayRank(a.day_of_week) - scheduleDayRank(b.day_of_week) ||
+            String(a.start_time ?? '').localeCompare(String(b.start_time ?? '')),
         ),
     [schedule],
   );
@@ -281,8 +311,9 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Emploi du temps</Text>
-          {dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length)
-            ? [1, 2, 3, 4, 5].map((day) => {
+          {listSchedule ? (
+            dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length) ? (
+              [1, 2, 3, 4, 5].map((day) => {
                 const slot = dayLists.find((d) => d.day_of_week === day);
                 return (
                   <View key={day} style={styles.scheduleRow}>
@@ -295,17 +326,24 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                       <Text style={styles.scheduleSubject}>
                         {(slot?.subject_names ?? []).join(', ') || '—'}
                       </Text>
-                      <Text style={styles.scheduleMeta}>
-                        {(slot?.materials ?? []).join(', ') || '—'}
-                      </Text>
+                      {isMaterialsCycle(student.class_level) ? (
+                        <Text style={styles.scheduleMeta}>
+                          {(slot?.materials ?? []).join(', ') || '—'}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                 );
               })
-            : null}
-          {sortedSchedule.length === 0 &&
-          !dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length) ? (
-            <Text style={styles.emptyLine}>—</Text>
+            ) : (
+              <Text style={styles.emptyLine}>Aucune liste de matières pour cette classe.</Text>
+            )
+          ) : sortedSchedule.length === 0 ? (
+            <Text style={styles.emptyLine}>
+              {student.room_name
+                ? `Aucun créneau pour la salle ${student.room_name}.`
+                : 'Aucun créneau de cours pour cette classe.'}
+            </Text>
           ) : (
             sortedSchedule.map((slot) => (
               <View key={slot.id} style={styles.scheduleRow}>
@@ -319,7 +357,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.scheduleSubject}>
-                    {slot.subject_name || 'Cours'}
+                    {slot.subject_name || slot.title || 'Cours'}
                   </Text>
                   <Text style={styles.scheduleMeta}>
                     {[slot.teacher_name, slot.room_name].filter(Boolean).join(' · ')}

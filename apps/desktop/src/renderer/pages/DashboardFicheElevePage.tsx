@@ -11,7 +11,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
 import { learnerNoun, learnerNounCap, isHigherEducationLevel, isMaterialsCycle } from "@/lib/educationLevels";
-import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
+import { isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
   type StudentDossier,
@@ -143,6 +143,19 @@ type ScheduleSlot = {
   kind?: string;
 };
 
+function scheduleDayRank(day: number): number {
+  const i = DAY_ORDER.indexOf(day);
+  return i < 0 ? 99 : i;
+}
+
+function sortScheduleSlots(slots: ScheduleSlot[]): ScheduleSlot[] {
+  return [...slots].sort(
+    (a, b) =>
+      scheduleDayRank(a.day_of_week) - scheduleDayRank(b.day_of_week) ||
+      (a.start_time || "").localeCompare(b.start_time || ""),
+  );
+}
+
 type ExamScheduleItem = {
   id: string;
   class_id: string;
@@ -180,39 +193,16 @@ function mergeClassSchedule(
     start_time: string;
     end_time: string;
   }[],
-  duties: {
-    id: string;
-    title: string;
-    kind?: string;
-    cycle?: string | null;
-    class_id?: string | null;
-    class_name?: string | null;
-    day_of_week: number;
-    start_time: string;
-    end_time: string;
-    responsible_name?: string | null;
-  }[],
-  classId?: string | null,
   classLevel?: string | null,
+  roomId?: string | null,
 ): ScheduleSlot[] {
-  const relevant = dutiesForStudent(duties, classId, classLevel);
+  if (isListScheduleLevel(classLevel)) return [];
+
+  const courseSlots = roomId
+    ? slots.filter((s) => !s.room_id || s.room_id === roomId)
+    : slots;
+
   const extra: ScheduleSlot[] = [
-    ...relevant.map((d) => ({
-      id: `duty:${d.id}`,
-      academic_year: null,
-      class_id: d.class_id ?? "",
-      class_name: d.class_name ?? "",
-      subject_id: "",
-      subject_name: dutyDisplayTitle(d),
-      teacher_id: null,
-      teacher_name: d.responsible_name ?? null,
-      room_id: null,
-      room_name: null,
-      day_of_week: d.day_of_week,
-      start_time: d.start_time,
-      end_time: d.end_time,
-      kind: d.kind ?? "RENTREE",
-    })),
     ...moments.map((m) => ({
       id: `moment:${m.id}`,
       academic_year: null,
@@ -229,12 +219,9 @@ function mergeClassSchedule(
       end_time: m.end_time,
       kind: "MOMENT",
     })),
-    ...(isListScheduleLevel(classLevel) ? [] : slots),
+    ...courseSlots,
   ];
-  return extra.sort(
-    (a, b) =>
-      a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time),
-  );
+  return sortScheduleSlots(extra);
 }
 
 type ExtracurricularActivityItem = {
@@ -472,8 +459,16 @@ export function DashboardFicheElevePage() {
         if (dossierRes.ok) years = dossierData.years ?? [];
       }
       setDossierYears(years);
-      const yearClassId =
-        years.find((y) => y.academic_year_id === selectedYearId)?.class_id || sData?.class_id;
+      const yearEntry = years.find((y) => y.academic_year_id === selectedYearId);
+      const yearClassId = yearEntry?.class_id || sData?.class_id;
+      const yearLevel =
+        yearEntry?.class_level ||
+        sData?.class_level ||
+        classes.find((c) => c.id === yearClassId)?.level;
+      const listMode = isListScheduleLevel(yearLevel);
+      const roomId = yearClassId === sData?.class_id ? (sData?.room_id ?? null) : null;
+      const yearQs = yearName ? `&academic_year=${encodeURIComponent(yearName)}` : "";
+      const slotsQs = `${yearQs}${!listMode && roomId ? `&room_id=${roomId}` : ""}`;
 
       if (disciplineRes.ok) setDiscipline(disciplineData);
       else setDiscipline(null);
@@ -482,16 +477,15 @@ export function DashboardFicheElevePage() {
       else setPayment(null);
 
       if (yearClassId && selectedYearId) {
-        const yearName = academicYears.find((y) => y.id === selectedYearId)?.name;
-        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes, studentSchedRes] = await Promise.all([
+        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
           fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${yearClassId}`),
-          fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
+          fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${slotsQs}`),
           fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${yearClassId}`),
           fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
-          fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
-          fetchWithAuth(`${API_BASE}/school-week-duties?${yearName ? `academic_year=${encodeURIComponent(yearName)}` : ""}`),
+          fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}${yearQs}`),
+          fetchWithAuth(`${API_BASE}/class-day-lists?class_id=${yearClassId}${yearQs}`),
           fetchWithAuth(`${API_BASE}/schedule/student/${studentId}${yearName ? `?academic_year=${encodeURIComponent(yearName)}` : ""}`),
         ]);
         const examData = await examRes.json();
@@ -501,23 +495,27 @@ export function DashboardFicheElevePage() {
         const activitiesData = await activitiesRes.json();
         const hwData = await hwRes.json();
         const momentsData = await momentsRes.json();
-        const dutiesData = await dutiesRes.json();
+        const dayListData = dayListRes.ok ? await dayListRes.json() : {};
         const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
-        setDayLists(parseDayLists(studentSchedData.day_lists));
+        if (listMode) {
+          setDayLists(parseDayLists(dayListData.days ?? studentSchedData.day_lists));
+          setScheduleSlots([]);
+        } else {
+          setDayLists([]);
+          setScheduleSlots(
+            mergeClassSchedule(
+              slotsRes.ok ? (slotsData.schedule_slots ?? studentSchedData.slots ?? []) : (studentSchedData.slots ?? []),
+              momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
+              yearLevel,
+              roomId,
+            ),
+          );
+        }
         if (examRes.ok && examData.periods) setExamResults(examData);
         else setExamResults(null);
         const formationList = formationData.students ?? [];
         const fs = formationList.find((f: FormationStudent) => f.id === studentId);
         setFormationDecision(fs ?? null);
-        setScheduleSlots(
-          mergeClassSchedule(
-            slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
-            momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
-            dutiesRes.ok ? (dutiesData.school_week_duties ?? []) : [],
-            yearClassId,
-            sData?.class_level || classes.find((c) => c.id === yearClassId)?.level,
-          ),
-        );
         setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
         setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
         setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
@@ -525,13 +523,13 @@ export function DashboardFicheElevePage() {
         setExamResults(null);
         setFormationDecision(null);
         if (yearClassId) {
-          const [slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes, studentSchedRes] = await Promise.all([
-            fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}`),
+          const [slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
+            fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${!listMode && roomId ? `&room_id=${roomId}` : ""}`),
             fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
             fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}`),
-            fetchWithAuth(`${API_BASE}/school-week-duties`),
+            fetchWithAuth(`${API_BASE}/class-day-lists?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/schedule/student/${studentId}`),
           ]);
           const slotsData = await slotsRes.json();
@@ -539,18 +537,22 @@ export function DashboardFicheElevePage() {
           const activitiesData = await activitiesRes.json();
           const hwData = await hwRes.json();
           const momentsData = await momentsRes.json();
-          const dutiesData = await dutiesRes.json();
+          const dayListData = dayListRes.ok ? await dayListRes.json() : {};
           const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
-          setDayLists(parseDayLists(studentSchedData.day_lists));
-          setScheduleSlots(
-            mergeClassSchedule(
-              slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
-              momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
-              dutiesRes.ok ? (dutiesData.school_week_duties ?? []) : [],
-              yearClassId,
-              sData?.class_level || classes.find((c) => c.id === yearClassId)?.level,
-            ),
-          );
+          if (listMode) {
+            setDayLists(parseDayLists(dayListData.days ?? studentSchedData.day_lists));
+            setScheduleSlots([]);
+          } else {
+            setDayLists([]);
+            setScheduleSlots(
+              mergeClassSchedule(
+                slotsRes.ok ? (slotsData.schedule_slots ?? []) : (studentSchedData.slots ?? []),
+                momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
+                yearLevel,
+                roomId,
+              ),
+            );
+          }
           setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
           setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
           setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
@@ -574,7 +576,7 @@ export function DashboardFicheElevePage() {
       setDayLists([]);
       setDossierYears([]);
     }
-  }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode]);
+  }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode, classes]);
 
   useEffect(() => {
     loadStudentData(selectedStudentId);
@@ -612,31 +614,61 @@ export function DashboardFicheElevePage() {
 
   const schedulePdfSections = useMemo<PdfSection[]>(() => {
     const sections: PdfSection[] = [];
-    for (const day of DAY_ORDER) {
-      const rows = scheduleSlots
-        .filter((s) => s.day_of_week === day)
-        .sort((a, b) => a.start_time.localeCompare(b.start_time))
-        .map((s) => ({
-          horaire: `${s.start_time} - ${s.end_time}`,
-          matiere: s.subject_name,
-          professeur: s.teacher_name ?? "—",
-          salle: s.room_name ?? "—",
-          materiel: s.materials?.trim() ? s.materials.replace(/\n/g, ", ") : "—",
-        }));
-      if (rows.length === 0) continue;
-      sections.push({
-        title: DAYS[day],
-        table: {
-          columns: [
-            { header: "Horaire", key: "horaire" },
-            { header: "Matière", key: "matiere" },
-            { header: "Professeur", key: "professeur" },
-            { header: "Salle", key: "salle" },
-            { header: "Matériel", key: "materiel" },
-          ],
-          rows,
-        },
-      });
+    const listMode = isListScheduleLevel(student?.class_level);
+    if (listMode) {
+      if (dayLists.some((d) => d.subject_names.length || d.materials.length)) {
+        const withMat = isMaterialsCycle(student?.class_level);
+        sections.push({
+          title: withMat ? "Matières et matériel" : "Emploi du temps",
+          table: {
+            columns: withMat
+              ? [
+                  { header: "Jour", key: "jour" },
+                  { header: "Matières", key: "matieres" },
+                  { header: "Matériel à apporter", key: "materiel" },
+                ]
+              : [
+                  { header: "Jour", key: "jour" },
+                  { header: "Matières", key: "matieres" },
+                ],
+            rows: [1, 2, 3, 4, 5].map((day) => {
+              const slot = dayLists.find((d) => d.day_of_week === day);
+              return {
+                jour: DAYS[day],
+                matieres: namesJoin(slot?.subject_names ?? []),
+                materiel: namesJoin(slot?.materials ?? []),
+              };
+            }),
+          },
+        });
+      }
+    } else {
+      for (const day of DAY_ORDER) {
+        const rows = scheduleSlots
+          .filter((s) => s.day_of_week === day)
+          .sort((a, b) => a.start_time.localeCompare(b.start_time))
+          .map((s) => ({
+            horaire: `${s.start_time} - ${s.end_time}`,
+            matiere: s.subject_name,
+            professeur: s.teacher_name ?? "—",
+            salle: s.room_name ?? "—",
+            materiel: s.materials?.trim() ? s.materials.replace(/\n/g, ", ") : "—",
+          }));
+        if (rows.length === 0) continue;
+        sections.push({
+          title: DAYS[day],
+          table: {
+            columns: [
+              { header: "Horaire", key: "horaire" },
+              { header: "Matière", key: "matiere" },
+              { header: "Professeur", key: "professeur" },
+              { header: "Salle", key: "salle" },
+              { header: "Matériel", key: "materiel" },
+            ],
+            rows,
+          },
+        });
+      }
     }
     if (examSchedules.length > 0) {
       sections.push({
@@ -686,38 +718,15 @@ export function DashboardFicheElevePage() {
         },
       });
     }
-    if (dayLists.some((d) => d.subject_names.length || d.materials.length)) {
-      const withMat = isMaterialsCycle(student?.class_level);
-      sections.unshift({
-        title: withMat ? "Matières et matériel" : "Emploi du temps",
-        table: {
-          columns: withMat
-            ? [
-                { header: "Jour", key: "jour" },
-                { header: "Matières", key: "matieres" },
-                { header: "Matériel à apporter", key: "materiel" },
-              ]
-            : [
-                { header: "Jour", key: "jour" },
-                { header: "Matières", key: "matieres" },
-              ],
-          rows: [1, 2, 3, 4, 5].map((day) => {
-            const slot = dayLists.find((d) => d.day_of_week === day);
-            return {
-              jour: DAYS[day],
-              matieres: namesJoin(slot?.subject_names ?? []),
-              materiel: namesJoin(slot?.materials ?? []),
-            };
-          }),
-        },
-      });
-    }
     return sections;
   }, [scheduleSlots, examSchedules, extracurricularActivities, dayLists, student?.class_level]);
 
   const ficheLevel =
-    student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
+    dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
+    student?.class_level ||
+    classes.find((c) => c.id === selectedClassId)?.level;
   const ficheLearner = learnerNoun(ficheLevel);
+  const listSchedule = isListScheduleLevel(ficheLevel);
 
   if (loading) {
     return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
@@ -1194,7 +1203,7 @@ export function DashboardFicheElevePage() {
               </div>
               {scheduleTab === "cours" && (
                 <div className="space-y-4">
-                  {dayLists.some((d) => d.subject_names.length || d.materials.length) ? (
+                  {listSchedule ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-sm">
                         <thead className="bg-slate-50 border-b border-[var(--app-border)]">
@@ -1207,56 +1216,74 @@ export function DashboardFicheElevePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {[1, 2, 3, 4, 5].map((day) => {
-                            const slot = dayLists.find((d) => d.day_of_week === day);
-                            return (
-                              <tr key={day} className="border-b border-[var(--app-border)]">
-                                <td className="px-4 py-2 text-slate-700">{DAYS[day]}</td>
-                                <td className="px-4 py-2 text-slate-800">
-                                  {namesJoin(slot?.subject_names ?? [])}
-                                </td>
-                                {isMaterialsCycle(ficheLevel) ? (
-                                <td className="px-4 py-2 text-slate-800">
-                                  {namesJoin(slot?.materials ?? [])}
-                                </td>
-                                ) : null}
-                              </tr>
-                            );
-                          })}
+                          {dayLists.some((d) => d.subject_names.length || d.materials.length) ? (
+                            [1, 2, 3, 4, 5].map((day) => {
+                              const slot = dayLists.find((d) => d.day_of_week === day);
+                              return (
+                                <tr key={day} className="border-b border-[var(--app-border)]">
+                                  <td className="px-4 py-2 text-slate-700">{DAYS[day]}</td>
+                                  <td className="px-4 py-2 text-slate-800">
+                                    {namesJoin(slot?.subject_names ?? [])}
+                                  </td>
+                                  {isMaterialsCycle(ficheLevel) ? (
+                                    <td className="px-4 py-2 text-slate-800">
+                                      {namesJoin(slot?.materials ?? [])}
+                                    </td>
+                                  ) : null}
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={isMaterialsCycle(ficheLevel) ? 3 : 2}
+                                className="px-4 py-6 text-center text-slate-500"
+                              >
+                                Aucune liste de matières pour cette classe.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  ) : null}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                      <tr>
-                        <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Professeur</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Salle</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Matériel</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {scheduleSlots.length === 0 ? (
-                        <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Aucun créneau de cours pour cette classe.</td></tr>
-                      ) : (
-                        scheduleSlots.map((s) => (
-                          <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-2 text-slate-700">{DAYS[s.day_of_week] ?? s.day_of_week}</td>
-                            <td className="px-4 py-2 text-slate-600">{s.start_time} – {s.end_time}</td>
-                            <td className="px-4 py-2 font-medium text-slate-900">{s.subject_name}</td>
-                            <td className="px-4 py-2 text-slate-700">{s.teacher_name ?? "—"}</td>
-                            <td className="px-4 py-2 text-slate-600">{s.room_name ?? "—"}</td>
-                            <td className="px-4 py-2 text-slate-600 whitespace-pre-wrap">{s.materials?.trim() || "—"}</td>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                          <tr>
+                            <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Professeur</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Salle</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Matériel</th>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>
+                          {scheduleSlots.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                                {student?.room_name
+                                  ? `Aucun créneau de cours pour la salle ${student.room_name}.`
+                                  : "Aucun créneau de cours pour cette classe."}
+                              </td>
+                            </tr>
+                          ) : (
+                            scheduleSlots.map((s) => (
+                              <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                                <td className="px-4 py-2 text-slate-700">{DAYS[s.day_of_week] ?? s.day_of_week}</td>
+                                <td className="px-4 py-2 text-slate-600">{s.start_time} – {s.end_time}</td>
+                                <td className="px-4 py-2 font-medium text-slate-900">{s.subject_name}</td>
+                                <td className="px-4 py-2 text-slate-700">{s.teacher_name ?? "—"}</td>
+                                <td className="px-4 py-2 text-slate-600">{s.room_name ?? "—"}</td>
+                                <td className="px-4 py-2 text-slate-600 whitespace-pre-wrap">{s.materials?.trim() || "—"}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
               {scheduleTab === "examens" && (
@@ -1274,7 +1301,13 @@ export function DashboardFicheElevePage() {
                       {examSchedules.length === 0 ? (
                         <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucun examen planifié pour cette classe.</td></tr>
                       ) : (
-                        examSchedules.map((e) => (
+                        [...examSchedules]
+                          .sort(
+                            (a, b) =>
+                              a.exam_date.localeCompare(b.exam_date) ||
+                              a.start_time.localeCompare(b.start_time),
+                          )
+                          .map((e) => (
                           <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
                             <td className="px-4 py-2 text-slate-600">{e.start_time} – {e.end_time}</td>

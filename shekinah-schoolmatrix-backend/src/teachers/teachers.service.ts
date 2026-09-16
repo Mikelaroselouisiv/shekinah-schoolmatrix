@@ -124,22 +124,26 @@ export class TeachersService {
   }
 
   /**
-   * Emploi du temps d'un élève = celui de sa classe.
-   * Renvoie une liste vide (et non une erreur) si l'élève n'a pas de classe.
+   * Emploi du temps d'un élève = sa classe (liste) ou sa salle (créneaux).
+   * Préscolaire / 1er–2e : matières par jour. 3e / secondaire / supérieur : horaires chiffrés.
    */
   async getScheduleForStudent(studentId: string, academicYear?: string) {
     const student = await this.studentRepo.findOne({
       where: { id: studentId },
-      relations: ['class'],
+      relations: ['class', 'room'],
     });
     if (!student) throw new NotFoundException('Student not found');
 
     const classId = student.class?.id ?? null;
+    const roomId = student.room?.id ?? null;
+    const classLevel = student.class?.level ?? null;
+    const listMode = isListScheduleLevel(classLevel);
     const [slots, moments, duties] = classId
       ? await Promise.all([
           this.getScheduleSlots({
             class_id: classId,
             academic_year: academicYear,
+            ...(listMode || !roomId ? {} : { room_id: roomId }),
           }),
           this.scheduleMoments.listClassMoments({
             class_id: classId,
@@ -150,17 +154,19 @@ export class TeachersService {
       : [[], [], []];
 
     const cycle = morningCycleFromLevel(student.class?.level);
-    const relevantDuties = duties.filter((d) => {
-      const kind = (d.kind || '').toUpperCase();
-      const cycleMatch = !!cycle && d.cycle === cycle;
-      if (kind === 'FLAG' && d.class_id) return d.class_id === classId;
-      if (kind === 'SERVICE' || kind === 'PRIERE') return cycleMatch;
-      if (['ACCUEIL', 'ANIMATION', 'DEVOTION', 'DEFI', 'RENTREE'].includes(kind)) {
-        return cycleMatch;
-      }
-      if (kind === 'FLAG') return cycleMatch;
-      return false;
-    });
+    const relevantDuties = listMode
+      ? []
+      : duties.filter((d) => {
+          const kind = (d.kind || '').toUpperCase();
+          const cycleMatch = !!cycle && d.cycle === cycle;
+          if (kind === 'FLAG' && d.class_id) return d.class_id === classId;
+          if (kind === 'SERVICE' || kind === 'PRIERE') return cycleMatch;
+          if (['ACCUEIL', 'ANIMATION', 'DEVOTION', 'DEFI', 'RENTREE'].includes(kind)) {
+            return cycleMatch;
+          }
+          if (kind === 'FLAG') return cycleMatch;
+          return false;
+        });
 
     const merged = [
       ...relevantDuties.map((d) => ({
@@ -180,7 +186,9 @@ export class TeachersService {
         materials: null as string | null,
         is_school_wide: d.kind === 'FLAG',
       })),
-      ...moments.map((m) => ({
+      ...(listMode
+        ? []
+        : moments.map((m) => ({
         id: `moment:${m.id}`,
         kind: m.kind,
         title: m.title,
@@ -196,10 +204,12 @@ export class TeachersService {
         academic_year: m.academic_year,
         materials: null as string | null,
         is_school_wide: false,
-      })),
-      ...(isListScheduleLevel(student.class?.level)
+      }))),
+      ...(listMode
         ? []
-        : slots.map((s) => ({
+        : slots
+            .filter((s) => !roomId || !s.room_id || s.room_id === roomId)
+            .map((s) => ({
             id: s.id,
             kind: 'COURSE' as const,
             title: s.subject_name ?? 'Cours',
@@ -216,13 +226,14 @@ export class TeachersService {
             materials: s.materials ?? null,
             is_school_wide: false,
           }))),
-    ].sort(
-      (a, b) =>
-        a.day_of_week - b.day_of_week ||
-        a.start_time.localeCompare(b.start_time),
-    );
+    ].sort((a, b) => {
+      const rank = (d: number) => {
+        const i = [1, 2, 3, 4, 5, 6, 0].indexOf(d);
+        return i < 0 ? 99 : i;
+      };
+      return rank(a.day_of_week) - rank(b.day_of_week) || a.start_time.localeCompare(b.start_time);
+    });
 
-    const listMode = isListScheduleLevel(student.class?.level);
     let day_lists: {
       day_of_week: number;
       subject_ids: string[];
@@ -241,6 +252,9 @@ export class TeachersService {
       student_name: `${student.first_name} ${student.last_name}`,
       class_id: classId,
       class_name: student.class?.name ?? null,
+      class_level: classLevel,
+      room_id: roomId,
+      room_name: student.room?.name ?? null,
       academic_year: academicYear ?? null,
       schedule_mode: listMode ? 'list' : 'timed',
       day_lists,

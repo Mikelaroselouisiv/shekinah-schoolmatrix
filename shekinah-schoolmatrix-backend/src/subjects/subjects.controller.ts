@@ -21,7 +21,12 @@ function toDto(s: Subject) {
     name: s.name,
     code: s.code,
     active: s.active,
-    audience: isSubjectAudience(s.audience) ? s.audience : 'PRIMAIRE',
+    audience:
+      isSubjectAudience(s.audience)
+        ? s.audience
+        : s.section
+          ? 'PRESCOLAIRE'
+          : 'PRIMAIRE',
     section: s.section ?? null,
     preschool_eval: s.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     created_at: s.created_at,
