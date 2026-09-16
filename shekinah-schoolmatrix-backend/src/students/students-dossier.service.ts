@@ -9,6 +9,7 @@ import { EconomatService } from '../economat/economat.service';
 import { DisciplineService } from '../discipline/discipline.service';
 import { serializeStudent } from './student.serialize';
 import { isPreschoolClass } from '../utils/preschool';
+import { SchoolProfile } from '../school-profile/school-profile.entity';
 
 @Injectable()
 export class StudentsDossierService {
@@ -17,6 +18,8 @@ export class StudentsDossierService {
     private readonly studentRepo: Repository<Student>,
     @InjectRepository(StudentClassAssignment)
     private readonly assignmentRepo: Repository<StudentClassAssignment>,
+    @InjectRepository(SchoolProfile)
+    private readonly schoolProfileRepo: Repository<SchoolProfile>,
     private readonly gradesService: GradesService,
     private readonly preschoolGradesService: PreschoolGradesService,
     private readonly economatService: EconomatService,
@@ -37,14 +40,20 @@ export class StudentsDossierService {
     assignments.sort((a, b) =>
       (b.academic_year?.name ?? '').localeCompare(a.academic_year?.name ?? ''),
     );
+    const currentYearId =
+      (await this.schoolProfileRepo.find({ take: 1 }))[0]
+        ?.current_academic_year_id ?? null;
 
     const years = [];
     for (const a of assignments) {
       const yearId = a.academic_year?.id;
       const yearName = a.academic_year?.name ?? '';
-      const classId = a.class?.id;
+      const liveClass = yearId && currentYearId && yearId === currentYearId
+        ? student.class
+        : a.class;
+      const classId = liveClass?.id ?? a.class?.id;
       if (!yearId) continue;
-      const preschool = isPreschoolClass(a.class?.description, a.class?.level);
+      const preschool = isPreschoolClass(liveClass?.description ?? a.class?.description, liveClass?.level ?? a.class?.level);
       const [exam_results, preschool_results, payment] = await Promise.all([
         preschool
           ? Promise.resolve(null)
@@ -58,8 +67,8 @@ export class StudentsDossierService {
         academic_year_id: yearId,
         academic_year_name: yearName,
         class_id: classId ?? null,
-        class_name: a.class?.name ?? null,
-        class_level: a.class?.level ?? null,
+        class_name: liveClass?.name ?? a.class?.name ?? null,
+        class_level: liveClass?.level ?? a.class?.level ?? null,
         is_preschool: preschool,
         decision: a.decision,
         average: a.average != null ? Number(a.average) : null,

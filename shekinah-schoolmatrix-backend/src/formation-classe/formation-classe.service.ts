@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { alignCurrentYearClass } from './align-current-year-class';
 import { StudentClassAssignment } from './student-class-assignment.entity';
 import { ClassDecisionThreshold } from './class-decision-threshold.entity';
 import { Student } from '../students/student.entity';
@@ -57,7 +58,13 @@ export class FormationClasseService {
     private readonly roomRepo: Repository<Room>,
     @InjectRepository(SchoolProfile)
     private readonly schoolProfileRepo: Repository<SchoolProfile>,
+    private readonly dataSource: DataSource,
   ) {}
+
+  /** Année en cours : l’affectation suit student.class_id. */
+  async alignStudentCurrentYear(studentId: string): Promise<void> {
+    await alignCurrentYearClass(this.dataSource, studentId);
+  }
 
   async getStudentsByClassAndYear(academicYearId: string, classId: string): Promise<any[]> {
     const assignments = await this.assignmentRepo.find({
@@ -317,14 +324,28 @@ export class FormationClasseService {
       where: { active: true },
       relations: ['class'],
     });
+    const currentYearId =
+      (await this.schoolProfileRepo.find({ take: 1 }))[0]
+        ?.current_academic_year_id ?? null;
 
     let created = 0;
     for (const s of students) {
-      if (!s.class?.id) continue;
+      if (!s.class?.id || s.archived_at) continue;
       const existing = await this.assignmentRepo.findOne({
         where: { student: { id: s.id }, academic_year: { id: academicYearId } },
+        relations: ['class'],
       });
-      if (existing) continue;
+      if (existing) {
+        if (
+          currentYearId &&
+          academicYearId === currentYearId &&
+          existing.class?.id !== s.class.id
+        ) {
+          existing.class = { id: s.class.id } as Class;
+          await this.assignmentRepo.save(existing);
+        }
+        continue;
+      }
 
       const a = this.assignmentRepo.create({
         student: { id: s.id },
@@ -745,6 +766,7 @@ export class FormationClasseService {
       student.room = null;
     }
     await this.studentRepo.save(student);
+    await this.alignStudentCurrentYear(student.id);
     return { student_id: student.id, class_id: classId };
   }
 

@@ -119,7 +119,7 @@ export function cleanManualNames(raw?: string[] | null): string[] {
 
 export function cleanInstructionLines(raw?: string[] | null): string[] {
   return (raw ?? [])
-    .map((s) => String(s ?? '').trim().replace(/\s+/g, ' '))
+    .map((s) => String(s ?? '').trim().replace(/[ \t]+/g, ' '))
     .filter(Boolean)
-    .map((s) => s.slice(0, 240));
+    .map((s) => s.slice(0, 2000));
 }

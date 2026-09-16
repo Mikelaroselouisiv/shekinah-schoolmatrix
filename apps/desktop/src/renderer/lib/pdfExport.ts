@@ -133,7 +133,12 @@ function tableOptions(startY: number) {
   return {
     startY,
     theme: "grid" as const,
-    styles: { fontSize: 8.5, cellPadding: 2.4, valign: "middle" as const },
+    styles: {
+      fontSize: 8.5,
+      cellPadding: 2.4,
+      valign: "top" as const,
+      overflow: "linebreak" as const,
+    },
     headStyles: { fillColor: [13, 148, 136], textColor: [255, 255, 255], fontStyle: "bold" as const },
     alternateRowStyles: { fillColor: [240, 253, 250] },
     margin: { left: 14, right: 14 },
@@ -215,21 +220,27 @@ async function buildSectionsPdfDoc(
       y += 7;
     }
     if (section.lines?.length) {
-      doc.setFontSize(9.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(30, 41, 59);
-      for (const line of section.lines) {
-        if (y > pageHeight - 22) {
-          doc.addPage();
-          y = options?.school ? 16 : 15;
-        }
-        const wrapped = doc.splitTextToSize(asPdfText(line), doc.internal.pageSize.getWidth() - 28);
-        for (const w of wrapped) {
-          doc.text(w, 14, y);
-          y += 5;
-        }
-      }
-      y += 3;
+      const pageW = doc.internal.pageSize.getWidth();
+      const contentW = pageW - 28;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (autoTable as (doc: any, options: any) => void)(doc, {
+        startY: y,
+        theme: "plain",
+        styles: {
+          fontSize: 9.5,
+          cellPadding: { top: 1.4, right: 0, bottom: 1.4, left: 0 },
+          overflow: "linebreak",
+          valign: "top",
+          textColor: [30, 41, 59],
+          font: "helvetica",
+        },
+        margin: { left: 14, right: 14 },
+        tableWidth: contentW,
+        columnStyles: { 0: { cellWidth: contentW } },
+        body: section.lines.map((line) => [asPdfText(line)]),
+      });
+      y = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y;
+      y += 5;
     }
     if (section.table?.columns.length && section.table.rows.length) {
       const headers = section.table.columns.map((c) => c.header);

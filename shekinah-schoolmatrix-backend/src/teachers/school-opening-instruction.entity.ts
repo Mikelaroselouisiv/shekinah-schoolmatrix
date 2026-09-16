@@ -23,7 +23,7 @@ export class SchoolOpeningInstruction {
   @Column({ type: 'smallint', default: 0 })
   sort_order: number;
 
-  @Column({ type: 'varchar', length: 240 })
+  @Column({ type: 'text' })
   text: string;
 
   @CreateDateColumn()

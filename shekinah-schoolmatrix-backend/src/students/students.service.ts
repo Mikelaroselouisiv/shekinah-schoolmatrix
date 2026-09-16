@@ -215,6 +215,7 @@ export class StudentsService {
         params.class_id,
       );
     }
+    await this.formationClasseService.alignStudentCurrentYear(saved.id);
     const created = await this.findOne(saved.id);
     // Provision parent uniquement à l’inscription (pas aux MAJ — sinon delete annulé).
     await this.attachGuardianQuietly(created, { provision: true });
@@ -399,6 +400,9 @@ export class StudentsService {
         );
       }
       throw err;
+    }
+    if (params.class_id !== undefined) {
+      await this.formationClasseService.alignStudentCurrentYear(id);
     }
     const updated = await this.findOne(id);
     // Lien vers un parent déjà existant seulement — jamais de nouveau compte.

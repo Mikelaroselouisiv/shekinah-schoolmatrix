@@ -873,6 +873,7 @@ export function ScheduleScreen({}: Props) {
                 <NameLines
                   values={preschoolInstructions}
                   editable={canEdit}
+                  multiline
                   onChange={setPreschoolInstructions}
                 />
                 {canEdit ? (
@@ -977,6 +978,7 @@ export function ScheduleScreen({}: Props) {
                 <NameLines
                   values={primaryInstructions}
                   editable={canEdit}
+                  multiline
                   onChange={setPrimaryInstructions}
                 />
                 {canEdit ? (
@@ -1500,10 +1502,12 @@ function NameLines({
   values,
   onChange,
   editable,
+  multiline = false,
 }: {
   values: string[];
   onChange: (next: string[]) => void;
   editable: boolean;
+  multiline?: boolean;
 }) {
   const [draft, setDraft] = useState('');
   function add() {
@@ -1519,13 +1523,15 @@ function NameLines({
   return (
     <View style={{ gap: 6 }}>
       {editable ? (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flexDirection: multiline ? 'column' : 'row', gap: 8 }}>
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={add}
-            returnKeyType="done"
-            style={[styles.timeInput, { flex: 1 }]}
+            onSubmitEditing={multiline ? undefined : add}
+            returnKeyType={multiline ? 'default' : 'done'}
+            multiline={multiline}
+            textAlignVertical={multiline ? 'top' : 'center'}
+            style={[styles.timeInput, { flex: 1 }, multiline ? { minHeight: 72 } : null]}
           />
           <Button title="Ajouter" onPress={add} />
         </View>
@@ -1533,16 +1539,16 @@ function NameLines({
       {values.length === 0 ? (
         <Muted>—</Muted>
       ) : (
-        values.map((name) => (
+        values.map((name, i) => (
           <Pressable
-            key={name}
+            key={`${i}-${name.slice(0, 24)}`}
             onPress={() => {
               if (!editable) return;
-              onChange(values.filter((v) => v !== name));
+              onChange(values.filter((_, idx) => idx !== i));
             }}
             style={styles.momentRow}
           >
-            <Text style={styles.cardTitle}>{name}</Text>
+            <Text style={[styles.cardTitle, { flex: 1, flexWrap: 'wrap' }]}>{name}</Text>
             {editable ? <Text style={styles.deleteLink}>Retirer</Text> : null}
           </Pressable>
         ))

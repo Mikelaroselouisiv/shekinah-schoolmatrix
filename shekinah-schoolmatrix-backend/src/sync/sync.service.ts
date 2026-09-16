@@ -33,6 +33,7 @@ import {
 import { Account } from '../finance/account.entity';
 import { Exercice } from '../finance/exercice.entity';
 import { User } from '../users/user.entity';
+import { alignCurrentYearClass } from '../formation-classe/align-current-year-class';
 
 /** Entités dont la FK personne est un id serial User (pas un UUID). */
 const USER_FK_SPECS: Partial<
@@ -1232,6 +1233,7 @@ export class SyncService implements OnModuleInit {
   ): Promise<'ok' | 'skipped'> {
     try {
       await this.persist(repo, meta, primaryId, data, updatedAt, timeField);
+      await this.alignSyncedStudentClass(entityName, primaryId, data);
       return 'ok';
     } catch (err) {
       if (entityName === 'SchoolWeekDuty' && this.isUniqueViolation(err)) {
@@ -1264,6 +1266,26 @@ export class SyncService implements OnModuleInit {
       }
       throw err;
     }
+  }
+
+  private async alignSyncedStudentClass(
+    entityName: SyncEntityName,
+    primaryId: string | number,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    if (entityName === 'Student' && typeof primaryId === 'string') {
+      await alignCurrentYearClass(this.dataSource, primaryId);
+      return;
+    }
+    if (entityName !== 'StudentClassAssignment') return;
+    const rel = data.student;
+    const studentId =
+      (typeof data.student_id === 'string' && data.student_id) ||
+      (typeof rel === 'string' && rel) ||
+      (rel && typeof rel === 'object' && 'id' in rel
+        ? String((rel as { id: unknown }).id)
+        : '');
+    if (studentId) await alignCurrentYearClass(this.dataSource, studentId);
   }
 
   private isUniqueViolation(err: unknown): boolean {

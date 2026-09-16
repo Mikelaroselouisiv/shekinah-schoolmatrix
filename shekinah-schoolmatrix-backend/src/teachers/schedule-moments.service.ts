@@ -406,11 +406,7 @@ export class ScheduleMomentsService {
       const oldDuties = await manager.find(SchoolWeekDuty, {
         where: { academic_year: year },
       });
-      const oldNotes = await manager.find(SchoolOpeningInstruction, {
-        where: { academic_year: year },
-      });
       if (oldDuties.length) await manager.remove(oldDuties);
-      if (oldNotes.length) await manager.remove(oldNotes);
 
       const saveManual = async (
         day: number,
@@ -487,21 +483,41 @@ export class ScheduleMomentsService {
         await saveManual(day, 'PRIERE', 'PRIMAIRE', primary.prayer_names ?? []);
       }
 
-      const saveNotes = async (cycle: 'PRESCOLAIRE' | 'PRIMAIRE', lines: string[]) => {
-        let order = 0;
-        for (const text of cleanInstructionLines(lines)) {
-          await manager.save(
-            manager.create(SchoolOpeningInstruction, {
-              academic_year: year,
-              cycle,
-              sort_order: order++,
-              text,
-            }),
-          );
+      const replaceNotes = async (
+        cycle: 'PRESCOLAIRE' | 'PRIMAIRE',
+        lines: string[] | undefined,
+      ) => {
+        if (lines === undefined) return;
+        const cleaned = cleanInstructionLines(lines);
+        const existing = await manager.find(SchoolOpeningInstruction, {
+          where: { academic_year: year, cycle },
+          order: { sort_order: 'ASC', created_at: 'ASC' },
+        });
+        for (let i = 0; i < cleaned.length; i++) {
+          const text = cleaned[i];
+          const row = existing[i];
+          if (row) {
+            if (row.text !== text || row.sort_order !== i) {
+              row.text = text;
+              row.sort_order = i;
+              await manager.save(row);
+            }
+          } else {
+            await manager.save(
+              manager.create(SchoolOpeningInstruction, {
+                academic_year: year,
+                cycle,
+                sort_order: i,
+                text,
+              }),
+            );
+          }
         }
+        const extra = existing.slice(cleaned.length);
+        if (extra.length) await manager.remove(extra);
       };
-      await saveNotes('PRESCOLAIRE', body.preschool_instructions ?? []);
-      await saveNotes('PRIMAIRE', body.primary_instructions ?? []);
+      await replaceNotes('PRESCOLAIRE', body.preschool_instructions);
+      await replaceNotes('PRIMAIRE', body.primary_instructions);
     });
 
     return this.getOpeningProgram(year);

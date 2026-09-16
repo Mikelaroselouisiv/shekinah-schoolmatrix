@@ -254,6 +254,7 @@ export function DashboardFicheElevePage() {
   const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
   const [restrictToLinkedStudents, setRestrictToLinkedStudents] = useState(false);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [currentAcademicYearId, setCurrentAcademicYearId] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(initialStudentId);
   const [selectedYearId, setSelectedYearId] = useState("");
@@ -321,6 +322,11 @@ export function DashboardFicheElevePage() {
         const defaultId = ctxRes.ok && ctxData.current_academic_year_id && years.some((y: { id: string }) => y.id === ctxData.current_academic_year_id)
           ? ctxData.current_academic_year_id
           : years[0].id;
+        if (ctxRes.ok && ctxData.current_academic_year_id) {
+          setCurrentAcademicYearId(ctxData.current_academic_year_id);
+        } else {
+          setCurrentAcademicYearId(years[0].id);
+        }
         setSelectedYearId((prev) => (prev === "" ? defaultId : prev));
       }
     } catch (e) {
@@ -460,10 +466,14 @@ export function DashboardFicheElevePage() {
       }
       setDossierYears(years);
       const yearEntry = years.find((y) => y.academic_year_id === selectedYearId);
-      const yearClassId = yearEntry?.class_id || sData?.class_id;
+      const yearClassId =
+        selectedYearId && currentAcademicYearId && selectedYearId === currentAcademicYearId
+          ? sData?.class_id || yearEntry?.class_id
+          : yearEntry?.class_id || sData?.class_id;
       const yearLevel =
-        yearEntry?.class_level ||
-        sData?.class_level ||
+        (selectedYearId && currentAcademicYearId && selectedYearId === currentAcademicYearId
+          ? sData?.class_level || yearEntry?.class_level
+          : yearEntry?.class_level || sData?.class_level) ||
         classes.find((c) => c.id === yearClassId)?.level;
       const listMode = isListScheduleLevel(yearLevel);
       const roomId = yearClassId === sData?.class_id ? (sData?.room_id ?? null) : null;
@@ -576,7 +586,7 @@ export function DashboardFicheElevePage() {
       setDayLists([]);
       setDossierYears([]);
     }
-  }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode, classes]);
+  }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode, classes, currentAcademicYearId]);
 
   useEffect(() => {
     loadStudentData(selectedStudentId);
@@ -586,7 +596,9 @@ export function DashboardFicheElevePage() {
     setSelectedYearId(yearId);
     if (!selectedStudentId) return;
     const yearClassId =
-      dossierYears.find((y) => y.academic_year_id === yearId)?.class_id || student?.class_id;
+      yearId && currentAcademicYearId && yearId === currentAcademicYearId
+        ? student?.class_id || dossierYears.find((y) => y.academic_year_id === yearId)?.class_id
+        : dossierYears.find((y) => y.academic_year_id === yearId)?.class_id || student?.class_id;
     if (yearClassId) {
       Promise.all([
         fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${selectedStudentId}&academic_year_id=${yearId}`),

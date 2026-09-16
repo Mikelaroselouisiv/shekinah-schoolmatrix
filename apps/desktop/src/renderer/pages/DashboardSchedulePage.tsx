@@ -343,32 +343,33 @@ function InstructionLines({
     <div className="space-y-2">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Consignes</p>
       <div className="flex gap-1.5">
-        <input
+        <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               add();
             }
           }}
-          className="class-input min-w-0 flex-1 bg-white"
+          rows={3}
+          className="class-input min-w-0 flex-1 bg-white resize-y"
         />
-        <button type="button" onClick={add} className="app-btn-secondary shrink-0 text-xs">
+        <button type="button" onClick={add} className="app-btn-secondary shrink-0 self-start text-xs">
           Ajouter
         </button>
       </div>
       {values.length > 0 ? (
-        <ol className="space-y-1">
+        <ol className="space-y-1.5">
           {values.map((line, i) => (
-            <li key={`${i}-${line}`} className="flex items-start justify-between gap-2 text-sm text-slate-800">
-              <span>
+            <li key={`${i}-${line.slice(0, 24)}`} className="flex items-start justify-between gap-2 text-sm text-slate-800">
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
                 {i + 1}. {line}
               </span>
               <button
                 type="button"
                 onClick={() => onChange(values.filter((_, idx) => idx !== i))}
-                className="text-xs text-red-600 hover:underline"
+                className="shrink-0 text-xs text-red-600 hover:underline"
               >
                 Retirer
               </button>
@@ -536,8 +537,10 @@ export function DashboardSchedulePage() {
       const list: SchoolDuty[] = dRes.ok ? (dData.school_week_duties ?? []) : [];
       setDuties(list);
       setMorningByDay(programFromDuties(list));
-      setPreschoolInstructions(dRes.ok ? (dData.preschool_instructions ?? []) : []);
-      setPrimaryInstructions(dRes.ok ? (dData.primary_instructions ?? []) : []);
+      if (dRes.ok) {
+        setPreschoolInstructions(dData.preschool_instructions ?? []);
+        setPrimaryInstructions(dData.primary_instructions ?? []);
+      }
     } catch {
       setMoments([]);
       setDuties([]);
