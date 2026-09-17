@@ -44,6 +44,7 @@ export function FormModal({
         <View style={[styles.sheet, sheetStyle]}>
           {keyboardAware ? (
             <FormScrollView
+              clearTabBar={false}
               contentContainerStyle={styles.scrollContent}
               bottomOffset={32}
             >

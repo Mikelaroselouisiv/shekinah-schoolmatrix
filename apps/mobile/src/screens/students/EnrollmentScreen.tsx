@@ -40,6 +40,7 @@ import {
   type StudentWriteBody,
 } from '../../services/api';
 import { isHigherEducationLevel, learnerNoun, learnerNounCap } from '../../lib/educationLevels';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'Enrollment'>;
 type StepId = 'identite' | 'scolarite' | 'famille' | 'photos';
@@ -635,7 +636,7 @@ function SelectChip({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 48 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   block: { marginTop: 14, gap: 4 },
   chip: {
     borderWidth: 1,

@@ -88,6 +88,7 @@ import {
   type TeacherItem,
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Schedule'>;
 type TabId = 'cours' | 'examens' | 'parascolaires' | 'vacances';
@@ -1719,7 +1720,7 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
   chipOn: { borderColor: '#0F766E', backgroundColor: '#F0FDFA' },
-  list: { paddingHorizontal: 20, paddingBottom: 48 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

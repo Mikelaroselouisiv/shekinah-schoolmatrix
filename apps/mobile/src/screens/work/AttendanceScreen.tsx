@@ -224,7 +224,7 @@ export function AttendanceScreen({}: Props) {
           windowSize={8}
           maxToRenderPerBatch={16}
           removeClippedSubviews
-          contentContainerStyle={[styles.list, { paddingBottom: 100 + insets.bottom }]}
+          contentContainerStyle={[styles.list, { paddingBottom: 130 + insets.bottom }]}
           ListEmptyComponent={
             <EmptyState title="Aucun élève" />
           }

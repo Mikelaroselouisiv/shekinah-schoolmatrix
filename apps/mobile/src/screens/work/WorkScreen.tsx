@@ -15,6 +15,7 @@ import { getImageUrl } from '../../services/api';
 import { WORK_TAB_BY_ROLE, getScreen } from '../../../spec/productMap';
 import { colors } from '../../theme/tokens';
 import type { WorkStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'WorkMain'>;
 
@@ -283,7 +284,7 @@ function tabNavigate(
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 4 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16), paddingTop: 4 },
   centeredContent: {
     flexGrow: 1,
     justifyContent: 'center',

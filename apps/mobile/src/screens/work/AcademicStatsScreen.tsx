@@ -31,6 +31,7 @@ import {
 import type { WorkStackParamList } from '../../navigation/types';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props =
   | NativeStackScreenProps<WorkStackParamList, 'AcademicStats'>
@@ -382,7 +383,7 @@ function SelectChip({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 48 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 8 },
   chip: {
     minWidth: '46%',

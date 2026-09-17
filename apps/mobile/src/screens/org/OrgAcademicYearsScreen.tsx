@@ -37,6 +37,7 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 import {
   PERIOD_SCOPES,
   isPeriodScope,
@@ -410,7 +411,7 @@ export function OrgAcademicYearsScreen({}: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 48 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

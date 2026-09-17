@@ -43,6 +43,7 @@ import {
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Discipline'>;
 type TabId = 'appel' | 'retards' | 'points' | 'mesures';
@@ -442,7 +443,7 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   card: {
     marginTop: 8,
     backgroundColor: colors.surface,

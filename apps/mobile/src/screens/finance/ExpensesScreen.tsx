@@ -35,6 +35,7 @@ import {
 } from '../../services/api';
 import type { FinanceStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<FinanceStackParamList, 'Expenses'>;
 type PickerKind = 'account' | 'activity' | null;
@@ -299,7 +300,7 @@ function Select({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   card: {
     marginTop: 14,
     backgroundColor: colors.surface,

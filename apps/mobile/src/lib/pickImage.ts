@@ -1,4 +1,4 @@
-import { Alert, Linking, Platform } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 export type PickedImage = {
@@ -55,8 +55,8 @@ export async function pickImageFromDevice(
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ['images'],
     quality: 0.85,
-    // Le crop natif bloque souvent le modal sur Android
-    allowsEditing: Platform.OS === 'ios',
+    // Crop natif après prise / sélection (Android + iOS)
+    allowsEditing: true,
     aspect: [3, 4],
   };
 

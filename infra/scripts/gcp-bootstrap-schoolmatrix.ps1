@@ -101,7 +101,7 @@ if (-not $bucketOk) {
 }
 # Public read for desktop auto-update installers
 gsutil iam ch allUsers:objectViewer $bucketUri 2>$null
-@('installers/remote/', 'installers/server/', 'sync-assets/') | ForEach-Object {
+@('installers/remote/', 'installers/server/', 'installers/mobile/', 'sync-assets/') | ForEach-Object {
   $marker = Join-Path $env:TEMP "schoolmatrix-keep-$([guid]::NewGuid().ToString('n')).txt"
   Set-Content -LiteralPath $marker -Value 'keep' -Encoding ascii
   gsutil cp $marker "$bucketUri/$_.keep" 2>$null

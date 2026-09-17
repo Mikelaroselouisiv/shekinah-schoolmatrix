@@ -18,6 +18,7 @@ import { AccessDenied } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
 import type { LinkedStudent } from '../../services/api';
 import type { ChildrenStackParamList } from '../../navigation/types';
+import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<ChildrenStackParamList, 'ChildrenMain'>;
 
@@ -106,5 +107,5 @@ export function ChildrenScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   pad: { paddingHorizontal: 20 },
-  list: { paddingHorizontal: 20, paddingBottom: 32 },
+  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(8) },
 });
