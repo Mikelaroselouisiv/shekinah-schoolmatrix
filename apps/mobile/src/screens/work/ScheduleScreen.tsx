@@ -71,11 +71,16 @@ import {
   listClassDayLists,
   replaceClassDayLists,
   updateExtracurricularActivity,
+  listSchoolVacations,
+  createSchoolVacation,
+  updateSchoolVacation,
+  deleteSchoolVacation,
   type AcademicYear,
   type ClassDayMoment,
   type ClassItem,
   type ExamScheduleItem,
   type ExtracurricularItem,
+  type SchoolVacationItem,
   type RoomItem,
   type ScheduleSlot,
   type SubjectItem,
@@ -85,7 +90,7 @@ import {
 import type { WorkStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Schedule'>;
-type TabId = 'cours' | 'examens' | 'parascolaires';
+type TabId = 'cours' | 'examens' | 'parascolaires' | 'vacances';
 type FormKind = 'slot' | 'moment';
 type PickerKind =
   | 'year'
@@ -118,6 +123,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'cours', label: 'Cours' },
   { id: 'examens', label: 'Examens' },
   { id: 'parascolaires', label: 'Parascolaire' },
+  { id: 'vacances', label: 'Vacances' },
 ];
 
 const MOMENT_KINDS = [
@@ -169,6 +175,7 @@ export function ScheduleScreen({}: Props) {
   const [moments, setMoments] = useState<ClassDayMoment[]>([]);
   const [exams, setExams] = useState<ExamScheduleItem[]>([]);
   const [activities, setActivities] = useState<ExtracurricularItem[]>([]);
+  const [vacations, setVacations] = useState<SchoolVacationItem[]>([]);
 
   const [boot, setBoot] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -200,10 +207,13 @@ export function ScheduleScreen({}: Props) {
   const [formEnd, setFormEnd] = useState('09:00');
   const [formPeriod, setFormPeriod] = useState('');
   const [formDate, setFormDate] = useState(toYYYYMMDD());
+  const [formEndDate, setFormEndDate] = useState(toYYYYMMDD());
   const [formOccasion, setFormOccasion] = useState('');
+  const [formMotif, setFormMotif] = useState('');
   const [formFee, setFormFee] = useState('');
   const [formDress, setFormDress] = useState('');
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
 
   const yearName = years.find((y) => y.id === yearId)?.name || '';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Toutes';
@@ -273,6 +283,8 @@ export function ScheduleScreen({}: Props) {
           setPrimaryInstructions(opening.primary_instructions);
       } else if (tab === 'examens') {
         setExams(await listExamSchedules({ class_id: classId || undefined }));
+      } else if (tab === 'vacances') {
+        setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
       } else {
         setActivities(
           await listExtracurricularActivities({
@@ -452,6 +464,7 @@ export function ScheduleScreen({}: Props) {
     setSuccess('');
     setError('');
     setEditingActivityId(null);
+    setEditingVacationId(null);
     setFormKind(kind);
     setFormClassId(classId || classes[0]?.id || '');
     setFormRoomId(roomId || '');
@@ -461,7 +474,9 @@ export function ScheduleScreen({}: Props) {
     setFormEnd(kind === 'moment' ? '10:15' : '09:00');
     setFormPeriod('');
     setFormDate(toYYYYMMDD());
+    setFormEndDate(toYYYYMMDD());
     setFormOccasion('');
+    setFormMotif('');
     setFormFee('');
     setFormDress('');
     setFormMomentKind('RECESS');
@@ -484,9 +499,20 @@ export function ScheduleScreen({}: Props) {
     setShowForm(true);
   }
 
+  function openEditVacation(item: SchoolVacationItem) {
+    setSuccess('');
+    setError('');
+    setEditingVacationId(item.id);
+    setFormDate((item.start_date || '').slice(0, 10) || toYYYYMMDD());
+    setFormEndDate((item.end_date || '').slice(0, 10) || toYYYYMMDD());
+    setFormMotif(item.motif || '');
+    setShowForm(true);
+  }
+
   function closeForm() {
     setShowForm(false);
     setEditingActivityId(null);
+    setEditingVacationId(null);
   }
 
   async function handleCreate() {
@@ -535,6 +561,23 @@ export function ScheduleScreen({}: Props) {
           end_time: formEnd,
         });
         setSuccess('Examen ajouté.');
+      } else if (tab === 'vacances') {
+        if (!yearId || !formDate || !formEndDate || !formMotif.trim()) {
+          throw new Error('Année, dates et motif requis.');
+        }
+        const payload = {
+          academic_year_id: yearId,
+          start_date: formDate,
+          end_date: formEndDate,
+          motif: formMotif.trim(),
+        };
+        if (editingVacationId) {
+          await updateSchoolVacation(editingVacationId, payload);
+          setSuccess('Vacances mises à jour.');
+        } else {
+          await createSchoolVacation(payload);
+          setSuccess('Vacances ajoutées.');
+        }
       } else {
         if (!yearId || !formClassId || !formOccasion.trim() || !formDate) {
           throw new Error('Année, classe, occasion et date requis.');
@@ -602,6 +645,7 @@ export function ScheduleScreen({}: Props) {
             try {
               if (kind === 'cours') await deleteScheduleSlot(id);
               else if (kind === 'examens') await deleteExamSchedule(id);
+              else if (kind === 'vacances') await deleteSchoolVacation(id);
               else await deleteExtracurricularActivity(id);
               await loadLists();
             } catch (err) {
@@ -744,7 +788,9 @@ export function ScheduleScreen({}: Props) {
             value={yearName || '—'}
             onPress={() => setPicker('year')}
           />
-          <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
+          {tab !== 'vacances' ? (
+            <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
+          ) : null}
           {tab === 'cours' ? (
             <>
               <SelectChip label="Salle" value={roomLabel} onPress={() => setPicker('room')} />
@@ -1170,6 +1216,35 @@ export function ScheduleScreen({}: Props) {
             </View>
           )}
         />
+      ) : tab === 'vacances' ? (
+        <FlatList
+          data={vacations}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={<EmptyState title="Aucune période de vacances" />}
+          renderItem={({ item }) => (
+            <View style={styles.eventCard}>
+              <View style={styles.accentAmber} />
+              <View style={styles.eventBody}>
+                <Text style={styles.timeBadgeAmber}>
+                  {[item.start_date, item.end_date].filter(Boolean).join(' – ') || '—'}
+                </Text>
+                <Text style={styles.cardTitle}>{item.motif || 'Vacances'}</Text>
+                {item.academic_year_name ? <Muted>{item.academic_year_name}</Muted> : null}
+                {canEdit ? (
+                  <View style={styles.cardActions}>
+                    <Pressable onPress={() => openEditVacation(item)}>
+                      <Text style={styles.editLink}>Modifier</Text>
+                    </Pressable>
+                    <Pressable onPress={() => confirmDelete('vacances', item.id)}>
+                      <Text style={[styles.deleteLink, { marginTop: 0 }]}>Supprimer</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          )}
+        />
       ) : (
         <FlatList
           data={activities}
@@ -1211,15 +1286,21 @@ export function ScheduleScreen({}: Props) {
               ? 'Nouveau créneau'
               : tab === 'examens'
                 ? 'Nouvel examen'
-                : editingActivityId
-                  ? 'Modifier'
-                  : 'Nouvelle activité'}
+                : tab === 'vacances'
+                  ? editingVacationId
+                    ? 'Modifier'
+                    : 'Nouvelles vacances'
+                  : editingActivityId
+                    ? 'Modifier'
+                    : 'Nouvelle activité'}
         </Text>
+        {tab !== 'vacances' ? (
         <SelectChip
           label="Classe"
           value={classes.find((c) => c.id === formClassId)?.name || 'Choisir'}
           onPress={() => setPicker('formClass')}
         />
+        ) : null}
         {tab === 'cours' && formKind === 'moment' ? (
           <>
             <SelectChip
@@ -1294,8 +1375,19 @@ export function ScheduleScreen({}: Props) {
             onPress={() => setPicker('formPeriod')}
           />
         ) : null}
-        {tab !== 'cours' ? (
+        {tab !== 'cours' && tab !== 'vacances' ? (
           <DateField label="Date" value={formDate} onChange={setFormDate} />
+        ) : null}
+        {tab === 'vacances' ? (
+          <>
+            <DateField label="Début" value={formDate} onChange={setFormDate} />
+            <DateField label="Fin" value={formEndDate} onChange={setFormEndDate} />
+            <TextField
+              label="Motif"
+              value={formMotif}
+              onChangeText={setFormMotif}
+            />
+          </>
         ) : null}
         {tab === 'parascolaires' ? (
           <>
@@ -1317,6 +1409,7 @@ export function ScheduleScreen({}: Props) {
             />
           </>
         ) : null}
+        {tab !== 'vacances' ? (
         <View style={styles.timeRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.timeLabel}>Début</Text>
@@ -1339,6 +1432,7 @@ export function ScheduleScreen({}: Props) {
             />
           </View>
         </View>
+        ) : null}
         <ErrorBanner message={error} />
         <View style={styles.formActions}>
           <Button

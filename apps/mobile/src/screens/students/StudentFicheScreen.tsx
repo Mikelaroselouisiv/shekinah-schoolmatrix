@@ -33,12 +33,14 @@ import {
   getStudent,
   getStudentHomework,
   getStudentSchedule,
+  listSchoolVacations,
   type ClassDayList,
   type DisciplineSummary,
   type ExamResults,
   type HomeworkAssignment,
   type PaymentStatus,
   type ScheduleSlot,
+  type SchoolVacationItem,
   type StudentListItem,
 } from '../../services/api';
 import {
@@ -84,6 +86,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [dayLists, setDayLists] = useState<ClassDayList[]>([]);
   const [scheduleMode, setScheduleMode] = useState<'list' | 'timed' | null>(null);
   const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
+  const [vacations, setVacations] = useState<SchoolVacationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -147,6 +150,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         setHomework(await getStudentHomework(studentId));
       } catch {
         setHomework([]);
+      }
+      try {
+        setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
+      } catch {
+        setVacations([]);
       }
     } catch (err) {
       const cached = await readCachedStudentFiche(studentId);
@@ -362,6 +370,29 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                   <Text style={styles.scheduleMeta}>
                     {[slot.teacher_name, slot.room_name].filter(Boolean).join(' · ')}
                   </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>Vacances</Text>
+          {vacations.length === 0 ? (
+            <Text style={styles.emptyLine}>Aucune période de vacances pour cette année.</Text>
+          ) : (
+            vacations.map((v) => (
+              <View key={v.id} style={styles.scheduleRow}>
+                <View style={styles.scheduleDay}>
+                  <Text style={styles.scheduleDayText}>
+                    {formatDateJJMMAAAA(v.start_date)}
+                  </Text>
+                  <Text style={styles.scheduleTime}>
+                    {formatDateJJMMAAAA(v.end_date)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.scheduleSubject}>{v.motif || 'Vacances'}</Text>
                 </View>
               </View>
             ))

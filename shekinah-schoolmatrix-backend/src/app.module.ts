@@ -13,6 +13,7 @@ import { UsersModule } from './users/users.module';
 import { TeachersModule } from './teachers/teachers.module';
 import { ExamScheduleModule } from './exam-schedule/exam-schedule.module';
 import { ExtracurricularActivityModule } from './extracurricular-activity/extracurricular-activity.module';
+import { SchoolVacationModule } from './school-vacation/school-vacation.module';
 import { EconomatModule } from './economat/economat.module';
 import { FinanceModule } from './finance/finance.module';
 import { AcademicYearModule } from './academic-year/academic-year.module';
@@ -76,6 +77,7 @@ import { migrations } from './migrations';
     TeachersModule,
     ExamScheduleModule,
     ExtracurricularActivityModule,
+    SchoolVacationModule,
     EconomatModule,
     FinanceModule,
     AcademicYearModule,

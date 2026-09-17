@@ -91,6 +91,12 @@ const ACTIVITY_COLUMNS: PdfColumn[] = [
   { header: "Tenue", key: "tenue" },
 ];
 
+const VACATION_COLUMNS: PdfColumn[] = [
+  { header: "Début", key: "debut" },
+  { header: "Fin", key: "fin" },
+  { header: "Motif", key: "motif" },
+];
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -140,6 +146,15 @@ type ExtracurricularActivity = {
   occasion: string;
   participation_fee: string | null;
   dress_code: string | null;
+};
+
+type SchoolVacation = {
+  id: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  start_date: string;
+  end_date: string;
+  motif: string;
 };
 
 type ClassItem = { id: string; name: string; level?: string | null };
@@ -217,10 +232,21 @@ function coursePdfSections(courseSlots: ScheduleSlot[], classMoments: ClassMomen
   return sections;
 }
 
+function dateKey(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  return String(value).slice(0, 10);
+}
+
 function examPdfRows(list: ExamSchedule[]) {
   return [...list]
     .sort(
-      (a, b) => a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time),
+      (a, b) =>
+        dateKey(a.exam_date).localeCompare(dateKey(b.exam_date)) ||
+        dateKey(a.start_time).localeCompare(dateKey(b.start_time)),
     )
     .map((e) => ({
       date: formatDateJJMMAAAA(e.exam_date),
@@ -384,13 +410,14 @@ function InstructionLines({
 const WEEKDAYS = MORNING_WEEKDAYS;
 
 export function DashboardSchedulePage() {
-  const [tab, setTab] = useState<"cours" | "examens" | "parascolaires">("cours");
+  const [tab, setTab] = useState<"cours" | "examens" | "parascolaires" | "vacances">("cours");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [activities, setActivities] = useState<ExtracurricularActivity[]>([]);
+  const [vacations, setVacations] = useState<SchoolVacation[]>([]);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -453,6 +480,17 @@ export function DashboardSchedulePage() {
   };
   const [activityForm, setActivityForm] = useState(emptyActivityForm);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+
+  const [showVacationForm, setShowVacationForm] = useState(false);
+  const vacationFormRef = useRevealScroll<HTMLFormElement>(showVacationForm);
+  const emptyVacationForm = {
+    academic_year_id: "",
+    start_date: "",
+    end_date: "",
+    motif: "",
+  };
+  const [vacationForm, setVacationForm] = useState(emptyVacationForm);
+  const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
 
@@ -577,6 +615,21 @@ export function DashboardSchedulePage() {
     }
   }
 
+  async function loadVacations(overrideYearId?: string) {
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      const yearId = overrideYearId ?? academicYearFilter;
+      if (yearId) params.set("academic_year_id", yearId);
+      const res = await fetchWithAuth(`${API_BASE}/school-vacations?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setVacations(data.school_vacations ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   async function load() {
     setLoading(true);
     await loadRefs();
@@ -599,6 +652,7 @@ export function DashboardSchedulePage() {
       loadSlots(defaultYearId),
       loadExams(),
       loadActivities(defaultYearId),
+      loadVacations(defaultYearId),
       loadMomentsAndDuties(defaultYearId),
     ]);
     setLoading(false);
@@ -613,6 +667,7 @@ export function DashboardSchedulePage() {
       loadSlots();
       loadExams();
       loadActivities();
+      loadVacations();
       loadMomentsAndDuties();
     }
   }, [academicYearFilter, classFilter, roomFilter]);
@@ -1081,6 +1136,75 @@ export function DashboardSchedulePage() {
     }
   }
 
+  async function handleSaveVacation(e: React.FormEvent) {
+    e.preventDefault();
+    if (!vacationForm.academic_year_id || !vacationForm.start_date || !vacationForm.end_date || !vacationForm.motif.trim()) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        academic_year_id: vacationForm.academic_year_id,
+        start_date: vacationForm.start_date,
+        end_date: vacationForm.end_date,
+        motif: vacationForm.motif.trim(),
+      };
+      const res = editingVacationId
+        ? await fetchWithAuth(`${API_BASE}/school-vacations/${editingVacationId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          })
+        : await fetchWithAuth(`${API_BASE}/school-vacations`, {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      closeVacationForm();
+      loadVacations();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function closeVacationForm() {
+    setShowVacationForm(false);
+    setEditingVacationId(null);
+    setVacationForm(emptyVacationForm);
+  }
+
+  function openNewVacation() {
+    setEditingVacationId(null);
+    setVacationForm({ ...emptyVacationForm, academic_year_id: academicYearFilter || defaultYearId });
+    setShowVacationForm(true);
+  }
+
+  function openEditVacation(v: SchoolVacation) {
+    setEditingVacationId(v.id);
+    setVacationForm({
+      academic_year_id: v.academic_year_id || defaultYearId,
+      start_date: dateKey(v.start_date),
+      end_date: dateKey(v.end_date),
+      motif: v.motif || "",
+    });
+    setShowVacationForm(true);
+  }
+
+  async function handleDeleteVacation(id: string) {
+    if (!confirm("Supprimer cette période de vacances ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school-vacations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      loadVacations();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   const filterLabels = useMemo(() => {
     const year = academicYears.find((ay) => ay.id === academicYearFilter)?.name;
     const klass = classes.find((c) => c.id === classFilter)?.name;
@@ -1127,6 +1251,22 @@ export function DashboardSchedulePage() {
           tenue: a.dress_code ?? "—",
         })),
     [activities],
+  );
+
+  const vacationRows = useMemo(
+    () =>
+      [...vacations]
+        .sort(
+          (a, b) =>
+            dateKey(a.start_date).localeCompare(dateKey(b.start_date)) ||
+            dateKey(a.end_date).localeCompare(dateKey(b.end_date)),
+        )
+        .map((v) => ({
+          debut: formatDateJJMMAAAA(v.start_date),
+          fin: formatDateJJMMAAAA(v.end_date),
+          motif: v.motif,
+        })),
+    [vacations],
   );
 
   const flagClasses = useMemo(
@@ -1256,11 +1396,17 @@ export function DashboardSchedulePage() {
         table: { columns: ACTIVITY_COLUMNS, rows: activityRows },
       });
     }
+    if (vacationRows.length > 0) {
+      sections.push({
+        title: "Vacances",
+        table: { columns: VACATION_COLUMNS, rows: vacationRows },
+      });
+    }
     return sections;
-  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows]);
+  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows, vacationRows]);
 
   const hasAnySchedule =
-    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
+    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0 || vacationRows.length > 0;
 
   const roomsToShow = rooms.filter(
     (r) =>
@@ -1313,6 +1459,11 @@ export function DashboardSchedulePage() {
 
   function roomSlotCount(room: Room) {
     return slots.filter((s) => s.room_id === room.id).length;
+  }
+
+  function roomExamCount(room: Room) {
+    if (!room.class_id) return 0;
+    return exams.filter((e) => e.class_id === room.class_id).length;
   }
 
   function classSubjectOptions(classId: string) {
@@ -1544,7 +1695,7 @@ export function DashboardSchedulePage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-full bg-slate-100 p-1 ring-1 ring-slate-200">
-          {(["cours", "examens", "parascolaires"] as const).map((t) => (
+          {(["cours", "examens", "parascolaires", "vacances"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -1553,7 +1704,13 @@ export function DashboardSchedulePage() {
                 tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              {t === "cours" ? "Cours" : t === "examens" ? "Examens" : "Parascolaire"}
+              {t === "cours"
+                ? "Cours"
+                : t === "examens"
+                  ? "Examens"
+                  : t === "parascolaires"
+                    ? "Parascolaire"
+                    : "Vacances"}
             </button>
           ))}
         </div>
@@ -1573,6 +1730,8 @@ export function DashboardSchedulePage() {
               ))}
             </select>
           </div>
+          {tab !== "vacances" ? (
+            <>
           <div>
             <label className="mb-1 block text-[11px] font-medium text-slate-500">Classe</label>
             <select
@@ -1609,6 +1768,8 @@ export function DashboardSchedulePage() {
                 ))}
             </select>
           </div>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -2253,6 +2414,148 @@ export function DashboardSchedulePage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteActivity(a.id)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {tab === "vacances" ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Calendrier des vacances
+            </h3>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Vacances",
+                  subtitle: pdfSubtitle,
+                  columns: VACATION_COLUMNS,
+                  rows: vacationRows,
+                }}
+                filename={`vacances${pdfFileSuffix}`}
+                disabled={vacationRows.length === 0}
+              />
+              <button onClick={openNewVacation} className="app-btn-primary text-sm py-2">
+                Ajouter
+              </button>
+            </div>
+          </div>
+          {showVacationForm ? (
+            <form
+              ref={vacationFormRef}
+              onSubmit={handleSaveVacation}
+              className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-900">
+                  {editingVacationId ? "Modifier" : "Nouvelle période"}
+                </h4>
+                <button type="button" onClick={closeVacationForm} className="text-xs font-medium text-slate-500">
+                  Fermer
+                </button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Année</label>
+                  <select
+                    value={vacationForm.academic_year_id}
+                    onChange={(e) => setVacationForm((f) => ({ ...f, academic_year_id: e.target.value }))}
+                    className="class-input max-w-[12rem] bg-white"
+                    required
+                  >
+                    <option value="">Sélectionner</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Début</label>
+                  <DateInputJJMMAAAA
+                    value={vacationForm.start_date}
+                    onChange={(start_date) => setVacationForm((f) => ({ ...f, start_date }))}
+                    className="class-input bg-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Fin</label>
+                  <DateInputJJMMAAAA
+                    value={vacationForm.end_date}
+                    onChange={(end_date) => setVacationForm((f) => ({ ...f, end_date }))}
+                    className="class-input bg-white"
+                    required
+                  />
+                </div>
+                <div className="min-w-[16rem] flex-1">
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Motif</label>
+                  <input
+                    value={vacationForm.motif}
+                    onChange={(e) => setVacationForm((f) => ({ ...f, motif: e.target.value }))}
+                    className="class-input w-full bg-white"
+                    required
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                  {saving ? "Enregistrement…" : "Enregistrer"}
+                </button>
+                <button type="button" onClick={closeVacationForm} className="app-btn-secondary text-sm py-2">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {vacations.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-slate-500">
+              Aucune période de vacances
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {vacations.map((v) => (
+                <article
+                  key={v.id}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                >
+                  <div className="flex">
+                    <span className="w-1.5 shrink-0 bg-sky-400" />
+                    <div className="min-w-0 flex-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+                        {formatDateJJMMAAAA(v.start_date)}
+                        {dateKey(v.end_date) !== dateKey(v.start_date)
+                          ? ` – ${formatDateJJMMAAAA(v.end_date)}`
+                          : ""}
+                      </p>
+                      <h4 className="mt-0.5 font-bold text-slate-900">{v.motif}</h4>
+                      {v.academic_year_name ? (
+                        <p className="mt-1 text-sm text-slate-500">{v.academic_year_name}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditVacation(v)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVacation(v.id)}
                       className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
                     >
                       Supprimer

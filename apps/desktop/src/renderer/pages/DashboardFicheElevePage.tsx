@@ -238,6 +238,15 @@ type ExtracurricularActivityItem = {
   dress_code: string | null;
 };
 
+type SchoolVacationItem = {
+  id: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  start_date: string;
+  end_date: string;
+  motif: string;
+};
+
 export function DashboardFicheElevePage() {
   const [searchParams] = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
@@ -264,10 +273,11 @@ export function DashboardFicheElevePage() {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [examResults, setExamResults] = useState<ExamResults | null>(null);
   const [formationDecision, setFormationDecision] = useState<FormationStudent | null>(null);
-  const [scheduleTab, setScheduleTab] = useState<"cours" | "examens" | "parascolaires">("cours");
+  const [scheduleTab, setScheduleTab] = useState<"cours" | "examens" | "parascolaires" | "vacances">("cours");
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
   const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
+  const [schoolVacations, setSchoolVacations] = useState<SchoolVacationItem[]>([]);
   const [dayLists, setDayLists] = useState<
     { day_of_week: number; subject_names: string[]; materials: string[] }[]
   >([]);
@@ -432,6 +442,7 @@ export function DashboardFicheElevePage() {
       setScheduleSlots([]);
       setExamSchedules([]);
       setExtracurricularActivities([]);
+      setSchoolVacations([]);
       setDossierYears([]);
       return;
     }
@@ -573,6 +584,14 @@ export function DashboardFicheElevePage() {
           setDayLists([]);
         }
       }
+      try {
+        const vacQs = selectedYearId ? `?academic_year_id=${selectedYearId}` : "";
+        const vacRes = await fetchWithAuth(`${API_BASE}/school-vacations${vacQs}`);
+        const vacData = await vacRes.json();
+        setSchoolVacations(vacRes.ok ? (vacData.school_vacations ?? []) : []);
+      } catch {
+        setSchoolVacations([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
       setStudent(null);
@@ -583,6 +602,7 @@ export function DashboardFicheElevePage() {
       setScheduleSlots([]);
       setExamSchedules([]);
       setExtracurricularActivities([]);
+      setSchoolVacations([]);
       setDayLists([]);
       setDossierYears([]);
     }
@@ -730,8 +750,27 @@ export function DashboardFicheElevePage() {
         },
       });
     }
+    if (schoolVacations.length > 0) {
+      sections.push({
+        title: "Vacances",
+        table: {
+          columns: [
+            { header: "Début", key: "debut" },
+            { header: "Fin", key: "fin" },
+            { header: "Motif", key: "motif" },
+          ],
+          rows: [...schoolVacations]
+            .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+            .map((v) => ({
+              debut: formatDateJJMMAAAA(v.start_date),
+              fin: formatDateJJMMAAAA(v.end_date),
+              motif: v.motif,
+            })),
+        },
+      });
+    }
     return sections;
-  }, [scheduleSlots, examSchedules, extracurricularActivities, dayLists, student?.class_level]);
+  }, [scheduleSlots, examSchedules, extracurricularActivities, schoolVacations, dayLists, student?.class_level]);
 
   const ficheLevel =
     dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
@@ -1196,7 +1235,7 @@ export function DashboardFicheElevePage() {
             </div>
             <div className="p-4">
               <div className="flex gap-1 border-b border-[var(--app-border)] mb-4">
-                {(["cours", "examens", "parascolaires"] as const).map((t) => (
+                {(["cours", "examens", "parascolaires", "vacances"] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -1210,6 +1249,7 @@ export function DashboardFicheElevePage() {
                     {t === "cours" && "Horaire des cours"}
                     {t === "examens" && "Horaire des examens"}
                     {t === "parascolaires" && "Activités parascolaires"}
+                    {t === "vacances" && "Vacances"}
                   </button>
                 ))}
               </div>
@@ -1355,6 +1395,34 @@ export function DashboardFicheElevePage() {
                             <td className="px-4 py-2 font-medium text-slate-900">{a.occasion}</td>
                             <td className="px-4 py-2 text-slate-600">{a.participation_fee ?? "—"}</td>
                             <td className="px-4 py-2 text-slate-600">{a.dress_code ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {scheduleTab === "vacances" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Début</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Fin</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Motif</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schoolVacations.length === 0 ? (
+                        <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Aucune période de vacances pour cette année.</td></tr>
+                      ) : (
+                        [...schoolVacations]
+                          .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+                          .map((v) => (
+                          <tr key={v.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(v.start_date)}</td>
+                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(v.end_date)}</td>
+                            <td className="px-4 py-2 font-medium text-slate-900">{v.motif}</td>
                           </tr>
                         ))
                       )}

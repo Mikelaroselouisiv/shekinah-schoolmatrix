@@ -31,6 +31,7 @@ import { SyncMissingBusinessEntities1739000000028 } from './1739000000028-SyncMi
 import { TeacherAssignmentUpdatedAt1739000000029 } from './1739000000029-TeacherAssignmentUpdatedAt';
 import { SubjectAudiencePeriodScope1739000000030 } from './1739000000030-SubjectAudiencePeriodScope';
 import { OpeningInstructionText1739000000031 } from './1739000000031-OpeningInstructionText';
+import { SchoolVacation1739000000032 } from './1739000000032-SchoolVacation';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -67,4 +68,5 @@ export const migrations = [
   TeacherAssignmentUpdatedAt1739000000029,
   SubjectAudiencePeriodScope1739000000030,
   OpeningInstructionText1739000000031,
+  SchoolVacation1739000000032,
 ];

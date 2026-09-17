@@ -454,6 +454,15 @@ export type ExtracurricularItem = {
   dress_code?: string | null;
 };
 
+export type SchoolVacationItem = {
+  id: string;
+  academic_year_id?: string;
+  academic_year_name?: string;
+  start_date?: string;
+  end_date?: string;
+  motif?: string;
+};
+
 export type RoomItem = {
   id: string;
   name: string;
@@ -510,6 +519,7 @@ function unwrapList<T>(data: unknown): T[] {
       'school_materials',
       'exam_schedules',
       'extracurricular_activities',
+      'school_vacations',
       'rooms',
       'teachers',
       'assignments',
@@ -926,6 +936,38 @@ export async function updateExtracurricularActivity(
 
 export async function deleteExtracurricularActivity(id: string): Promise<void> {
   await api.delete(`/extracurricular-activities/${id}`);
+}
+
+export async function listSchoolVacations(params?: {
+  academic_year_id?: string;
+}): Promise<SchoolVacationItem[]> {
+  const { data } = await api.get('/school-vacations', { params });
+  return unwrapList<SchoolVacationItem>(data);
+}
+
+export async function createSchoolVacation(body: {
+  academic_year_id: string;
+  start_date: string;
+  end_date: string;
+  motif: string;
+}): Promise<void> {
+  await api.post('/school-vacations', body);
+}
+
+export async function updateSchoolVacation(
+  id: string,
+  body: {
+    academic_year_id?: string;
+    start_date?: string;
+    end_date?: string;
+    motif?: string;
+  },
+): Promise<void> {
+  await api.patch(`/school-vacations/${id}`, body);
+}
+
+export async function deleteSchoolVacation(id: string): Promise<void> {
+  await api.delete(`/school-vacations/${id}`);
 }
 
 export async function getRooms(classId?: string): Promise<RoomItem[]> {
