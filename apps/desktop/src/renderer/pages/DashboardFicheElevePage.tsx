@@ -10,7 +10,7 @@ import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
-import { learnerNoun, learnerNounCap, isHigherEducationLevel, isMaterialsCycle } from "@/lib/educationLevels";
+import { learnerNoun, learnerNounCap, isMaterialsCycle } from "@/lib/educationLevels";
 import { isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
@@ -302,6 +302,7 @@ export function DashboardFicheElevePage() {
   >([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [dossierYears, setDossierYears] = useState<StudentDossierYear[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -401,7 +402,7 @@ export function DashboardFicheElevePage() {
     if (restrictToLinkedStudents) return;
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = searchQuery.trim();
-    if (q.length < 2) {
+    if (!withoutNisuFilter && q.length < 2) {
       setSearchResults([]);
       setSearchLoading(false);
       return;
@@ -410,9 +411,10 @@ export function DashboardFicheElevePage() {
     searchTimer.current = setTimeout(async () => {
       try {
         const status = rosterMode === "alumni" ? "alumni" : "active";
-        const res = await fetchWithAuth(
-          `${API_BASE}/students/search?q=${encodeURIComponent(q)}&status=${status}&limit=20`,
-        );
+        const qs = new URLSearchParams({ status, limit: withoutNisuFilter ? "50" : "20" });
+        if (q.length >= 2) qs.set("q", q);
+        if (withoutNisuFilter) qs.set("without_nisu", "1");
+        const res = await fetchWithAuth(`${API_BASE}/students/search?${qs}`);
         const data = await res.json();
         setSearchResults(res.ok ? (data.students ?? []) : []);
       } catch {
@@ -424,7 +426,7 @@ export function DashboardFicheElevePage() {
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [searchQuery, rosterMode, restrictToLinkedStudents]);
+  }, [searchQuery, rosterMode, restrictToLinkedStudents, withoutNisuFilter]);
 
   useEffect(() => {
     if (initialStudentId) {
@@ -842,10 +844,30 @@ export function DashboardFicheElevePage() {
               onBlur={() => {
                 window.setTimeout(() => setSearchOpen(false), 180);
               }}
-              placeholder={canSeeNisu ? "Nom, prénom, NISU ou code" : "Nom, prénom ou code (2 caractères min.)"}
+              placeholder={
+                withoutNisuFilter
+                  ? "Nom parmi les dossiers sans NISU"
+                  : canSeeNisu
+                    ? "Nom, prénom, NISU ou code"
+                    : "Nom, prénom ou code (2 caractères min.)"
+              }
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
             />
-            {searchOpen && searchQuery.trim().length >= 2 && (
+            {canSeeNisu && (
+              <label className="mt-1.5 flex items-center gap-2 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={withoutNisuFilter}
+                  onChange={(e) => {
+                    setWithoutNisuFilter(e.target.checked);
+                    setSearchOpen(true);
+                  }}
+                  className="rounded border-slate-300"
+                />
+                Dossiers sans NISU
+              </label>
+            )}
+            {searchOpen && (withoutNisuFilter || searchQuery.trim().length >= 2) && (
               <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-[var(--app-border)] bg-white shadow-lg">
                 {searchLoading ? (
                   <p className="px-3 py-2 text-sm text-slate-500">Recherche...</p>
@@ -865,7 +887,7 @@ export function DashboardFicheElevePage() {
                       }}
                     >
                       <span className="font-medium">{s.last_name} {s.first_name}</span>
-                      {canSeeNisu && s.order_number ? <span className="text-slate-500"> · NISU {s.order_number}</span> : null}
+                      {canSeeNisu && s.order_number ? <span className="text-slate-500"> · NISU {s.order_number}</span> : canSeeNisu ? <span className="text-amber-700"> · Sans NISU</span> : null}
                       {s.management_code ? <span className="text-slate-500"> · {s.management_code}</span> : null}
                       {s.class_name ? <span className="text-slate-400"> · {s.class_name}</span> : null}
                     </button>
@@ -891,11 +913,15 @@ export function DashboardFicheElevePage() {
               className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[220px]"
             >
               <option value="">— Sélectionner —</option>
-              {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
+              {(restrictToLinkedStudents ? linkedStudents : students)
+                .filter((s) => !withoutNisuFilter || !("order_number" in s) || !s.order_number)
+                .map((s) => (
                 <option key={s.id} value={s.id}>
                   {canSeeNisu && "order_number" in s && s.order_number
                     ? `${s.order_number} — `
-                    : s.management_code
+                    : canSeeNisu
+                      ? "Sans NISU — "
+                      : s.management_code
                       ? `${s.management_code} — `
                       : ""}
                   {s.first_name} {s.last_name}
@@ -932,9 +958,9 @@ export function DashboardFicheElevePage() {
                 <p className="text-slate-600 font-mono text-sm">
                   Code {student.management_code ?? "—"}
                 </p>
-                {canSeeNisu && student.order_number && !isHigherEducationLevel(student.class_level) ? (
+                {canSeeNisu ? (
                   <p className="text-slate-600 font-mono text-sm">
-                    NISU {student.order_number}
+                    {student.order_number ? `NISU ${student.order_number}` : "Sans NISU"}
                   </p>
                 ) : null}
                 <p className="text-slate-700 mt-1">

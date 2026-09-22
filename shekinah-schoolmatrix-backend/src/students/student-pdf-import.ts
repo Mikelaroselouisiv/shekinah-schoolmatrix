@@ -182,7 +182,7 @@ export function parseStudentTableFromPdfText(text: string): PdfParseResult {
       }
     }
 
-    if (!order_number || !last_name || !first_name) {
+    if (!last_name || !first_name) {
       if (order_number || last_name || first_name) {
         warnings.push(`Ligne ignorée (données incomplètes) : ${line.slice(0, 80)}`);
       }

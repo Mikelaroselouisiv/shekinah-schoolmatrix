@@ -213,13 +213,7 @@ export function DashboardStudentsPage() {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
     if (!editing && !form.academic_year_id) return;
-    const nisu = formHigherEd
-      ? ""
-      : form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
-    if (!formHigherEd && !nisu) {
-      setError("Le NISU (identifiant unique élève) est obligatoire.");
-      return;
-    }
+    const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
@@ -485,12 +479,10 @@ export function DashboardStudentsPage() {
                   value={form.class_id}
                   onChange={(e) => {
                     const class_id = e.target.value;
-                    const higher = isHigherEducationLevel(classes.find((c) => c.id === class_id)?.level);
                     setForm((f) => ({
                       ...f,
                       class_id,
                       room_id: "",
-                      order_number: higher ? "" : f.order_number,
                     }));
                   }}
                   className={FIELD}
@@ -536,9 +528,9 @@ export function DashboardStudentsPage() {
                   </p>
                 ) : null}
               </div>
-              {form.class_id && !formHigherEd ? (
+              {form.class_id ? (
                 <div className="sm:col-span-2">
-                  <Field label="NISU *">
+                  <Field label="NISU">
                     <input
                       type="text"
                       value={form.order_number}
@@ -550,16 +542,13 @@ export function DashboardStudentsPage() {
                         }))
                       }
                       className={`${FIELD} font-mono`}
-                      required={!formHigherEd}
+                      placeholder="Optionnel — à compléter s’il est connu"
                     />
                   </Field>
                   {editing?.management_code ? (
                     <p className="mt-2 font-mono text-sm text-slate-600">{editing.management_code}</p>
                   ) : null}
                 </div>
-              ) : null}
-              {formHigherEd && editing?.management_code ? (
-                <p className="font-mono text-sm text-slate-600 sm:col-span-2">{editing.management_code}</p>
               ) : null}
             </div>
           </Section>

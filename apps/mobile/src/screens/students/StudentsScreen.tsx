@@ -23,7 +23,7 @@ import { useSchool } from '../../context/SchoolContext';
 import { canEditStudent, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied, useCanBrowseStudents } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
-import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
+import { learnerNoun } from '../../lib/educationLevels';
 import {
   getAcademicYears,
   getClasses,
@@ -69,6 +69,7 @@ export function StudentsScreen({ navigation }: Props) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [yearId, setYearId] = useState(context?.academic_year?.id || '');
   const [classId, setClassId] = useState('');
+  const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [picker, setPicker] = useState<PickerKind>(null);
 
   const yearLabel = years.find((y) => y.id === yearId)?.name
@@ -76,7 +77,6 @@ export function StudentsScreen({ navigation }: Props) {
     || 'Année académique';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Classe';
   const classLevel = classes.find((c) => c.id === classId)?.level;
-  const listHigherEd = isHigherEducationLevel(classLevel);
   const listLearner = learnerNoun(classLevel);
   const filtersReady = !!yearId && !!classId;
 
@@ -159,15 +159,16 @@ export function StudentsScreen({ navigation }: Props) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
     return items.filter((s) => {
+      if (withoutNisuFilter && s.order_number) return false;
+      if (!q) return true;
       const name = studentDisplayName(s).toLowerCase();
       const nisu = (s.order_number || '').toLowerCase();
       const code = (s.management_code || '').toLowerCase();
       const cls = ('class_name' in s ? s.class_name || '' : '').toLowerCase();
       return name.includes(q) || (canSeeNisu && nisu.includes(q)) || code.includes(q) || cls.includes(q);
     });
-  }, [items, query, canSeeNisu]);
+  }, [items, query, canSeeNisu, withoutNisuFilter]);
 
   if (!canBrowse) {
     return <AccessDenied />;
@@ -219,10 +220,17 @@ export function StudentsScreen({ navigation }: Props) {
           <SearchBar
             value={query}
             onChangeText={setQuery}
-            placeholder={
-              listHigherEd ? 'Nom…' : canSeeNisu ? 'Nom ou NISU…' : 'Nom ou code…'
-            }
+            placeholder={canSeeNisu ? 'Nom ou NISU…' : 'Nom ou code…'}
           />
+        ) : null}
+        {canSeeNisu && (filtersReady || linkedOnly) ? (
+          <Pressable
+            onPress={() => setWithoutNisuFilter((v) => !v)}
+            style={styles.nisuFilter}
+          >
+            <View style={[styles.nisuCheck, withoutNisuFilter && styles.nisuCheckOn]} />
+            <Text style={styles.nisuFilterLabel}>Sans NISU</Text>
+          </Pressable>
         ) : null}
 
         {canEnroll ? (
@@ -264,11 +272,9 @@ export function StudentsScreen({ navigation }: Props) {
             <ListRow
               title={studentDisplayName(item)}
               subtitle={[
-                listHigherEd
-                  ? null
-                  : canSeeNisu
-                    ? item.order_number
-                    : item.management_code,
+                canSeeNisu
+                  ? item.order_number || 'Sans NISU'
+                  : item.management_code,
                 'class_name' in item ? item.class_name : null,
               ]
                 .filter(Boolean)
@@ -368,6 +374,26 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 15, color: colors.text, fontWeight: '700', marginTop: 2 },
   enrollBtn: { marginTop: 10, marginBottom: 4 },
+  nisuFilter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 2,
+  },
+  nisuCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  nisuCheckOn: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  nisuFilterLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
   list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(8) },
   emptyWrap: { paddingHorizontal: 20, paddingTop: 24 },
   backdrop: {

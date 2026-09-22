@@ -190,7 +190,6 @@ export function EnrollmentScreen({ navigation, route }: Props) {
     if (id === 'scolarite') {
       if (!form.class_id) return 'Classe obligatoire.';
       if (!editing && !form.academic_year_id) return 'Année scolaire obligatoire.';
-      if (!formHigherEd && !form.order_number.trim()) return 'NISU obligatoire.';
     }
     return null;
   }
@@ -225,9 +224,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
     setError('');
     setSuccess('');
     try {
-      const nisu = formHigherEd
-        ? ''
-        : form.order_number.trim().replace(/[\s\u00A0]+/g, '').toUpperCase();
+      const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, '').toUpperCase();
       const body: StudentWriteBody = {
         order_number: nisu || null,
         first_name: form.first_name.trim(),
@@ -442,12 +439,13 @@ export function EnrollmentScreen({ navigation, route }: Props) {
               value={classes.find((c) => c.id === form.class_id)?.name || 'Choisir'}
               onPress={() => setPicker('class')}
             />
-            {!formHigherEd && form.class_id ? (
+            {form.class_id ? (
               <TextField
-                label="NISU *"
+                label="NISU"
                 value={form.order_number}
                 onChangeText={(t) => patch({ order_number: t })}
                 autoCapitalize="characters"
+                placeholder="Optionnel"
               />
             ) : null}
             <SelectChip
@@ -591,13 +589,9 @@ export function EnrollmentScreen({ navigation, route }: Props) {
                   onPress={() => {
                     if (picker === 'year') patch({ academic_year_id: item.id });
                     if (picker === 'class') {
-                      const higher = isHigherEducationLevel(
-                        classes.find((c) => c.id === item.id)?.level,
-                      );
                       patch({
                         class_id: item.id,
                         room_id: '',
-                        order_number: higher ? '' : form.order_number,
                       });
                     }
                     if (picker === 'room') patch({ room_id: item.id });

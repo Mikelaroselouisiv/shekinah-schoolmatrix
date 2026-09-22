@@ -11,7 +11,7 @@ Ignore l'en-tête institutionnel (école, année, logo, titres).
 Extrais TOUTES les lignes élèves du tableau, sur toutes les pages fournies.
 
 Pour chaque élève, renvoie un objet JSON avec :
-- order_number : identifiant (NISU, N°, matricule, code élève) — chaîne, obligatoire si présent
+- order_number : identifiant (NISU, N°, matricule, code élève) — chaîne, optionnel (chaîne vide si absent)
 - last_name : nom de famille
 - first_name : prénom(s)
 - gender : "M" ou "F" ou null
@@ -22,7 +22,7 @@ Règles :
 - Ne fabrique pas d'élèves absents du document.
 - Si nom et prénom sont dans une seule colonne, sépare-les raisonnablement (dernier mot = souvent le prénom, ou l'inverse selon le format local : privilégie Nom puis Prénom si colonnes distinctes).
 - Normalise les dates (JJ/MM/AAAA → YYYY-MM-DD).
-- order_number : préfère NISU / matricule ; sinon le numéro de ligne officiel du tableau.
+- order_number : préfère NISU / matricule ; si inconnu, laisse une chaîne vide. N'ignore pas une ligne faute de NISU.
 
 Réponds UNIQUEMENT avec un JSON valide de la forme :
 {"students":[{"order_number":"...","last_name":"...","first_name":"...","gender":"M","birth_date":null,"birth_place":null}]}`;
@@ -130,8 +130,9 @@ export class StudentAiImportService {
     const out: ParsedStudentRow[] = [];
     for (const row of batches) {
       const nisu = normalizeNisu(row.order_number);
-      if (!nisu || seen.has(nisu)) continue;
-      seen.add(nisu);
+      const key = nisu || `${row.last_name}|${row.first_name}|${row.row}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push({ ...row, order_number: nisu, row: out.length + 1 });
     }
     return out;
@@ -154,7 +155,7 @@ export class StudentAiImportService {
           first_name = parts.slice(1).join(' ');
         }
       }
-      if (!order_number || !last_name || !first_name) continue;
+      if (!last_name || !first_name) continue;
       i += 1;
       let gender: string | null = item.gender ?? item.sexe ?? null;
       if (gender) {

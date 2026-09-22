@@ -168,8 +168,8 @@ export function DashboardStudentsImportPage() {
     setError("");
   }
 
-  function removeRow(orderNumber: string) {
-    setRows((prev) => prev.filter((r) => r.order_number !== orderNumber));
+  function removeRow(rowNum: number) {
+    setRows((prev) => prev.filter((r) => r.row !== rowNum));
   }
 
   if (loading) {
@@ -295,8 +295,8 @@ export function DashboardStudentsImportPage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={`${r.order_number}-${r.row}`} className="border-b border-[var(--app-border)]">
-                    <td className="px-3 py-2 font-mono text-xs">{r.order_number}</td>
+                  <tr key={r.row} className="border-b border-[var(--app-border)]">
+                    <td className="px-3 py-2 font-mono text-xs">{r.order_number || "Sans NISU"}</td>
                     <td className="px-3 py-2">{r.last_name}</td>
                     <td className="px-3 py-2">{r.first_name}</td>
                     <td className="px-3 py-2">{r.gender ?? "—"}</td>
@@ -304,7 +304,7 @@ export function DashboardStudentsImportPage() {
                       {[r.birth_date, r.birth_place].filter(Boolean).join(" · ") || "—"}
                     </td>
                     <td className="px-3 py-2">
-                      <button type="button" onClick={() => removeRow(r.order_number)} className="text-red-600 text-xs hover:underline">
+                      <button type="button" onClick={() => removeRow(r.row)} className="text-red-600 text-xs hover:underline">
                         Retirer
                       </button>
                     </td>

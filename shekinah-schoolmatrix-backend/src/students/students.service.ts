@@ -13,7 +13,6 @@ import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { ParentAccountService } from '../users/parent-account.service';
-import { isHigherEducationLevel } from '../roles/education-levels';
 import type { ArchiveReason } from './student.serialize';
 
 export type ImportResult = {
@@ -46,12 +45,17 @@ export class StudentsService {
     classId?: string;
     roomId?: string;
     status?: 'active' | 'alumni' | 'all';
+    withoutNisu?: boolean;
   }): Promise<Student[]> {
     const qb = this.studentRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.class', 'c')
       .leftJoinAndSelect('s.room', 'r')
-      .orderBy('c.name', 'ASC')
+      .orderBy(
+        `CASE WHEN NULLIF(BTRIM(COALESCE(s.order_number, '')), '') IS NULL THEN 0 ELSE 1 END`,
+        'ASC',
+      )
+      .addOrderBy('c.name', 'ASC')
       .addOrderBy('r.name', 'ASC')
       .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC');
@@ -67,6 +71,9 @@ export class StudentsService {
     if (filters?.roomId) {
       qb.andWhere('s.room_id = :roomId', { roomId: filters.roomId });
     }
+    if (filters?.withoutNisu) {
+      qb.andWhere("(s.order_number IS NULL OR BTRIM(s.order_number) = '')");
+    }
     return qb.getMany();
   }
 
@@ -77,16 +84,22 @@ export class StudentsService {
     q?: string;
     status?: 'active' | 'alumni' | 'all';
     limit?: number;
+    withoutNisu?: boolean;
   }): Promise<Student[]> {
     const q = (params.q ?? '').trim();
-    if (q.length < 2) return [];
+    const withoutNisu = !!params.withoutNisu;
+    if (!withoutNisu && q.length < 2) return [];
     const status = params.status ?? 'active';
-    const limit = Math.min(Math.max(Number(params.limit) || 20, 1), 50);
+    const limit = Math.min(Math.max(Number(params.limit) || 20, 1), 80);
     const qb = this.studentRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.class', 'c')
       .leftJoinAndSelect('s.room', 'r')
-      .orderBy('s.last_name', 'ASC')
+      .orderBy(
+        `CASE WHEN NULLIF(BTRIM(COALESCE(s.order_number, '')), '') IS NULL THEN 0 ELSE 1 END`,
+        'ASC',
+      )
+      .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC')
       .take(limit);
 
@@ -95,16 +108,20 @@ export class StudentsService {
     } else if (status === 'alumni') {
       qb.andWhere('(s.active = false OR s.archived_at IS NOT NULL)');
     }
-
-    qb.andWhere(
-      `(LOWER(s.first_name) LIKE LOWER(:q)
-        OR LOWER(s.last_name) LIKE LOWER(:q)
-        OR LOWER(COALESCE(s.management_code, '')) LIKE LOWER(:q)
-        OR LOWER(COALESCE(s.order_number, '')) LIKE LOWER(:q)
-        OR LOWER(s.last_name || ' ' || s.first_name) LIKE LOWER(:q)
-        OR LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER(:q))`,
-      { q: `%${q}%` },
-    );
+    if (withoutNisu) {
+      qb.andWhere("(s.order_number IS NULL OR BTRIM(s.order_number) = '')");
+    }
+    if (q.length >= 2) {
+      qb.andWhere(
+        `(LOWER(s.first_name) LIKE LOWER(:q)
+          OR LOWER(s.last_name) LIKE LOWER(:q)
+          OR LOWER(COALESCE(s.management_code, '')) LIKE LOWER(:q)
+          OR LOWER(COALESCE(s.order_number, '')) LIKE LOWER(:q)
+          OR LOWER(s.last_name || ' ' || s.first_name) LIKE LOWER(:q)
+          OR LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER(:q))`,
+        { q: `%${q}%` },
+      );
+    }
 
     return qb.getMany();
   }
@@ -236,23 +253,16 @@ export class StudentsService {
   }
 
   /**
-   * NISU obligatoire hors formation supérieure.
-   * Au supérieur : pas de NISU — on stocke null (plusieurs NULL OK pour l’unicité PG).
+   * NISU optionnel. Si renseigné : unique global.
+   * Si vide : null (plusieurs dossiers sans NISU — unicité PG OK).
    */
   private async nisuForClass(
-    classId: string,
+    _classId: string,
     raw: string | null | undefined,
     excludeStudentId?: string,
   ): Promise<string | null> {
-    const cls = await this.classesService.findOne(classId);
     const nisu = normalizeNisu(raw);
-    if (isHigherEducationLevel(cls.level)) {
-      if (nisu) await this.assertNisuAvailable(nisu, excludeStudentId);
-      return nisu || null;
-    }
-    if (!nisu) {
-      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
-    }
+    if (!nisu) return null;
     await this.assertNisuAvailable(nisu, excludeStudentId);
     return nisu;
   }
@@ -465,14 +475,14 @@ export class StudentsService {
       const i = headerRow.findIndex((h) => names.some((n) => h === n || h.includes(n)));
       return i >= 0 ? i : -1;
     };
-    const iOrder = idx(['identifiant', 'order_number', 'numero_ministere', 'numero']);
+    const iOrder = idx(['identifiant', 'order_number', 'numero_ministere', 'numero', 'nisu']);
     const iPrenom = idx(['prenom', 'first_name']);
     const iNom = idx(['nom', 'last_name']);
     const iClasse = idx(['classe', 'class']);
-    if (iOrder < 0 || iPrenom < 0 || iNom < 0 || iClasse < 0) {
+    if (iPrenom < 0 || iNom < 0 || iClasse < 0) {
       result.errors.push({
         row: 0,
-        message: 'En-têtes requis : Identifiant (ou N° ministère), Prénom, Nom, Classe. Voir le modèle.',
+        message: 'En-têtes requis : Prénom, Nom, Classe. Identifiant (NISU) optionnel. Voir le modèle.',
       });
       return result;
     }
@@ -493,22 +503,20 @@ export class StudentsService {
       const row = lines[r];
       const rowNum = r + 1;
       const get = (i: number) => (i >= 0 && i < row.length ? (row[i] ?? '').trim() : '');
-      const orderNumber = normalizeNisu(get(iOrder));
+      const orderNumber = iOrder >= 0 ? normalizeNisu(get(iOrder)) : '';
       const first_name = get(iPrenom);
       const last_name = get(iNom);
       const className = get(iClasse);
-      if (!orderNumber) {
-        result.errors.push({ row: rowNum, message: 'NISU manquant.' });
-        continue;
+      if (orderNumber) {
+        if (seenInBatch.has(orderNumber)) {
+          result.errors.push({
+            row: rowNum,
+            message: `NISU « ${orderNumber} » en double dans le fichier — refusé.`,
+          });
+          continue;
+        }
+        seenInBatch.add(orderNumber);
       }
-      if (seenInBatch.has(orderNumber)) {
-        result.errors.push({
-          row: rowNum,
-          message: `NISU « ${orderNumber} » en double dans le fichier — refusé.`,
-        });
-        continue;
-      }
-      seenInBatch.add(orderNumber);
       if (!first_name || !last_name) {
         result.errors.push({ row: rowNum, message: 'Prénom et nom obligatoires.' });
         continue;
@@ -522,7 +530,9 @@ export class StudentsService {
         result.errors.push({ row: rowNum, message: `Classe « ${className} » introuvable. Créez-la d'abord.` });
         continue;
       }
-      const existing = await this.studentRepo.findOne({ where: { order_number: orderNumber } });
+      const existing = orderNumber
+        ? await this.studentRepo.findOne({ where: { order_number: orderNumber } })
+        : null;
       if (existing) {
         result.skipped++;
         continue;
@@ -537,7 +547,7 @@ export class StudentsService {
       const father_phone = get(iTelPere);
       try {
         await this.create({
-          order_number: orderNumber,
+          order_number: orderNumber || null,
           first_name,
           last_name,
           class_id: classId,
@@ -574,22 +584,21 @@ export class StudentsService {
 
     for (const row of result.rows ?? []) {
       const nisu = normalizeNisu(row.order_number);
-      if (!nisu) {
-        warnings.push(`Ligne ${row.row}: NISU manquant — ignorée.`);
-        continue;
+      if (nisu) {
+        if (seen.has(nisu)) {
+          warnings.push(`NISU « ${nisu} » en double dans le PDF — une seule occurrence est gardée.`);
+          continue;
+        }
+        seen.add(nisu);
+        const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
+        if (existing) {
+          warnings.push(
+            `NISU « ${nisu} » déjà inscrit (${existing.last_name} ${existing.first_name}) — non réimportable.`,
+          );
+          continue;
+        }
       }
-      if (seen.has(nisu)) {
-        warnings.push(`NISU « ${nisu} » en double dans le PDF — une seule occurrence est gardée.`);
-        continue;
-      }
-      seen.add(nisu);
-      const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
-      if (existing) {
-        warnings.push(
-          `NISU « ${nisu} » déjà inscrit (${existing.last_name} ${existing.first_name}) — non réimportable.`,
-        );
-        continue;
-      }
+      if (!row.first_name?.trim() || !row.last_name?.trim()) continue;
       rows.push({ ...row, order_number: nisu });
     }
 
@@ -636,30 +645,30 @@ export class StudentsService {
     const seenInBatch = new Set<string>();
     for (const row of rows) {
       const orderNumber = normalizeNisu(row.order_number);
-      if (!orderNumber) {
-        result.errors.push({ row: row.row, message: 'NISU manquant.' });
-        continue;
+      if (orderNumber) {
+        if (seenInBatch.has(orderNumber)) {
+          result.errors.push({
+            row: row.row,
+            message: `NISU « ${orderNumber} » en double dans la liste — refusé.`,
+          });
+          continue;
+        }
+        seenInBatch.add(orderNumber);
       }
-      if (seenInBatch.has(orderNumber)) {
-        result.errors.push({
-          row: row.row,
-          message: `NISU « ${orderNumber} » en double dans la liste — refusé.`,
-        });
-        continue;
-      }
-      seenInBatch.add(orderNumber);
       if (!row.first_name?.trim() || !row.last_name?.trim()) {
         result.errors.push({ row: row.row, message: 'Prénom et nom obligatoires.' });
         continue;
       }
-      const existing = await this.studentRepo.findOne({ where: { order_number: orderNumber } });
+      const existing = orderNumber
+        ? await this.studentRepo.findOne({ where: { order_number: orderNumber } })
+        : null;
       if (existing) {
         result.skipped++;
         continue;
       }
       try {
         await this.create({
-          order_number: orderNumber,
+          order_number: orderNumber || null,
           first_name: row.first_name.trim(),
           last_name: row.last_name.trim(),
           class_id: classId,

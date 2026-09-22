@@ -61,6 +61,7 @@ export class StudentsController {
     @Query('class_id') classId?: string,
     @Query('room_id') roomId?: string,
     @Query('status') status?: 'active' | 'alumni' | 'all',
+    @Query('without_nisu') withoutNisu?: string,
   ) {
     if (classId) await this.levelScope.assertClassAccess(req.user, classId);
     if (status === 'alumni') this.assertDossierComplet(req.user);
@@ -70,6 +71,7 @@ export class StudentsController {
         classId: classId || undefined,
         roomId: roomId || undefined,
         status: status || 'active',
+        withoutNisu: withoutNisu === '1' || withoutNisu === 'true',
       }),
       (s) => s.class?.id,
     );
@@ -87,6 +89,7 @@ export class StudentsController {
     @Query('q') q?: string,
     @Query('status') status?: 'active' | 'alumni' | 'all',
     @Query('limit') limit?: string,
+    @Query('without_nisu') withoutNisu?: string,
   ) {
     const role = this.actorRole(req.user);
     if (status === 'alumni') this.assertDossierComplet(req.user);
@@ -97,6 +100,7 @@ export class StudentsController {
       q,
       status: status || 'active',
       limit: limit ? Number(limit) : 20,
+      withoutNisu: withoutNisu === '1' || withoutNisu === 'true',
     });
     const students = await this.levelScope.filterByClassId(
       req.user,

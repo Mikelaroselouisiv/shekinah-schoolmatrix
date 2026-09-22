@@ -48,7 +48,7 @@ import {
   readCachedStudentFiche,
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
-import { isHigherEducationLevel, isMaterialsCycle, learnerNoun } from '../../lib/educationLevels';
+import { isMaterialsCycle, learnerNoun } from '../../lib/educationLevels';
 import { isListScheduleLevel } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
 import { listBottomPadding } from '../../lib/layout';
@@ -255,8 +255,10 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           <Text style={styles.name}>{studentDisplayName(student)}</Text>
           <Text style={styles.meta}>
             {[
-              canSeeNisu && !isHigherEducationLevel(student.class_level) && student.order_number
-                ? `NISU ${student.order_number}`
+              canSeeNisu
+                ? student.order_number
+                  ? `NISU ${student.order_number}`
+                  : 'Sans NISU'
                 : student.management_code
                   ? `Code ${student.management_code}`
                   : null,
@@ -454,8 +456,8 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
           {detailTab === 'infos' ? (
             <>
-              {canSeeNisu && !isHigherEducationLevel(student.class_level) ? (
-                <Info label="NISU" value={student.order_number} />
+              {canSeeNisu ? (
+                <Info label="NISU" value={student.order_number || '—'} />
               ) : null}
               <Info label="Code de gestion" value={student.management_code} />
               <Info label="Genre" value={student.gender} />

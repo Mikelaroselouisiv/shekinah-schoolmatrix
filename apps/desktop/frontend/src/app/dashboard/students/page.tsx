@@ -7,7 +7,7 @@ import { API_BASE, fetchWithAuth } from "@/src/lib/api";
 import { ImageUpload } from "@/src/components/ImageUpload";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
 import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
-import { isHigherEducationLevel, learnerNoun } from "@/src/lib/educationLevels";
+import { learnerNoun } from "@/src/lib/educationLevels";
 
 type Student = {
   id: string;
@@ -61,6 +61,7 @@ export default function StudentsPage() {
   const [error, setError] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [roomFilter, setRoomFilter] = useState("");
+  const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
@@ -97,7 +98,6 @@ export default function StudentsPage() {
     ? rooms.filter((r) => r.class_id === form.class_id)
     : [];
   const selectedClass = classes.find((c) => c.id === form.class_id);
-  const formHigherEd = isHigherEducationLevel(selectedClass?.level);
   const filterClass = classes.find((c) => c.id === classFilter);
   const formLearner = learnerNoun(selectedClass?.level);
   const listLearner = learnerNoun(filterClass?.level);
@@ -112,6 +112,7 @@ export default function StudentsPage() {
       const qs = new URLSearchParams();
       if (classFilter) qs.set("class_id", classFilter);
       if (roomFilter) qs.set("room_id", roomFilter);
+      if (withoutNisuFilter) qs.set("without_nisu", "1");
       const q = qs.toString() ? `?${qs}` : "";
       const [studentsRes, classesRes, roomsRes, yearsRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/students${q}`),
@@ -138,7 +139,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     load();
-  }, [classFilter, roomFilter]);
+  }, [classFilter, roomFilter, withoutNisuFilter]);
 
   useEffect(() => {
     if (roomFilter && classFilter) {
@@ -168,10 +169,6 @@ export default function StudentsPage() {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
     if (!editing && !form.academic_year_id) return;
-    if (!formHigherEd && !editing && !form.order_number.trim()) {
-      setError("Le NISU (identifiant unique élève) est obligatoire.");
-      return;
-    }
     if (!form.room_id) {
       setError("La salle (section) est obligatoire.");
       return;
@@ -180,12 +177,9 @@ export default function StudentsPage() {
     setError("");
     setCreatedOrderNumber(null);
     try {
+      const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
       const body = {
-        ...(formHigherEd
-          ? { order_number: null }
-          : form.order_number.trim() || editing
-            ? { order_number: form.order_number.trim() || null }
-            : {}),
+        order_number: nisu || null,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
@@ -225,7 +219,7 @@ export default function StudentsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
-        setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
+        setCreatedOrderNumber(data.student?.order_number || form.order_number.trim() || "");
         setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
@@ -303,11 +297,11 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {createdOrderNumber && (
+      {createdOrderNumber !== null && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
           <p className="font-semibold text-green-800">Élève inscrit</p>
           <p className="text-green-700 mt-1">
-            Identifiant (n° ministère) : <span className="font-mono font-bold">{createdOrderNumber}</span>
+            NISU : <span className="font-mono font-bold">{createdOrderNumber || "non renseigné (à compléter plus tard)"}</span>
           </p>
         </div>
       )}
@@ -349,6 +343,15 @@ export default function StudentsPage() {
             ))}
           </select>
         </div>
+        <label className="flex items-end gap-2 pb-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={withoutNisuFilter}
+            onChange={(e) => setWithoutNisuFilter(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          Sans NISU
+        </label>
       </div>
 
       {/* Formulaire */}
@@ -383,12 +386,10 @@ export default function StudentsPage() {
                 value={form.class_id}
                 onChange={(e) => {
                   const class_id = e.target.value;
-                  const higher = isHigherEducationLevel(classes.find((c) => c.id === class_id)?.level);
                   setForm((f) => ({
                     ...f,
                     class_id,
                     room_id: "",
-                    order_number: higher ? "" : f.order_number,
                   }));
                 }}
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
@@ -436,18 +437,17 @@ export default function StudentsPage() {
             </div>
           </div>
 
-          {form.class_id && !formHigherEd && (
+          {form.class_id && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                NISU (interne) {!editing && "*"}
+                NISU
               </label>
               <input
                 type="text"
                 value={form.order_number}
                 onChange={(e) => setForm((f) => ({ ...f, order_number: e.target.value }))}
-                placeholder="Code NISU — usage interne uniquement"
+                placeholder="Optionnel — à compléter s’il est connu"
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
-                required={!editing && !formHigherEd}
               />
             </div>
           )}
@@ -532,7 +532,7 @@ export default function StudentsPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
-              <th className="px-4 py-3 font-medium text-slate-900">Identifiant (n° ministère)</th>
+              <th className="px-4 py-3 font-medium text-slate-900">NISU</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
@@ -547,7 +547,7 @@ export default function StudentsPage() {
             ) : (
               students.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.order_number ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.order_number || "Sans NISU"}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{s.first_name} {s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.class_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.room_name ?? "—"}</td>

@@ -108,7 +108,7 @@ export default function StudentsImportPage() {
       <h2 className="text-2xl font-bold text-slate-900">Inscription d&apos;anciens élèves</h2>
       <p className="text-slate-600">
         Importez une liste d&apos;élèves depuis un fichier CSV. Les classes doivent déjà exister dans le système. Les
-        élèves déjà présents (même identifiant ministère) sont ignorés.
+        élèves déjà présents (même NISU, s’il est renseigné) sont ignorés.
       </p>
 
       <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-700 space-y-2">
@@ -117,8 +117,8 @@ export default function StudentsImportPage() {
           <li>Encodage : <strong>UTF-8</strong></li>
           <li>Séparateur : <strong>point-virgule (;)</strong></li>
           <li>Première ligne : <strong>en-têtes de colonnes</strong></li>
-          <li>Colonnes obligatoires : <strong>Identifiant</strong> (n° ministère), <strong>Prénom</strong>, <strong>Nom</strong>, <strong>Classe</strong> (nom exact de la classe)</li>
-          <li>Colonnes optionnelles : Date de naissance (AAAA-MM-JJ), Genre (M/F), Téléphone, Email, Nom mère, Tél. mère, Nom père, Tél. père</li>
+          <li>Colonnes obligatoires : <strong>Prénom</strong>, <strong>Nom</strong>, <strong>Classe</strong> (nom exact de la classe)</li>
+          <li>Colonnes optionnelles : Identifiant / NISU, Date de naissance (AAAA-MM-JJ), Genre (M/F), Téléphone, Email, Nom mère, Tél. mère, Nom père, Tél. père</li>
         </ul>
         <button
           type="button"

@@ -10,7 +10,7 @@ import { ExportPdfButton } from "@/src/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/src/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob, fetchRoomNameForClass } from "@/src/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/src/lib/format";
-import { isHigherEducationLevel, learnerNoun, learnerNounCap } from "@/src/lib/educationLevels";
+import { learnerNoun, learnerNounCap } from "@/src/lib/educationLevels";
 
 type Student = {
   id: string;
@@ -158,6 +158,7 @@ export default function FicheElevePage() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(initialStudentId);
   const [selectedYearId, setSelectedYearId] = useState("");
+  const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState<Student | null>(null);
   const [discipline, setDiscipline] = useState<DisciplineSummary | null>(null);
@@ -390,7 +391,6 @@ export default function FicheElevePage() {
   const ficheLevel =
     student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
   const ficheLearner = learnerNoun(ficheLevel);
-  const ficheHigherEd = isHigherEducationLevel(ficheLevel);
 
   return (
     <div className="space-y-6">
@@ -431,13 +431,24 @@ export default function FicheElevePage() {
             className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[220px]"
           >
             <option value="">— Sélectionner —</option>
-            {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
+            {(restrictToLinkedStudents ? linkedStudents : students)
+              .filter((s) => !withoutNisuFilter || !s.order_number)
+              .map((s) => (
               <option key={s.id} value={s.id}>
-                {s.order_number && !ficheHigherEd ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                {s.order_number ? `${s.order_number} — ` : "Sans NISU — "}{s.first_name} {s.last_name}
                 {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
               </option>
             ))}
           </select>
+          <label className="mt-1.5 flex items-center gap-2 text-xs font-medium text-slate-600">
+            <input
+              type="checkbox"
+              checked={withoutNisuFilter}
+              onChange={(e) => setWithoutNisuFilter(e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            Sans NISU
+          </label>
         </div>
       </div>
 
@@ -463,9 +474,12 @@ export default function FicheElevePage() {
                 <h3 className="text-xl font-bold text-slate-900">
                   {student.first_name} {student.last_name}
                 </h3>
-                {!ficheHigherEd && student.order_number ? (
-                  <p className="text-slate-600 font-mono text-sm">{student.order_number}</p>
-                ) : student.management_code ? (
+                {student.order_number ? (
+                  <p className="text-slate-600 font-mono text-sm">NISU {student.order_number}</p>
+                ) : (
+                  <p className="text-slate-600 font-mono text-sm">Sans NISU</p>
+                )}
+                {student.management_code ? (
                   <p className="text-slate-600 font-mono text-sm">Code {student.management_code}</p>
                 ) : null}
                 <p className="text-slate-700 mt-1">
