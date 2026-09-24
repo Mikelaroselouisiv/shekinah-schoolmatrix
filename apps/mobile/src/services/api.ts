@@ -450,8 +450,14 @@ export type ExtracurricularItem = {
   class_id?: string;
   class_name?: string;
   occasion?: string;
+  objective?: string | null;
+  parents_concerned?: boolean;
   participation_fee?: string | null;
+  contribution_due_date?: string | null;
   dress_code?: string | null;
+  location_kind?: string | null;
+  location_text?: string | null;
+  location_label?: string | null;
 };
 
 export type SchoolVacationItem = {
@@ -912,8 +918,13 @@ export async function createExtracurricularActivity(body: {
   end_time: string;
   class_ids: string[];
   occasion: string;
+  objective?: string | null;
+  parents_concerned?: boolean;
   participation_fee?: string | null;
+  contribution_due_date?: string | null;
   dress_code?: string | null;
+  location_kind?: string | null;
+  location_text?: string | null;
 }): Promise<void> {
   await api.post('/extracurricular-activities', body);
 }
@@ -927,8 +938,13 @@ export async function updateExtracurricularActivity(
     end_time?: string;
     class_id?: string;
     occasion?: string;
+    objective?: string | null;
+    parents_concerned?: boolean;
     participation_fee?: string | null;
+    contribution_due_date?: string | null;
     dress_code?: string | null;
+    location_kind?: string | null;
+    location_text?: string | null;
   },
 ): Promise<void> {
   await api.patch(`/extracurricular-activities/${id}`, body);

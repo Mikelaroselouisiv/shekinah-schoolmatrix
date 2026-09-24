@@ -86,10 +86,42 @@ const ACTIVITY_COLUMNS: PdfColumn[] = [
   { header: "Date", key: "date" },
   { header: "Horaire", key: "horaire" },
   { header: "Classe", key: "classe" },
-  { header: "Occasion", key: "occasion" },
-  { header: "Frais", key: "frais" },
+  { header: "Activité", key: "activite" },
+  { header: "Objectif", key: "objectif" },
+  { header: "Lieu", key: "lieu" },
+  { header: "Parents", key: "parents" },
+  { header: "Cotisation", key: "cotisation" },
+  { header: "Date limite", key: "limite" },
   { header: "Tenue", key: "tenue" },
 ];
+
+const MEETING_COLUMNS: PdfColumn[] = [
+  { header: "Date", key: "date" },
+  { header: "Heure", key: "heure" },
+  { header: "Classe", key: "classe" },
+  { header: "Objectif", key: "objectif" },
+  { header: "Lieu", key: "lieu" },
+];
+
+const EXAM_PERIOD_COLUMNS: PdfColumn[] = [
+  { header: "Période", key: "periode" },
+  { header: "Du", key: "debut" },
+  { header: "Au", key: "fin" },
+  { header: "Classe", key: "classe" },
+  { header: "Remise", key: "remise" },
+];
+
+type ScheduleTab = "cours" | "examens" | "parascolaires" | "reunions" | "vacances";
+
+function placeLabel(kind?: string | null, text?: string | null, label?: string | null): string {
+  if (label) return label;
+  if (kind === "OTHER") return text?.trim() || "—";
+  return "À l'école";
+}
+
+function handoverTitle(level?: string | null): string {
+  return (level ?? "").toUpperCase() === "PRESCOLAIRE" ? "Remise des carnets" : "Remise des bulletins";
+}
 
 const VACATION_COLUMNS: PdfColumn[] = [
   { header: "Début", key: "debut" },
@@ -144,8 +176,41 @@ type ExtracurricularActivity = {
   class_id: string;
   class_name: string;
   occasion: string;
+  objective: string | null;
+  parents_concerned: boolean;
   participation_fee: string | null;
+  contribution_due_date: string | null;
   dress_code: string | null;
+  location_kind: string;
+  location_text: string | null;
+  location_label: string;
+};
+
+type ParentMeeting = {
+  id: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  meeting_date: string;
+  start_time: string;
+  class_id: string;
+  class_name: string;
+  objective: string;
+  location_kind: string;
+  location_text: string | null;
+  location_label: string;
+};
+
+type ExamPeriodItem = {
+  id: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  class_id: string;
+  class_name: string;
+  class_level?: string | null;
+  period_name: string;
+  start_date: string;
+  end_date: string;
+  report_date: string | null;
 };
 
 type SchoolVacation = {
@@ -407,16 +472,66 @@ function InstructionLines({
   );
 }
 
+function ProgramModeBar({
+  editing,
+  onChange,
+}: {
+  editing: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!editing)}
+      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
+    >
+      {editing ? "Voir" : "Modifier"}
+    </button>
+  );
+}
+
+function namesFromIds(people: { id: number; name: string }[], ids: number[]): string {
+  return namesJoin(people.filter((p) => ids.includes(p.id)).map((p) => p.name));
+}
+
+function NamedValue({ label, value }: { label: string; value?: string | null }) {
+  if (!value || value === "—") return null;
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-0.5 text-sm text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function InstructionView({ values }: { values: string[] }) {
+  if (values.length === 0) return null;
+  return (
+    <div className="rounded-xl bg-white/90 p-3 ring-1 ring-slate-200">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Consignes</p>
+      <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm text-slate-800">
+        {values.map((line, i) => (
+          <li key={`${i}-${line.slice(0, 24)}`} className="whitespace-pre-wrap break-words">
+            {line}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 const WEEKDAYS = MORNING_WEEKDAYS;
 
 export function DashboardSchedulePage() {
-  const [tab, setTab] = useState<"cours" | "examens" | "parascolaires" | "vacances">("cours");
+  const [tab, setTab] = useState<ScheduleTab>("cours");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
+  const [examPeriods, setExamPeriods] = useState<ExamPeriodItem[]>([]);
   const [activities, setActivities] = useState<ExtracurricularActivity[]>([]);
+  const [meetings, setMeetings] = useState<ParentMeeting[]>([]);
   const [vacations, setVacations] = useState<SchoolVacation[]>([]);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -434,6 +549,7 @@ export function DashboardSchedulePage() {
   const [defaultPreschoolPeriodName, setDefaultPreschoolPeriodName] = useState("");
 
   const [gridRoom, setGridRoom] = useState<Room | null>(null);
+  const [gridIntent, setGridIntent] = useState<"view" | "edit">("view");
   const [gridSubjects, setGridSubjects] = useState<Subject[]>([]);
   const [gridAssignments, setGridAssignments] = useState<RoomAssignment[]>([]);
   const [gridError, setGridError] = useState("");
@@ -454,6 +570,7 @@ export function DashboardSchedulePage() {
     Record<string, Record<number, { subjectIds: string[]; materials: string[] }>>
   >({});
   const [listClass, setListClass] = useState<ClassItem | null>(null);
+  const [listIntent, setListIntent] = useState<"view" | "edit">("view");
   const [listDraft, setListDraft] = useState(emptyClassDayLists);
   const [materialCatalog, setMaterialCatalog] = useState<string[]>([]);
   const [savingBring, setSavingBring] = useState(false);
@@ -465,6 +582,9 @@ export function DashboardSchedulePage() {
   const [recessLabel, setRecessLabel] = useState("");
   const [recessDays, setRecessDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [openCours, setOpenCours] = useState<"preschool" | "primary" | "recess" | "rooms">("rooms");
+  const [editPreschool, setEditPreschool] = useState(false);
+  const [editPrimary, setEditPrimary] = useState(false);
+  const [editRecess, setEditRecess] = useState(false);
 
   const [showActivityForm, setShowActivityForm] = useState(false);
   const activityFormRef = useRevealScroll<HTMLFormElement>(showActivityForm);
@@ -475,11 +595,43 @@ export function DashboardSchedulePage() {
     end_time: "16:00",
     class_ids: [] as string[],
     occasion: "",
+    objective: "",
+    parents_concerned: false,
     participation_fee: "",
+    contribution_due_date: "",
     dress_code: "",
+    location_kind: "SCHOOL" as "SCHOOL" | "OTHER",
+    location_text: "",
   };
   const [activityForm, setActivityForm] = useState(emptyActivityForm);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+
+  const [showMeetingForm, setShowMeetingForm] = useState(false);
+  const meetingFormRef = useRevealScroll<HTMLFormElement>(showMeetingForm);
+  const emptyMeetingForm = {
+    academic_year_id: "",
+    meeting_date: "",
+    start_time: "08:00",
+    class_ids: [] as string[],
+    objective: "",
+    location_kind: "SCHOOL" as "SCHOOL" | "OTHER",
+    location_text: "",
+  };
+  const [meetingForm, setMeetingForm] = useState(emptyMeetingForm);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+
+  const [showExamPeriodForm, setShowExamPeriodForm] = useState(false);
+  const examPeriodFormRef = useRevealScroll<HTMLFormElement>(showExamPeriodForm);
+  const emptyExamPeriodForm = {
+    academic_year_id: "",
+    period_name: "",
+    start_date: "",
+    end_date: "",
+    report_date: "",
+    class_ids: [] as string[],
+  };
+  const [examPeriodForm, setExamPeriodForm] = useState(emptyExamPeriodForm);
+  const [editingExamPeriodId, setEditingExamPeriodId] = useState<string | null>(null);
 
   const [showVacationForm, setShowVacationForm] = useState(false);
   const vacationFormRef = useRevealScroll<HTMLFormElement>(showVacationForm);
@@ -599,6 +751,36 @@ export function DashboardSchedulePage() {
     }
   }
 
+  async function loadExamPeriods(overrideYearId?: string) {
+    try {
+      const params = new URLSearchParams();
+      const yearId = overrideYearId ?? academicYearFilter;
+      if (yearId) params.set("academic_year_id", yearId);
+      if (classFilter) params.set("class_id", classFilter);
+      const res = await fetchWithAuth(`${API_BASE}/exam-periods?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setExamPeriods(data.exam_periods ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function loadMeetings(overrideYearId?: string) {
+    try {
+      const params = new URLSearchParams();
+      const yearId = overrideYearId ?? academicYearFilter;
+      if (yearId) params.set("academic_year_id", yearId);
+      if (classFilter) params.set("class_id", classFilter);
+      const res = await fetchWithAuth(`${API_BASE}/parent-meetings?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setMeetings(data.parent_meetings ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   async function loadActivities(overrideYearId?: string) {
     setError("");
     try {
@@ -651,7 +833,9 @@ export function DashboardSchedulePage() {
     await Promise.all([
       loadSlots(defaultYearId),
       loadExams(),
+      loadExamPeriods(defaultYearId),
       loadActivities(defaultYearId),
+      loadMeetings(defaultYearId),
       loadVacations(defaultYearId),
       loadMomentsAndDuties(defaultYearId),
     ]);
@@ -666,7 +850,9 @@ export function DashboardSchedulePage() {
     if (!loading) {
       loadSlots();
       loadExams();
+      loadExamPeriods();
       loadActivities();
+      loadMeetings();
       loadVacations();
       loadMomentsAndDuties();
     }
@@ -706,15 +892,17 @@ export function DashboardSchedulePage() {
     };
   }, [classes]);
 
-  async function openRoomGrid(room: Room) {
+  async function openRoomGrid(room: Room, intent: "view" | "edit" = "view") {
     const level = classes.find((c) => c.id === room.class_id)?.level;
     if (tab === "cours" && isListScheduleLevel(level) && room.class_id) {
       const cls = classes.find((c) => c.id === room.class_id) ?? { id: room.class_id, name: roomClassName(room), level };
+      setListIntent(intent);
       setListClass(cls);
       const lists = await loadDayLists(room.class_id);
       setListDraft(lists);
       return;
     }
+    setGridIntent(intent);
     setGridRoom(room);
     setGridError("");
     setGridSubjects([]);
@@ -1054,8 +1242,13 @@ export function DashboardSchedulePage() {
         start_time: activityForm.start_time,
         end_time: activityForm.end_time,
         occasion: activityForm.occasion,
+        objective: activityForm.objective.trim() || null,
+        parents_concerned: activityForm.parents_concerned,
         participation_fee: activityForm.participation_fee || null,
+        contribution_due_date: activityForm.contribution_due_date || null,
         dress_code: activityForm.dress_code || null,
+        location_kind: activityForm.location_kind,
+        location_text: activityForm.location_kind === "OTHER" ? activityForm.location_text : null,
       };
       const res = editingActivityId
         ? await fetchWithAuth(`${API_BASE}/extracurricular-activities/${editingActivityId}`, {
@@ -1098,8 +1291,13 @@ export function DashboardSchedulePage() {
       end_time: a.end_time || "16:00",
       class_ids: a.class_id ? [a.class_id] : [],
       occasion: a.occasion || "",
+      objective: a.objective || "",
+      parents_concerned: !!a.parents_concerned,
       participation_fee: a.participation_fee || "",
+      contribution_due_date: (a.contribution_due_date || "").slice(0, 10),
       dress_code: a.dress_code || "",
+      location_kind: a.location_kind === "OTHER" ? "OTHER" : "SCHOOL",
+      location_text: a.location_text || "",
     });
     setShowActivityForm(true);
   }
@@ -1122,6 +1320,182 @@ export function DashboardSchedulePage() {
       class_ids:
         f.class_ids.length === classes.length ? [] : classes.map((c) => c.id),
     }));
+  }
+
+  function closeMeetingForm() {
+    setShowMeetingForm(false);
+    setEditingMeetingId(null);
+    setMeetingForm(emptyMeetingForm);
+  }
+
+  function openNewMeeting() {
+    setEditingMeetingId(null);
+    setMeetingForm({ ...emptyMeetingForm, academic_year_id: defaultYearId });
+    setShowMeetingForm(true);
+  }
+
+  function openEditMeeting(m: ParentMeeting) {
+    setEditingMeetingId(m.id);
+    setMeetingForm({
+      academic_year_id: m.academic_year_id || defaultYearId,
+      meeting_date: (m.meeting_date || "").slice(0, 10),
+      start_time: m.start_time || "08:00",
+      class_ids: m.class_id ? [m.class_id] : [],
+      objective: m.objective || "",
+      location_kind: m.location_kind === "OTHER" ? "OTHER" : "SCHOOL",
+      location_text: m.location_text || "",
+    });
+    setShowMeetingForm(true);
+  }
+
+  function toggleMeetingClass(id: string) {
+    setMeetingForm((f) => {
+      if (editingMeetingId) return { ...f, class_ids: [id] };
+      return {
+        ...f,
+        class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
+      };
+    });
+  }
+
+  async function handleSaveMeeting(e: React.FormEvent) {
+    e.preventDefault();
+    if (!meetingForm.academic_year_id || !meetingForm.class_ids.length || !meetingForm.objective.trim() || !meetingForm.meeting_date) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        academic_year_id: meetingForm.academic_year_id,
+        meeting_date: meetingForm.meeting_date,
+        start_time: meetingForm.start_time,
+        objective: meetingForm.objective.trim(),
+        location_kind: meetingForm.location_kind,
+        location_text: meetingForm.location_kind === "OTHER" ? meetingForm.location_text : null,
+      };
+      const res = editingMeetingId
+        ? await fetchWithAuth(`${API_BASE}/parent-meetings/${editingMeetingId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ ...payload, class_id: meetingForm.class_ids[0] }),
+          })
+        : await fetchWithAuth(`${API_BASE}/parent-meetings`, {
+            method: "POST",
+            body: JSON.stringify({ ...payload, class_ids: meetingForm.class_ids }),
+          });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      closeMeetingForm();
+      loadMeetings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteMeeting(id: string) {
+    if (!confirm("Supprimer cette réunion ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/parent-meetings/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      loadMeetings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  function closeExamPeriodForm() {
+    setShowExamPeriodForm(false);
+    setEditingExamPeriodId(null);
+    setExamPeriodForm(emptyExamPeriodForm);
+  }
+
+  function openNewExamPeriod() {
+    setEditingExamPeriodId(null);
+    setExamPeriodForm({
+      ...emptyExamPeriodForm,
+      academic_year_id: academicYearFilter || defaultYearId,
+      period_name: defaultPeriodName || "",
+    });
+    setShowExamPeriodForm(true);
+  }
+
+  function openEditExamPeriod(p: ExamPeriodItem) {
+    setEditingExamPeriodId(p.id);
+    setExamPeriodForm({
+      academic_year_id: p.academic_year_id || defaultYearId,
+      period_name: p.period_name || "",
+      start_date: (p.start_date || "").slice(0, 10),
+      end_date: (p.end_date || "").slice(0, 10),
+      report_date: (p.report_date || "").slice(0, 10),
+      class_ids: p.class_id ? [p.class_id] : [],
+    });
+    setShowExamPeriodForm(true);
+  }
+
+  function toggleExamPeriodClass(id: string) {
+    setExamPeriodForm((f) => {
+      if (editingExamPeriodId) return { ...f, class_ids: [id] };
+      return {
+        ...f,
+        class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
+      };
+    });
+  }
+
+  async function handleSaveExamPeriod(e: React.FormEvent) {
+    e.preventDefault();
+    if (
+      !examPeriodForm.academic_year_id ||
+      !examPeriodForm.class_ids.length ||
+      !examPeriodForm.period_name.trim() ||
+      !examPeriodForm.start_date ||
+      !examPeriodForm.end_date
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        academic_year_id: examPeriodForm.academic_year_id,
+        period_name: examPeriodForm.period_name.trim(),
+        start_date: examPeriodForm.start_date,
+        end_date: examPeriodForm.end_date,
+        report_date: examPeriodForm.report_date || null,
+      };
+      const res = editingExamPeriodId
+        ? await fetchWithAuth(`${API_BASE}/exam-periods/${editingExamPeriodId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ ...payload, class_id: examPeriodForm.class_ids[0] }),
+          })
+        : await fetchWithAuth(`${API_BASE}/exam-periods`, {
+            method: "POST",
+            body: JSON.stringify({ ...payload, class_ids: examPeriodForm.class_ids }),
+          });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      closeExamPeriodForm();
+      loadExamPeriods();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteExamPeriod(id: string) {
+    if (!confirm("Supprimer cette période d'examens ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/exam-periods/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      loadExamPeriods();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
   }
 
   async function handleDeleteActivity(id: string) {
@@ -1246,11 +1620,53 @@ export function DashboardSchedulePage() {
           date: formatDateJJMMAAAA(a.activity_date),
           horaire: `${a.start_time} - ${a.end_time}`,
           classe: a.class_name,
-          occasion: a.occasion,
-          frais: a.participation_fee ?? "—",
+          activite: a.occasion,
+          objectif: a.objective || "—",
+          lieu: placeLabel(a.location_kind, a.location_text, a.location_label),
+          parents: a.parents_concerned ? "Oui" : "Non",
+          cotisation: a.participation_fee ?? "—",
+          limite: a.contribution_due_date ? formatDateJJMMAAAA(a.contribution_due_date) : "—",
           tenue: a.dress_code ?? "—",
         })),
     [activities],
+  );
+
+  const meetingRows = useMemo(
+    () =>
+      [...meetings]
+        .sort(
+          (a, b) =>
+            dateKey(a.meeting_date).localeCompare(dateKey(b.meeting_date)) ||
+            a.start_time.localeCompare(b.start_time),
+        )
+        .map((m) => ({
+          date: formatDateJJMMAAAA(m.meeting_date),
+          heure: m.start_time,
+          classe: m.class_name,
+          objectif: m.objective,
+          lieu: placeLabel(m.location_kind, m.location_text, m.location_label),
+        })),
+    [meetings],
+  );
+
+  const examPeriodRows = useMemo(
+    () =>
+      [...examPeriods]
+        .sort(
+          (a, b) =>
+            dateKey(a.start_date).localeCompare(dateKey(b.start_date)) ||
+            (a.period_name || "").localeCompare(b.period_name || ""),
+        )
+        .map((p) => ({
+          periode: p.period_name,
+          debut: formatDateJJMMAAAA(p.start_date),
+          fin: formatDateJJMMAAAA(p.end_date),
+          classe: p.class_name,
+          remise: p.report_date
+            ? `${handoverTitle(p.class_level)} : ${formatDateJJMMAAAA(p.report_date)}`
+            : "—",
+        })),
+    [examPeriods],
   );
 
   const vacationRows = useMemo(
@@ -1384,6 +1800,12 @@ export function DashboardSchedulePage() {
     if (slotSectionsByDay.length > 0) {
       sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
     }
+    if (examPeriodRows.length > 0) {
+      sections.push({
+        title: "Périodes d'examens",
+        table: { columns: EXAM_PERIOD_COLUMNS, rows: examPeriodRows },
+      });
+    }
     if (examRows.length > 0) {
       sections.push({
         title: "Horaire des examens",
@@ -1396,6 +1818,12 @@ export function DashboardSchedulePage() {
         table: { columns: ACTIVITY_COLUMNS, rows: activityRows },
       });
     }
+    if (meetingRows.length > 0) {
+      sections.push({
+        title: "Réunions des parents",
+        table: { columns: MEETING_COLUMNS, rows: meetingRows },
+      });
+    }
     if (vacationRows.length > 0) {
       sections.push({
         title: "Vacances",
@@ -1403,10 +1831,127 @@ export function DashboardSchedulePage() {
       });
     }
     return sections;
-  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows, vacationRows]);
+  }, [pdfSubtitle, slotSectionsByDay, examPeriodRows, examRows, activityRows, meetingRows, vacationRows]);
+
+  const agendaSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    if (pdfSubtitle) sections.push({ lines: [pdfSubtitle] });
+    const target = classFilter ? classes.filter((c) => c.id === classFilter) : classes;
+    for (const cls of target) {
+      if (isListScheduleLevel(cls.level)) {
+        sections.push(
+          ...listClassPdfSections(cls.id).map((s) => ({
+            ...s,
+            title: s.title ? `${cls.name} — ${s.title}` : cls.name,
+          })),
+        );
+      } else {
+        const course = coursePdfSections(
+          slots.filter((s) => s.class_id === cls.id),
+          moments.filter((m) => m.class_id === cls.id),
+        );
+        if (course.length) {
+          sections.push(
+            { title: `${cls.name} — Cours` },
+            ...course.map((s) => ({ ...s, title: s.title ? `${cls.name} — ${s.title}` : undefined })),
+          );
+        }
+      }
+      const periods = examPeriods.filter((p) => p.class_id === cls.id);
+      if (periods.length) {
+        sections.push({
+          title: `${cls.name} — Période d'examens`,
+          table: {
+            columns: [
+              { header: "Période", key: "periode" },
+              { header: "Du", key: "debut" },
+              { header: "Au", key: "fin" },
+              { header: "Remise", key: "remise" },
+            ],
+            rows: periods.map((p) => ({
+              periode: p.period_name,
+              debut: formatDateJJMMAAAA(p.start_date),
+              fin: formatDateJJMMAAAA(p.end_date),
+              remise: p.report_date
+                ? `${handoverTitle(p.class_level || cls.level)} : ${formatDateJJMMAAAA(p.report_date)}`
+                : "—",
+            })),
+          },
+        });
+      }
+      const classExams = examPdfRows(exams.filter((e) => e.class_id === cls.id));
+      if (classExams.length) {
+        sections.push({
+          title: `${cls.name} — Examens`,
+          table: { columns: EXAM_COLUMNS.filter((c) => c.key !== "classe"), rows: classExams },
+        });
+      }
+      const classActivities = activities
+        .filter((a) => a.class_id === cls.id)
+        .sort((a, b) => a.activity_date.localeCompare(b.activity_date) || a.start_time.localeCompare(b.start_time))
+        .map((a) => ({
+          date: formatDateJJMMAAAA(a.activity_date),
+          horaire: `${a.start_time} - ${a.end_time}`,
+          activite: a.occasion,
+          objectif: a.objective || "—",
+          lieu: placeLabel(a.location_kind, a.location_text, a.location_label),
+          parents: a.parents_concerned ? "Oui" : "Non",
+          cotisation: a.participation_fee ?? "—",
+          limite: a.contribution_due_date ? formatDateJJMMAAAA(a.contribution_due_date) : "—",
+          tenue: a.dress_code ?? "—",
+        }));
+      if (classActivities.length) {
+        sections.push({
+          title: `${cls.name} — Activités parascolaires`,
+          table: { columns: ACTIVITY_COLUMNS.filter((c) => c.key !== "classe"), rows: classActivities },
+        });
+      }
+      const classMeetings = meetings
+        .filter((m) => m.class_id === cls.id)
+        .sort((a, b) => dateKey(a.meeting_date).localeCompare(dateKey(b.meeting_date)) || a.start_time.localeCompare(b.start_time))
+        .map((m) => ({
+          date: formatDateJJMMAAAA(m.meeting_date),
+          heure: m.start_time,
+          objectif: m.objective,
+          lieu: placeLabel(m.location_kind, m.location_text, m.location_label),
+        }));
+      if (classMeetings.length) {
+        sections.push({
+          title: `${cls.name} — Réunions des parents`,
+          table: { columns: MEETING_COLUMNS.filter((c) => c.key !== "classe"), rows: classMeetings },
+        });
+      }
+    }
+    if (vacationRows.length) {
+      sections.push({
+        title: "Vacances",
+        table: { columns: VACATION_COLUMNS, rows: vacationRows },
+      });
+    }
+    return sections;
+  }, [
+    pdfSubtitle,
+    classFilter,
+    classes,
+    slots,
+    moments,
+    examPeriods,
+    exams,
+    activities,
+    meetings,
+    vacationRows,
+    dayListsByClass,
+  ]);
+
+  const hasAgenda = agendaSections.some((s) => !!s.table?.rows.length);
 
   const hasAnySchedule =
-    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0 || vacationRows.length > 0;
+    slotSectionsByDay.length > 0 ||
+    examRows.length > 0 ||
+    examPeriodRows.length > 0 ||
+    activityRows.length > 0 ||
+    meetingRows.length > 0 ||
+    vacationRows.length > 0;
 
   const roomsToShow = rooms.filter(
     (r) =>
@@ -1563,7 +2108,7 @@ export function DashboardSchedulePage() {
         key={room.id}
         className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
       >
-        <button type="button" onClick={() => openRoomGrid(room)} className="flex w-full text-left">
+        <button type="button" onClick={() => openRoomGrid(room, "view")} className="flex w-full text-left">
           <span className="w-1.5 shrink-0 bg-[var(--school-accent-1)]" />
           <div className="min-w-0 flex-1 p-4">
             <h4 className="truncate text-base font-bold text-slate-900">Salle {room.name}</h4>
@@ -1593,13 +2138,23 @@ export function DashboardSchedulePage() {
           </div>
         </button>
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/80 px-3 py-2">
-          <button
-            type="button"
-            onClick={() => openRoomGrid(room)}
-            className="text-xs font-medium text-teal-800 hover:underline"
-          >
-            Ouvrir {listMode ? "la liste" : "la grille"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openRoomGrid(room, "view")}
+              className="text-xs font-medium text-teal-800 hover:underline"
+            >
+              Voir
+            </button>
+            <span className="text-slate-300">·</span>
+            <button
+              type="button"
+              onClick={() => openRoomGrid(room, "edit")}
+              className="text-xs font-medium text-teal-800 hover:underline"
+            >
+              Modifier
+            </button>
+          </div>
           {kind === "cours" ? (
             <ExportPdfButton
               sections={[{ lines: [subtitle] }, ...(listMode ? listSections : courseSections)]}
@@ -1684,18 +2239,27 @@ export function DashboardSchedulePage() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">Organisation</p>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">Horaires</h2>
         </div>
-        <ExportPdfButton
-          sections={allSchedulesSections}
-          mainTitle="Horaires de l'école"
-          filename={`horaires${pdfFileSuffix}`}
-          label="Tout exporter"
-          disabled={!hasAnySchedule}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportPdfButton
+            sections={agendaSections}
+            mainTitle="Agenda de l'école"
+            filename={`agenda-de-l-ecole${pdfFileSuffix}`}
+            label="Agenda de l'école"
+            disabled={!hasAgenda}
+          />
+          <ExportPdfButton
+            sections={allSchedulesSections}
+            mainTitle="Horaires de l'école"
+            filename={`horaires${pdfFileSuffix}`}
+            label="Tout exporter"
+            disabled={!hasAnySchedule}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-full bg-slate-100 p-1 ring-1 ring-slate-200">
-          {(["cours", "examens", "parascolaires", "vacances"] as const).map((t) => (
+          {(["cours", "examens", "parascolaires", "reunions", "vacances"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -1710,7 +2274,9 @@ export function DashboardSchedulePage() {
                   ? "Examens"
                   : t === "parascolaires"
                     ? "Parascolaire"
-                    : "Vacances"}
+                    : t === "reunions"
+                      ? "Réunions"
+                      : "Vacances"}
             </button>
           ))}
         </div>
@@ -1791,17 +2357,49 @@ export function DashboardSchedulePage() {
             open={openCours === "preschool"}
             onToggle={() => setOpenCours("preschool")}
             headerRight={
-              <ExportPdfButton
-                sections={preschoolPdfSections}
-                mainTitle="Programme de rentrée — Préscolaire"
-                filename={`rentree-prescolaire${pdfFileSuffix}`}
-                disabled={preschoolDaysCount === 0 && preschoolInstructions.length === 0}
-                orientation="landscape"
-              />
+              <div className="flex items-center gap-1">
+                <ProgramModeBar editing={editPreschool} onChange={setEditPreschool} />
+                <ExportPdfButton
+                  sections={preschoolPdfSections}
+                  mainTitle="Programme de rentrée — Préscolaire"
+                  filename={`rentree-prescolaire${pdfFileSuffix}`}
+                  disabled={preschoolDaysCount === 0 && preschoolInstructions.length === 0}
+                  orientation="landscape"
+                />
+              </div>
             }
           >
             {!(academicYearFilter || defaultYearId) ? (
               <p className="text-sm text-amber-800">Choisissez une année scolaire.</p>
+            ) : !editPreschool ? (
+              preschoolDaysCount === 0 && preschoolInstructions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-amber-200 bg-white/80 px-6 py-10 text-center">
+                  <p className="font-medium text-slate-700">Aucun programme renseigné</p>
+                  <button type="button" onClick={() => setEditPreschool(true)} className="mt-3 app-btn-primary text-sm py-2">
+                    Composer le programme
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                    {WEEKDAYS.filter((d) => dayHasPreschool(morningByDay[d.index])).map((d) => {
+                      const slot = morningByDay[d.index] ?? emptyDayProgram();
+                      return (
+                        <div key={d.index} className="space-y-2 rounded-xl bg-white/90 p-3 ring-1 ring-amber-100">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+                            {d.label}
+                          </p>
+                          <NamedValue label="Accueil" value={namesFromIds(preschoolTeachers, slot.preschoolAccueilIds)} />
+                          <NamedValue label="Montée du drapeau" value={namesFromIds(preschoolTeachers, slot.preschoolFlagIds)} />
+                          <NamedValue label="Animation" value={namesFromIds(preschoolTeachers, slot.preschoolAnimationIds)} />
+                          <NamedValue label="Dames de service" value={namesJoin(slot.preschoolServiceNames)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <InstructionView values={preschoolInstructions} />
+                </div>
+              )
             ) : (
               <>
                 <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
@@ -1889,17 +2487,51 @@ export function DashboardSchedulePage() {
             open={openCours === "primary"}
             onToggle={() => setOpenCours("primary")}
             headerRight={
-              <ExportPdfButton
-                sections={primaryPdfSections}
-                mainTitle="Programme de rentrée — Primaire"
-                filename={`rentree-primaire${pdfFileSuffix}`}
-                disabled={primaryDaysCount === 0 && primaryInstructions.length === 0}
-                orientation="landscape"
-              />
+              <div className="flex items-center gap-1">
+                <ProgramModeBar editing={editPrimary} onChange={setEditPrimary} />
+                <ExportPdfButton
+                  sections={primaryPdfSections}
+                  mainTitle="Programme de rentrée — Primaire"
+                  filename={`rentree-primaire${pdfFileSuffix}`}
+                  disabled={primaryDaysCount === 0 && primaryInstructions.length === 0}
+                  orientation="landscape"
+                />
+              </div>
             }
           >
             {!(academicYearFilter || defaultYearId) ? (
               <p className="text-sm text-teal-800">Choisissez une année scolaire.</p>
+            ) : !editPrimary ? (
+              primaryDaysCount === 0 && primaryInstructions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-teal-200 bg-white/80 px-6 py-10 text-center">
+                  <p className="font-medium text-slate-700">Aucun programme renseigné</p>
+                  <button type="button" onClick={() => setEditPrimary(true)} className="mt-3 app-btn-primary text-sm py-2">
+                    Composer le programme
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                    {WEEKDAYS.filter((d) => dayHasPrimary(morningByDay[d.index])).map((d) => {
+                      const slot = morningByDay[d.index] ?? emptyDayProgram();
+                      const flagName = flagClasses.find((c) => c.id === slot.primaryFlagClassId)?.name ?? "";
+                      return (
+                        <div key={d.index} className="space-y-2 rounded-xl bg-white/90 p-3 ring-1 ring-teal-100">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-700">
+                            {d.label}
+                          </p>
+                          <NamedValue label="Accueil" value={namesFromIds(primaryTeachers, slot.primaryAccueilIds)} />
+                          <NamedValue label="Dévotion" value={namesFromIds(primaryTeachers, slot.primaryDevotionIds)} />
+                          <NamedValue label="Montée du drapeau" value={flagName} />
+                          <NamedValue label="Défi des 5 phrases" value={namesFromIds(staffPeople, slot.primaryDefiIds)} />
+                          <NamedValue label="Prière de midi" value={namesJoin(slot.primaryPrayerNames)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <InstructionView values={primaryInstructions} />
+                </div>
+              )
             ) : (
               <>
                 <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
@@ -2006,7 +2638,40 @@ export function DashboardSchedulePage() {
             }
             open={openCours === "recess"}
             onToggle={() => setOpenCours("recess")}
+            headerRight={<ProgramModeBar editing={editRecess} onChange={setEditRecess} />}
           >
+            {!editRecess ? (
+              recessMoments.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-teal-200 bg-white/80 px-6 py-10 text-center">
+                  <p className="font-medium text-slate-700">Aucune récréation renseignée</p>
+                  <button type="button" onClick={() => setEditRecess(true)} className="mt-3 app-btn-primary text-sm py-2">
+                    Composer les récréations
+                  </button>
+                </div>
+              ) : (
+                <ul className="divide-y divide-teal-100 overflow-hidden rounded-xl bg-white ring-1 ring-teal-100">
+                  {recessMoments
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        (a.class_name ?? "").localeCompare(b.class_name ?? "", "fr") ||
+                        a.day_of_week - b.day_of_week ||
+                        a.start_time.localeCompare(b.start_time),
+                    )
+                    .map((m) => (
+                      <li key={m.id} className="px-3 py-2 text-sm">
+                        <span className="font-medium text-slate-900">{m.class_name ?? "Classe"}</span>
+                        <span className="text-slate-500">
+                          {" · "}
+                          {DAYS[m.day_of_week] ?? m.day_of_week} {m.start_time}–{m.end_time}
+                          {m.label ? ` · ${m.label}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              )
+            ) : (
+            <>
             <div className="flex flex-wrap items-end gap-2">
               <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-600">Classe</label>
@@ -2115,6 +2780,8 @@ export function DashboardSchedulePage() {
             ) : (
               <p className="mt-3 text-sm text-teal-800/70">Aucune récréation calée.</p>
             )}
+            </>
+            )}
           </AppAccordion>
 
 
@@ -2165,6 +2832,187 @@ export function DashboardSchedulePage() {
 
       {tab === "examens" ? (
         <section className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Périodes d'examens
+            </h3>
+            <button type="button" onClick={openNewExamPeriod} className="app-btn-primary text-sm py-2">
+              Enregistrer une période
+            </button>
+          </div>
+          <p className="text-sm text-slate-500">
+            La période se consulte même sans les matières. Les matières se placent ensuite dans la grille de la salle.
+          </p>
+          {showExamPeriodForm ? (
+            <form
+              ref={examPeriodFormRef}
+              onSubmit={handleSaveExamPeriod}
+              className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-900">
+                  {editingExamPeriodId ? "Modifier la période" : "Nouvelle période d'examens"}
+                </h4>
+                <button type="button" onClick={closeExamPeriodForm} className="text-xs font-medium text-slate-500">
+                  Fermer
+                </button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Année</label>
+                  <select
+                    value={examPeriodForm.academic_year_id}
+                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, academic_year_id: e.target.value }))}
+                    className="class-input max-w-[12rem] bg-white"
+                    required
+                  >
+                    <option value="">Sélectionner</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Période</label>
+                  <input
+                    list="exam-period-names"
+                    value={examPeriodForm.period_name}
+                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, period_name: e.target.value }))}
+                    className="class-input w-full max-w-[14rem] bg-white"
+                    required
+                  />
+                  <datalist id="exam-period-names">
+                    {periods.map((p) => (
+                      <option key={p.id} value={p.name} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Du</label>
+                  <DateInputJJMMAAAA
+                    value={examPeriodForm.start_date}
+                    onChange={(start_date) => setExamPeriodForm((f) => ({ ...f, start_date }))}
+                    className="class-input bg-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Au</label>
+                  <DateInputJJMMAAAA
+                    value={examPeriodForm.end_date}
+                    onChange={(end_date) => setExamPeriodForm((f) => ({ ...f, end_date }))}
+                    className="class-input bg-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                    Remise des bulletins ou carnets
+                  </label>
+                  <DateInputJJMMAAAA
+                    value={examPeriodForm.report_date}
+                    onChange={(report_date) => setExamPeriodForm((f) => ({ ...f, report_date }))}
+                    className="class-input bg-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-slate-600">Classes</span>
+                  {!editingExamPeriodId && classes.length > 0 ? (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={classes.length > 0 && examPeriodForm.class_ids.length === classes.length}
+                        onChange={() =>
+                          setExamPeriodForm((f) => ({
+                            ...f,
+                            class_ids: f.class_ids.length === classes.length ? [] : classes.map((c) => c.id),
+                          }))
+                        }
+                      />
+                      Tout
+                    </label>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {classes.map((c) => {
+                    const on = examPeriodForm.class_ids.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                          on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={on}
+                          onChange={() => toggleExamPeriodClass(c.id)}
+                        />
+                        {c.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                  {saving ? "Enregistrement…" : "Enregistrer"}
+                </button>
+                <button type="button" onClick={closeExamPeriodForm} className="app-btn-secondary text-sm py-2">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          ) : null}
+          {examPeriods.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-10 text-center text-slate-500">
+              Aucune période d'examens
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {examPeriods.map((p) => (
+                <article key={p.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex">
+                    <span className="w-1.5 shrink-0 bg-rose-400" />
+                    <div className="min-w-0 flex-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">
+                        {formatDateJJMMAAAA(p.start_date)} – {formatDateJJMMAAAA(p.end_date)}
+                      </p>
+                      <h4 className="mt-0.5 font-bold text-slate-900">{p.period_name}</h4>
+                      <p className="mt-1 text-sm text-slate-500">{p.class_name}</p>
+                      {p.report_date ? (
+                        <p className="mt-2 text-sm text-slate-700">
+                          {handoverTitle(p.class_level || classes.find((c) => c.id === p.class_id)?.level)} :{" "}
+                          {formatDateJJMMAAAA(p.report_date)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditExamPeriod(p)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteExamPeriod(p.id)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Salles</h3>
             <Link
@@ -2260,15 +3108,25 @@ export function DashboardSchedulePage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Occasion</label>
+                <div className="min-w-[12rem] flex-1">
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Activité</label>
                   <input
                     type="text"
                     value={activityForm.occasion}
                     onChange={(e) => setActivityForm((f) => ({ ...f, occasion: e.target.value }))}
                     placeholder="Sortie, match…"
-                    className="class-input w-full max-w-[16rem]"
+                    className="class-input w-full"
                     required
+                  />
+                </div>
+                <div className="min-w-[14rem] flex-1">
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Objectif</label>
+                  <input
+                    type="text"
+                    value={activityForm.objective}
+                    onChange={(e) => setActivityForm((f) => ({ ...f, objective: e.target.value }))}
+                    placeholder="Pourquoi"
+                    className="class-input w-full"
                   />
                 </div>
                 <div>
@@ -2299,13 +3157,21 @@ export function DashboardSchedulePage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Frais</label>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Cotisation</label>
                   <input
                     type="text"
                     value={activityForm.participation_fee}
                     onChange={(e) => setActivityForm((f) => ({ ...f, participation_fee: e.target.value }))}
-                    placeholder="—"
+                    placeholder="Montant"
                     className="class-input class-input-name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Date limite cotisation</label>
+                  <DateInputJJMMAAAA
+                    value={activityForm.contribution_due_date}
+                    onChange={(contribution_due_date) => setActivityForm((f) => ({ ...f, contribution_due_date }))}
+                    className="class-input"
                   />
                 </div>
                 <div>
@@ -2318,7 +3184,43 @@ export function DashboardSchedulePage() {
                     className="class-input class-input-name"
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Lieu</label>
+                  <select
+                    value={activityForm.location_kind}
+                    onChange={(e) =>
+                      setActivityForm((f) => ({
+                        ...f,
+                        location_kind: e.target.value === "OTHER" ? "OTHER" : "SCHOOL",
+                      }))
+                    }
+                    className="class-input bg-white"
+                  >
+                    <option value="SCHOOL">À l'école</option>
+                    <option value="OTHER">Autre lieu</option>
+                  </select>
+                </div>
+                {activityForm.location_kind === "OTHER" ? (
+                  <div className="min-w-[12rem] flex-1">
+                    <label className="mb-1 block text-[11px] font-medium text-slate-600">Endroit</label>
+                    <input
+                      type="text"
+                      value={activityForm.location_text}
+                      onChange={(e) => setActivityForm((f) => ({ ...f, location_text: e.target.value }))}
+                      className="class-input w-full"
+                      required
+                    />
+                  </div>
+                ) : null}
               </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={activityForm.parents_concerned}
+                  onChange={(e) => setActivityForm((f) => ({ ...f, parents_concerned: e.target.checked }))}
+                />
+                Les parents sont aussi concernés
+              </label>
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-slate-600">Classes</span>
@@ -2388,11 +3290,22 @@ export function DashboardSchedulePage() {
                         {formatDateJJMMAAAA(a.activity_date)} · {a.start_time}–{a.end_time}
                       </p>
                       <h4 className="mt-0.5 font-bold text-slate-900">{a.occasion}</h4>
-                      <p className="mt-1 text-sm text-slate-500">{a.class_name}</p>
+                      {a.objective ? <p className="mt-1 text-sm text-slate-600">{a.objective}</p> : null}
+                      <p className="mt-1 text-sm text-slate-500">
+                        {a.class_name} · {placeLabel(a.location_kind, a.location_text, a.location_label)}
+                      </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
+                        {a.parents_concerned ? (
+                          <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] text-teal-900">
+                            Parents concernés
+                          </span>
+                        ) : null}
                         {a.participation_fee ? (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                            {a.participation_fee}
+                            Cotisation {a.participation_fee}
+                            {a.contribution_due_date
+                              ? ` · avant le ${formatDateJJMMAAAA(a.contribution_due_date)}`
+                              : ""}
                           </span>
                         ) : null}
                         {a.dress_code ? (
@@ -2414,6 +3327,204 @@ export function DashboardSchedulePage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteActivity(a.id)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {tab === "reunions" ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Réunions des parents
+            </h3>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Réunions des parents",
+                  subtitle: pdfSubtitle,
+                  columns: MEETING_COLUMNS,
+                  rows: meetingRows,
+                }}
+                filename={`reunions-parents${pdfFileSuffix}`}
+                disabled={meetingRows.length === 0}
+              />
+              <button type="button" onClick={openNewMeeting} className="app-btn-primary text-sm py-2">
+                Ajouter
+              </button>
+            </div>
+          </div>
+          {showMeetingForm ? (
+            <form
+              ref={meetingFormRef}
+              onSubmit={handleSaveMeeting}
+              className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-900">
+                  {editingMeetingId ? "Modifier" : "Nouvelle réunion"}
+                </h4>
+                <button type="button" onClick={closeMeetingForm} className="text-xs font-medium text-slate-500">
+                  Fermer
+                </button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Année</label>
+                  <select
+                    value={meetingForm.academic_year_id}
+                    onChange={(e) => setMeetingForm((f) => ({ ...f, academic_year_id: e.target.value }))}
+                    className="class-input max-w-[12rem] bg-white"
+                    required
+                  >
+                    <option value="">Sélectionner</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Date</label>
+                  <DateInputJJMMAAAA
+                    value={meetingForm.meeting_date}
+                    onChange={(meeting_date) => setMeetingForm((f) => ({ ...f, meeting_date }))}
+                    className="class-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Heure</label>
+                  <input
+                    type="time"
+                    value={meetingForm.start_time}
+                    onChange={(e) => setMeetingForm((f) => ({ ...f, start_time: e.target.value }))}
+                    className="class-input w-[7.5rem]"
+                    required
+                  />
+                </div>
+                <div className="min-w-[16rem] flex-1">
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Objectif</label>
+                  <input
+                    value={meetingForm.objective}
+                    onChange={(e) => setMeetingForm((f) => ({ ...f, objective: e.target.value }))}
+                    className="class-input w-full"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-600">Lieu</label>
+                  <select
+                    value={meetingForm.location_kind}
+                    onChange={(e) =>
+                      setMeetingForm((f) => ({
+                        ...f,
+                        location_kind: e.target.value === "OTHER" ? "OTHER" : "SCHOOL",
+                      }))
+                    }
+                    className="class-input bg-white"
+                  >
+                    <option value="SCHOOL">À l'école</option>
+                    <option value="OTHER">Autre lieu</option>
+                  </select>
+                </div>
+                {meetingForm.location_kind === "OTHER" ? (
+                  <div className="min-w-[12rem] flex-1">
+                    <label className="mb-1 block text-[11px] font-medium text-slate-600">Endroit</label>
+                    <input
+                      value={meetingForm.location_text}
+                      onChange={(e) => setMeetingForm((f) => ({ ...f, location_text: e.target.value }))}
+                      className="class-input w-full"
+                      required
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-slate-600">Classes</span>
+                  {!editingMeetingId && classes.length > 0 ? (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={classes.length > 0 && meetingForm.class_ids.length === classes.length}
+                        onChange={() =>
+                          setMeetingForm((f) => ({
+                            ...f,
+                            class_ids: f.class_ids.length === classes.length ? [] : classes.map((c) => c.id),
+                          }))
+                        }
+                      />
+                      Tout
+                    </label>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {classes.map((c) => {
+                    const on = meetingForm.class_ids.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                          on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
+                        }`}
+                      >
+                        <input type="checkbox" className="sr-only" checked={on} onChange={() => toggleMeetingClass(c.id)} />
+                        {c.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                  {saving ? "Enregistrement…" : "Enregistrer"}
+                </button>
+                <button type="button" onClick={closeMeetingForm} className="app-btn-secondary text-sm py-2">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          ) : null}
+          {meetings.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-slate-500">
+              Aucune réunion
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {meetings.map((m) => (
+                <article key={m.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex">
+                    <span className="w-1.5 shrink-0 bg-violet-400" />
+                    <div className="min-w-0 flex-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800">
+                        {formatDateJJMMAAAA(m.meeting_date)} · {m.start_time}
+                      </p>
+                      <h4 className="mt-0.5 font-bold text-slate-900">{m.objective}</h4>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {m.class_name} · {placeLabel(m.location_kind, m.location_text, m.location_label)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditMeeting(m)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMeeting(m.id)}
                       className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
                     >
                       Supprimer
@@ -2573,13 +3684,60 @@ export function DashboardSchedulePage() {
           <div className="mt-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700">Liste</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700">
+                  {listIntent === "edit" ? "Modification" : "Consultation"}
+                </p>
                 <h3 className="text-lg font-bold text-slate-900">{listClass.name}</h3>
               </div>
-              <button type="button" onClick={() => setListClass(null)} className="app-btn-secondary text-sm">
-                Fermer
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {listIntent === "edit" ? (
+                  <button type="button" onClick={() => setListIntent("view")} className="app-btn-secondary text-sm">
+                    Voir l’horaire
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setListIntent("edit")} className="app-btn-primary text-sm">
+                    Modifier
+                  </button>
+                )}
+                <button type="button" onClick={() => setListClass(null)} className="app-btn-secondary text-sm">
+                  Fermer
+                </button>
+              </div>
             </div>
+            {listIntent === "view" ? (
+              <div className="space-y-3">
+                {WEEKDAYS.every((d) => {
+                  const slot = listDraft[d.index];
+                  return !slot || (slot.subjectIds.length === 0 && slot.materials.length === 0);
+                }) ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 px-6 py-10 text-center">
+                    <p className="font-medium text-slate-700">Aucun jour renseigné</p>
+                    <button type="button" onClick={() => setListIntent("edit")} className="mt-3 app-btn-primary text-sm py-2">
+                      Composer l’horaire
+                    </button>
+                  </div>
+                ) : (
+                  WEEKDAYS.map((d) => {
+                    const slot = listDraft[d.index] ?? { subjectIds: [] as string[], materials: [] as string[] };
+                    const names = classSubjectOptions(listClass.id)
+                      .filter((s) => slot.subjectIds.includes(s.id))
+                      .map((s) => s.name);
+                    if (names.length === 0 && slot.materials.length === 0) return null;
+                    return (
+                      <div key={d.index} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{d.label}</p>
+                        {names.length > 0 ? (
+                          <p className="mt-1 text-sm text-slate-700">{names.join(" · ")}</p>
+                        ) : null}
+                        {isMaterialsCycle(listClass.level) && slot.materials.length > 0 ? (
+                          <p className="mt-1 text-xs text-slate-500">Matériel : {slot.materials.join(" · ")}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
             <div className="space-y-4">
               {WEEKDAYS.map((d) => {
                 const slot = listDraft[d.index] ?? { subjectIds: [] as string[], materials: [] as string[] };
@@ -2662,6 +3820,7 @@ export function DashboardSchedulePage() {
                 {savingBring ? "Enregistrement…" : "Enregistrer"}
               </button>
             </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -2670,6 +3829,7 @@ export function DashboardSchedulePage() {
         <ScheduleGridModal
           title={`${gridRoom.name}${roomClassName(gridRoom) ? ` — ${roomClassName(gridRoom)}` : ""}`}
           mode={tab === "examens" ? "examens" : "cours"}
+          initialIntent={gridIntent}
           subjects={gridSubjects}
           courseCells={courseCells}
           examCells={examCells}

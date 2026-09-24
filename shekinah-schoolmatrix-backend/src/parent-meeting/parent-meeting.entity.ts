@@ -6,12 +6,14 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Class } from '../classes/class.entity';
 
-@Entity('extracurricular_activity')
-export class ExtracurricularActivity {
+@Entity('parent_meeting')
+@Index(['academic_year', 'meeting_date'])
+export class ParentMeeting {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -20,35 +22,17 @@ export class ExtracurricularActivity {
   academic_year: AcademicYear;
 
   @Column({ type: 'date' })
-  activity_date: string;
+  meeting_date: string;
 
   @Column({ type: 'varchar', length: 5 })
   start_time: string;
-
-  @Column({ type: 'varchar', length: 5 })
-  end_time: string;
 
   @ManyToOne(() => Class, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'class_id' })
   class: Class;
 
-  @Column({ type: 'varchar', length: 200 })
-  occasion: string;
-
-  @Column({ type: 'varchar', length: 500, nullable: true })
-  objective: string | null;
-
-  @Column({ type: 'boolean', default: false })
-  parents_concerned: boolean;
-
-  @Column({ type: 'varchar', length: 80, nullable: true })
-  participation_fee: string | null;
-
-  @Column({ type: 'date', nullable: true })
-  contribution_due_date: string | null;
-
-  @Column({ type: 'varchar', length: 200, nullable: true })
-  dress_code: string | null;
+  @Column({ type: 'varchar', length: 500 })
+  objective: string;
 
   /** SCHOOL | OTHER */
   @Column({ type: 'varchar', length: 20, default: 'SCHOOL' })

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { useRevealScroll } from "@/lib/useRevealScroll";
@@ -81,6 +81,8 @@ type Props = {
   }) => void;
   onDeleteMoment?: (id: string) => void;
   momentsBusy?: boolean;
+  /** Consultation (horaire renseigné) ou tableau de modification. */
+  initialIntent?: "view" | "edit";
 };
 
 export function ScheduleGridModal({
@@ -109,7 +111,10 @@ export function ScheduleGridModal({
   onCreateMoment,
   onDeleteMoment,
   momentsBusy = false,
+  initialIntent = "view",
 }: Props) {
+  const [intent, setIntent] = useState<"view" | "edit">(initialIntent);
+  const editing = intent === "edit";
   const [momentKind, setMomentKind] = useState("RECESS");
   const [momentStart, setMomentStart] = useState("10:00");
   const [momentEnd, setMomentEnd] = useState("10:15");
@@ -159,6 +164,47 @@ export function ScheduleGridModal({
     return rows;
   }, [recessBands]);
 
+  useEffect(() => {
+    setIntent(initialIntent);
+  }, [initialIntent, title, mode]);
+
+  const occupiedCourseRows = useMemo(() => {
+    return courseGridRows.filter((row) => {
+      if (row.type === "recess") {
+        return SCHEDULE_DAYS.some((day) =>
+          classMoments.some(
+            (m) =>
+              m.kind === "RECESS" &&
+              m.day_of_week === day.index &&
+              m.start_time === row.start &&
+              m.end_time === row.end,
+          ),
+        );
+      }
+      return SCHEDULE_DAYS.some((day) => courseCells[cellKey(day.index, row.start)]?.subject_id);
+    });
+  }, [courseGridRows, classMoments, courseCells]);
+
+  const examViewRows = useMemo(() => {
+    return Object.entries(examCells)
+      .filter(([, cell]) => cell.subject_id)
+      .map(([key, cell]) => {
+        const sep = key.lastIndexOf("|");
+        const date = sep >= 0 ? key.slice(0, sep) : "";
+        const start = sep >= 0 ? key.slice(sep + 1) : "";
+        const hour = SCHEDULE_HOURS.find((h) => h.start === start);
+        const subject = subjects.find((s) => s.id === cell.subject_id);
+        return {
+          key,
+          date,
+          start,
+          end: hour?.end ?? start,
+          subject: subject?.name ?? "—",
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+  }, [examCells, subjects]);
+
   const examFrom = examRangeStart <= examRangeEnd ? examRangeStart : examRangeEnd;
   const examTo = examRangeStart <= examRangeEnd ? examRangeEnd : examRangeStart;
   const examWeeks = useMemo(
@@ -193,17 +239,30 @@ export function ScheduleGridModal({
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-700">
+              {editing ? "Modification" : "Consultation"}
+              {" · "}
               {mode === "examens" ? "Horaire des examens" : "Horaire des cours"}
             </p>
             <h3 className="truncate text-lg font-bold tracking-tight text-slate-900">{title}</h3>
             {subtitle ? <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p> : null}
           </div>
-          <button type="button" onClick={onClose} className="app-btn-secondary shrink-0 text-sm py-2">
-            Fermer
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {editing ? (
+              <button type="button" onClick={() => setIntent("view")} className="app-btn-secondary text-sm py-2">
+                Voir l’horaire
+              </button>
+            ) : (
+              <button type="button" onClick={() => setIntent("edit")} className="app-btn-primary text-sm py-2">
+                Modifier
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="app-btn-secondary text-sm py-2">
+              Fermer
+            </button>
+          </div>
         </header>
 
-        {mode === "examens" ? (
+        {mode === "examens" && editing ? (
           <div className="border-b border-slate-200 bg-amber-50/70 px-5 py-3">
             <div className="flex flex-wrap items-end gap-3">
               <div>
@@ -285,7 +344,41 @@ export function ScheduleGridModal({
         ) : null}
 
         <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
-          {mode === "examens" ? (
+          {mode === "examens" && !editing ? (
+            examViewRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+                <p className="font-medium text-slate-700">Aucun examen renseigné</p>
+                <button type="button" onClick={() => setIntent("edit")} className="mt-3 app-btn-primary text-sm py-2">
+                  Composer l’horaire
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-2.5">Date</th>
+                      <th className="px-4 py-2.5">Horaire</th>
+                      <th className="px-4 py-2.5">Matière</th>
+                      {examPeriod ? <th className="px-4 py-2.5">Période</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {examViewRows.map((row) => (
+                      <tr key={row.key} className="border-t border-slate-100">
+                        <td className="px-4 py-2.5 font-medium text-slate-900">{formatDateJJMMAAAA(row.date)}</td>
+                        <td className="px-4 py-2.5 text-slate-700">
+                          {row.start} – {row.end.slice(0, 5)}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-900">{row.subject}</td>
+                        {examPeriod ? <td className="px-4 py-2.5 text-slate-600">{examPeriod}</td> : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : mode === "examens" ? (
             <div className="space-y-6">
               {examWeeks.map((week, wi) => (
                 <ExamWeekTable
@@ -320,7 +413,16 @@ export function ScheduleGridModal({
                 </tr>
               </thead>
               <tbody>
-                {courseGridRows.map((row) => {
+                {!editing && occupiedCourseRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={1 + SCHEDULE_DAYS.length} className="px-6 py-14 text-center">
+                      <p className="font-medium text-slate-700">Aucun créneau renseigné</p>
+                      <button type="button" onClick={() => setIntent("edit")} className="mt-3 app-btn-primary text-sm py-2">
+                        Composer l’horaire
+                      </button>
+                    </td>
+                  </tr>
+                ) : (editing ? courseGridRows : occupiedCourseRows).map((row) => {
                   if (row.type === "recess") {
                     return (
                       <tr key={`recess-${row.start}-${row.end}`} className="bg-amber-50/80">
@@ -360,7 +462,24 @@ export function ScheduleGridModal({
                       const key = cellKey(day.index, hour.start);
                       const course = courseCells[key];
                       const value = course?.subject_id ?? "";
+                      const subjectName = subjects.find((s) => s.id === value)?.name;
                       const busy = savingKey === key;
+                      if (!editing) {
+                        return (
+                          <td key={key} className="p-1 align-top">
+                            {value ? (
+                              <div className="rounded-lg bg-teal-50 px-1.5 py-1.5 ring-1 ring-teal-200">
+                                <div className="text-xs font-semibold text-teal-950">{subjectName}</div>
+                                {course?.teacher_name ? (
+                                  <div className="mt-0.5 truncate text-[10px] font-medium text-teal-800/80">
+                                    {course.teacher_name}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </td>
+                        );
+                      }
                       return (
                         <td key={key} className="p-1 align-top">
                           <select
@@ -463,7 +582,7 @@ export function ScheduleGridModal({
                               {m.start_time}–{m.end_time}
                             </span>
                           </span>
-                          {onDeleteMoment ? (
+                          {editing && onDeleteMoment ? (
                             <button
                               type="button"
                               className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
@@ -477,7 +596,7 @@ export function ScheduleGridModal({
                   </ul>
                 )}
 
-                {onCreateMoment ? (
+                {editing && onCreateMoment ? (
                   <form
                     className="flex flex-wrap items-end gap-2 rounded-xl bg-white p-3 ring-1 ring-teal-100"
                     onSubmit={(e) => {

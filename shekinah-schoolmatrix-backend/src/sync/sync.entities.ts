@@ -25,6 +25,8 @@ import { ClassDaySubject } from '../teachers/class-day-subject.entity';
 import { SchoolMaterial } from '../teachers/school-material.entity';
 import { ExtracurricularActivity } from '../extracurricular-activity/extracurricular-activity.entity';
 import { SchoolVacation } from '../school-vacation/school-vacation.entity';
+import { ParentMeeting } from '../parent-meeting/parent-meeting.entity';
+import { ExamPeriod } from '../exam-period/exam-period.entity';
 import { Expense } from '../finance/expense.entity';
 import { Bank } from '../finance/bank.entity';
 import { BankAccount } from '../finance/bank-account.entity';
@@ -86,6 +88,8 @@ export type SyncEntityName =
   | 'SchoolMaterial'
   | 'ExtracurricularActivity'
   | 'SchoolVacation'
+  | 'ParentMeeting'
+  | 'ExamPeriod'
   | 'Expense'
   | 'Bank'
   | 'BankAccount'
@@ -151,6 +155,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'SchoolMaterial', target: SchoolMaterial, timeField: 'updated_at' },
   { name: 'ExtracurricularActivity', target: ExtracurricularActivity, timeField: 'updated_at' },
   { name: 'SchoolVacation', target: SchoolVacation, timeField: 'updated_at' },
+  { name: 'ParentMeeting', target: ParentMeeting, timeField: 'updated_at' },
+  { name: 'ExamPeriod', target: ExamPeriod, timeField: 'updated_at' },
   { name: 'StudentClassAssignment', target: StudentClassAssignment, timeField: 'updated_at' },
   { name: 'ClassDecisionThreshold', target: ClassDecisionThreshold, timeField: 'updated_at' },
   { name: 'Grade', target: Grade, timeField: 'updated_at' },

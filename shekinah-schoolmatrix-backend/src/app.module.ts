@@ -14,6 +14,8 @@ import { TeachersModule } from './teachers/teachers.module';
 import { ExamScheduleModule } from './exam-schedule/exam-schedule.module';
 import { ExtracurricularActivityModule } from './extracurricular-activity/extracurricular-activity.module';
 import { SchoolVacationModule } from './school-vacation/school-vacation.module';
+import { ParentMeetingModule } from './parent-meeting/parent-meeting.module';
+import { ExamPeriodModule } from './exam-period/exam-period.module';
 import { EconomatModule } from './economat/economat.module';
 import { FinanceModule } from './finance/finance.module';
 import { AcademicYearModule } from './academic-year/academic-year.module';
@@ -78,6 +80,8 @@ import { migrations } from './migrations';
     ExamScheduleModule,
     ExtracurricularActivityModule,
     SchoolVacationModule,
+    ParentMeetingModule,
+    ExamPeriodModule,
     EconomatModule,
     FinanceModule,
     AcademicYearModule,

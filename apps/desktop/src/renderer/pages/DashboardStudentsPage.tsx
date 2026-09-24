@@ -394,7 +394,7 @@ export function DashboardStudentsPage() {
                   <option value="F">Féminin</option>
                 </select>
               </Field>
-              <Field label="Date de naissance">
+              <Field label="Date de naissance (JJ/MM/AAAA)">
                 <DateInputJJMMAAAA
                   value={form.birth_date}
                   onChange={(birth_date) => setForm((f) => ({ ...f, birth_date }))}

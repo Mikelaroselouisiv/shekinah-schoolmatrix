@@ -52,11 +52,25 @@ export class ExtracurricularActivityController {
       class_id?: string;
       class_ids?: string[];
       occasion: string;
+      objective?: string | null;
+      parents_concerned?: boolean;
       participation_fee?: string | null;
+      contribution_due_date?: string | null;
       dress_code?: string | null;
+      location_kind?: string | null;
+      location_text?: string | null;
     },
   ) {
     const classIds = body.class_ids?.filter(Boolean) ?? [];
+    const extra = {
+      objective: body.objective ?? null,
+      parents_concerned: !!body.parents_concerned,
+      participation_fee: body.participation_fee ?? null,
+      contribution_due_date: body.contribution_due_date ?? null,
+      dress_code: body.dress_code ?? null,
+      location_kind: body.location_kind ?? null,
+      location_text: body.location_text ?? null,
+    };
     if (classIds.length > 0) {
       const created = await this.extracurricularActivityService.createForClasses({
         academic_year_id: body.academic_year_id,
@@ -65,8 +79,7 @@ export class ExtracurricularActivityController {
         end_time: body.end_time,
         class_ids: classIds,
         occasion: body.occasion,
-        participation_fee: body.participation_fee ?? null,
-        dress_code: body.dress_code ?? null,
+        ...extra,
       });
       return { ok: true, extracurricular_activities: created, count: created.length };
     }
@@ -78,8 +91,7 @@ export class ExtracurricularActivityController {
         end_time: body.end_time,
         class_id: body.class_id,
         occasion: body.occasion,
-        participation_fee: body.participation_fee ?? null,
-        dress_code: body.dress_code ?? null,
+        ...extra,
       });
       return { ok: true, extracurricular_activity: created };
     }
@@ -98,8 +110,13 @@ export class ExtracurricularActivityController {
       end_time: string;
       class_id: string;
       occasion: string;
+      objective: string | null;
+      parents_concerned: boolean;
       participation_fee: string | null;
+      contribution_due_date: string | null;
       dress_code: string | null;
+      location_kind: string | null;
+      location_text: string | null;
     }>,
   ) {
     const activity =

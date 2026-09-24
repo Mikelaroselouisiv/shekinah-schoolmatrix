@@ -4,7 +4,7 @@
   "description": "Application desktop SchoolMatrix (Server / Remote)",
   "author": "Shekinah SchoolMatrix",
   "private": true,
-  "version": "4.1.0",
+  "version": "4.1.1",
   "main": "src/main/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",

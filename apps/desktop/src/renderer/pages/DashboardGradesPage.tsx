@@ -2,6 +2,7 @@
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { AppAccordion } from "@/components/AppAccordion";
+import { ReportBookletPanel } from "@/components/ReportBookletPanel";
 import { isTeacherRole } from "@/lib/dashboardRoles";
 import { BAREME_PRESETS, DEFAULT_BAREME, pointsToTen } from "@/lib/gradeScale";
 import {
@@ -85,7 +86,8 @@ export function DashboardGradesPage() {
   const [preschoolRows, setPreschoolRows] = useState<PreschoolFormDataRow[]>([]);
   const [evalMode, setEvalMode] = useState<"LEVEL" | "FREQUENCY">("LEVEL");
   const [isLastPeriod, setIsLastPeriod] = useState(false);
-  const [openBlock, setOpenBlock] = useState<"saisie" | "thresholds" | "coefficients">("saisie");
+  const [tab, setTab] = useState<"saisie" | "carnets">("saisie");
+  const [openBlock, setOpenBlock] = useState<"thresholds" | "coefficients" | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [coefficients, setCoefficients] = useState<CoefficientItem[]>([]);
@@ -112,6 +114,7 @@ export function DashboardGradesPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [teacherClasses, setTeacherClasses] = useState<ClassItem[]>([]);
   const [teacherSubjectsInClass, setTeacherSubjectsInClass] = useState<Subject[]>([]);
+  const [classSubjectsForSaisie, setClassSubjectsForSaisie] = useState<Subject[]>([]);
   const [canEditGrades, setCanEditGrades] = useState(true);
 
   async function loadAcademicYearsAndClasses() {
@@ -381,18 +384,29 @@ export function DashboardGradesPage() {
   }, [classId, classes, teacherClasses]);
 
   useEffect(() => {
-    if (!isTeacherRole(currentUserRole) || !classId) {
+    if (!classId) {
       setTeacherSubjectsInClass([]);
+      setClassSubjectsForSaisie([]);
+      setSubjectId("");
       return;
     }
-    fetchWithAuth(`${API_BASE}/teachers/me/classes/${classId}/subjects`)
+    const teacher = isTeacherRole(currentUserRole);
+    const url = teacher
+      ? `${API_BASE}/teachers/me/classes/${classId}/subjects`
+      : `${API_BASE}/classes/${classId}/subjects`;
+    fetchWithAuth(url)
       .then((r) => r.json())
       .then((data) => {
-        const list = data.subjects ?? [];
-        setTeacherSubjectsInClass(list);
-        setSubjectId((prev) => (list.some((s: Subject) => s.id === prev) ? prev : ""));
+        const list: Subject[] = data.subjects ?? [];
+        if (teacher) setTeacherSubjectsInClass(list);
+        else setClassSubjectsForSaisie(list);
+        setSubjectId((prev) => (list.some((s) => s.id === prev) ? prev : ""));
       })
-      .catch(() => setTeacherSubjectsInClass([]));
+      .catch(() => {
+        if (teacher) setTeacherSubjectsInClass([]);
+        else setClassSubjectsForSaisie([]);
+        setSubjectId("");
+      });
   }, [currentUserRole, classId]);
 
   useEffect(() => {
@@ -487,6 +501,7 @@ export function DashboardGradesPage() {
       const res = await fetchWithAuth(url, { method: "POST", body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur enregistrement");
+      if (isTeacherRole(currentUserRole)) setCanEditGrades(false);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -536,7 +551,7 @@ export function DashboardGradesPage() {
   const canLoadForm = academicYearId && classId && subjectId && periodId;
   const isTeacher = isTeacherRole(currentUserRole);
   const classesForSaisie = isTeacher ? teacherClasses : classes;
-  const subjectsForSaisie = isTeacher ? teacherSubjectsInClass : subjects;
+  const subjectsForSaisie = isTeacher ? teacherSubjectsInClass : classSubjectsForSaisie;
   const subjectName = subjectsForSaisie.find((s) => s.id === subjectId)?.name ?? subjects.find((s) => s.id === subjectId)?.name ?? "";
   const periodName = periods.find((p) => p.id === periodId)?.name ?? "";
 
@@ -553,16 +568,32 @@ export function DashboardGradesPage() {
         </div>
       </div>
 
+      <div className="inline-flex rounded-full bg-slate-100 p-1 ring-1 ring-slate-200">
+        {([
+          ["saisie", "Saisie"],
+          ["carnets", "Carnets"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+              tab === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {error ? (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">{error}</div>
       ) : null}
 
-      <AppAccordion
-        title="Saisie"
-        tone="teal"
-        open={openBlock === "saisie"}
-        onToggle={() => setOpenBlock("saisie")}
-      >
+      {tab === "carnets" ? <ReportBookletPanel classes={classesForSaisie} /> : null}
+
+      {tab === "saisie" ? (
+      <>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <label className="block space-y-1.5">
             <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Année</span>
@@ -598,10 +629,10 @@ export function DashboardGradesPage() {
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
               className={FIELD}
-              disabled={isTeacher && !classId}
+              disabled={!classId}
             >
-              <option value="">Sélectionner</option>
-              {isTeacher && classId && teacherSubjectsInClass.length === 0 ? (
+              <option value="">{classId ? "Sélectionner" : "Choisissez une classe"}</option>
+              {classId && subjectsForSaisie.length === 0 ? (
                 <option value="" disabled>Aucune matière dans cette classe</option>
               ) : (
                 subjectsForSaisie.map((s) => (
@@ -665,7 +696,9 @@ export function DashboardGradesPage() {
                     {saving ? "Enregistrement..." : isPreschool && isLastPeriod ? "Enregistrer" : "Enregistrer les notes"}
                   </button>
                 ) : (
-                  <p className="text-sm font-medium text-amber-700">Déjà enregistré</p>
+                  <p className="text-sm font-medium text-amber-700">
+                    Notes déjà enregistrées. Seuls les responsables peuvent les modifier.
+                  </p>
                 )}
               </div>
 
@@ -839,7 +872,6 @@ export function DashboardGradesPage() {
           )}
         </>
       ) : null}
-      </AppAccordion>
 
       {classes.some((c) => !c.is_preschool) ? (
         <>
@@ -1182,6 +1214,8 @@ export function DashboardGradesPage() {
             </div>
           </AppAccordion>
         </>
+      ) : null}
+      </>
       ) : null}
     </div>
   );

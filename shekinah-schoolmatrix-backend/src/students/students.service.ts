@@ -95,11 +95,7 @@ export class StudentsService {
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.class', 'c')
       .leftJoinAndSelect('s.room', 'r')
-      .orderBy(
-        `CASE WHEN NULLIF(BTRIM(COALESCE(s.order_number, '')), '') IS NULL THEN 0 ELSE 1 END`,
-        'ASC',
-      )
-      .addOrderBy('s.last_name', 'ASC')
+      .orderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC')
       .take(limit);
 

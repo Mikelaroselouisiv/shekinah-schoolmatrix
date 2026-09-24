@@ -17,6 +17,8 @@ export type PdfTableConfig = {
 export type PdfSection = {
   title?: string;
   lines?: string[];
+  /** Commence cette section sur une nouvelle page (sauf en haut de la première). */
+  breakBefore?: boolean;
   table?: { columns: PdfColumn[]; rows: Record<string, string | number | null | undefined>[] };
 };
 
@@ -31,6 +33,11 @@ export type PdfSchoolInfo = {
 export type PdfBuildOptions = {
   school?: PdfSchoolInfo | null;
   orientation?: "portrait" | "landscape";
+  format?: "a4" | "letter";
+  /** Redessine l'en-tête d'établissement en haut de chaque page. */
+  headerEachPage?: boolean;
+  tableFontSize?: number;
+  tableCellPadding?: number;
 };
 
 function asPdfText(value: string | number | null | undefined): string {
@@ -129,13 +136,13 @@ function drawSchoolHeader(
   return y + 8;
 }
 
-function tableOptions(startY: number) {
+function tableOptions(startY: number, options?: PdfBuildOptions) {
   return {
     startY,
     theme: "grid" as const,
     styles: {
-      fontSize: 8.5,
-      cellPadding: 2.4,
+      fontSize: options?.tableFontSize ?? 8.5,
+      cellPadding: options?.tableCellPadding ?? 2.4,
       valign: "top" as const,
       overflow: "linebreak" as const,
     },
@@ -150,15 +157,24 @@ async function createDoc(options?: PdfBuildOptions): Promise<{
   doc: jsPDF;
   y: number;
   pageHeight: number;
+  logo: string | null;
 }> {
   const orientation = options?.orientation ?? "portrait";
-  const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation, unit: "mm", format: options?.format ?? "a4" });
   const logo = await loadLogoPng(options?.school?.logo_url);
   const y = options?.school
     ? drawSchoolHeader(doc, options.school, logo)
-    : 15;
+    : 14;
   const pageHeight = doc.internal.pageSize.getHeight();
-  return { doc, y, pageHeight };
+  return { doc, y, pageHeight, logo };
+}
+
+function nextPage(doc: jsPDF, options: PdfBuildOptions | undefined, logo: string | null): number {
+  doc.addPage();
+  if (options?.headerEachPage && options.school) {
+    return drawSchoolHeader(doc, options.school, logo);
+  }
+  return 14;
 }
 
 function drawDocTitle(doc: jsPDF, title: string, y: number): number {
@@ -192,7 +208,7 @@ async function buildTablePdfDoc(
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (autoTable as (doc: any, options: any) => void)(doc, {
-    ...tableOptions(y),
+    ...tableOptions(y, options),
     head: [headers],
     body,
   });
@@ -204,13 +220,17 @@ async function buildSectionsPdfDoc(
   mainTitle?: string,
   options?: PdfBuildOptions,
 ): Promise<jsPDF> {
-  const { doc, y: start, pageHeight } = await createDoc(options);
+  const { doc, y: start, pageHeight, logo } = await createDoc(options);
   let y = start;
   if (mainTitle) y = drawDocTitle(doc, mainTitle, y);
+  let firstSection = true;
   for (const section of sections) {
+    if (section.breakBefore && !firstSection) {
+      y = nextPage(doc, options, logo);
+    }
+    firstSection = false;
     if (y > pageHeight - 36) {
-      doc.addPage();
-      y = options?.school ? 16 : 15;
+      y = nextPage(doc, options, logo);
     }
     if (section.title) {
       doc.setFontSize(11);
@@ -250,9 +270,16 @@ async function buildSectionsPdfDoc(
           return v === null || v === undefined ? "-" : asPdfText(v);
         }),
       );
+      const repeatHeader = !!(options?.headerEachPage && options.school);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (autoTable as (doc: any, options: any) => void)(doc, {
-        ...tableOptions(y),
+        ...tableOptions(y, options),
+        margin: { left: 14, right: 14, top: repeatHeader ? 46 : 14 },
+        willDrawPage: (data: { pageNumber: number }) => {
+          if (repeatHeader && data.pageNumber > 1) {
+            drawSchoolHeader(doc, options?.school, logo);
+          }
+        },
         head: [headers],
         body,
       });

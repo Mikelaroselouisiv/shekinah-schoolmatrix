@@ -5,6 +5,7 @@ import {
   Patch,
   Delete,
   Param,
+  ParseUUIDPipe,
   Body,
   Query,
   UseGuards,
@@ -62,17 +63,31 @@ export class StudentsController {
     @Query('room_id') roomId?: string,
     @Query('status') status?: 'active' | 'alumni' | 'all',
     @Query('without_nisu') withoutNisu?: string,
+    @Query('q') q?: string,
+    @Query('term') term?: string,
+    @Query('limit') limit?: string,
   ) {
     if (classId) await this.levelScope.assertClassAccess(req.user, classId);
     if (status === 'alumni') this.assertDossierComplet(req.user);
+    const withoutNisuFlag = withoutNisu === '1' || withoutNisu === 'true';
+    const query = (term ?? q ?? '').trim();
+    const useLookup = query.length >= 2 || (withoutNisuFlag && !classId && !roomId);
+    const found = useLookup
+      ? await this.studentsService.search({
+          q: query,
+          status: status || 'active',
+          limit: limit ? Number(limit) : 20,
+          withoutNisu: withoutNisuFlag,
+        })
+      : await this.studentsService.findAll({
+          classId: classId || undefined,
+          roomId: roomId || undefined,
+          status: status || 'active',
+          withoutNisu: withoutNisuFlag,
+        });
     const students = await this.levelScope.filterByClassId(
       req.user,
-      await this.studentsService.findAll({
-        classId: classId || undefined,
-        roomId: roomId || undefined,
-        status: status || 'active',
-        withoutNisu: withoutNisu === '1' || withoutNisu === 'true',
-      }),
+      found,
       (s) => s.class?.id,
     );
     return {
@@ -141,7 +156,7 @@ export class StudentsController {
 
   @DenyParents()
   @Get(':id/dossier')
-  async dossier(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+  async dossier(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user?: RequestActor }) {
     this.assertDossierComplet(req.user);
     const current = await this.studentsService.findOne(id);
     await this.levelScope.assertClassAccess(req.user, current.class?.id);
@@ -151,7 +166,7 @@ export class StudentsController {
 
   @ParentScopedStudent({ in: 'param', key: 'id' })
   @Get(':id')
-  async one(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
+  async one(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user?: RequestActor }) {
     const s = await this.studentsService.findOne(id);
     await this.levelScope.assertClassAccess(req.user, s.class?.id);
     const c = s.class;

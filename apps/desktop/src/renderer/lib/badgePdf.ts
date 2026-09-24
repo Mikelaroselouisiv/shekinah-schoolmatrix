@@ -337,7 +337,8 @@ function safeImage(
  *
  *  ┌──────────────────────────────────────────────┐
  *  │           NOM DE L'ÉCOLE (MAJUSCULES)        │
- *  │           tél  ·  adresse                    │
+ *  │           adresse                            │
+ *  │           téléphone                          │
  *  │  ┌──────┐  NOM                    [logo]│    │
  *  │  │ 3:4  │  Prénom                       │    │
  *  │  └──────┘                                    │
@@ -366,8 +367,31 @@ function drawOneBadge(
   const slateSoft: [number, number, number] = [248, 250, 252];
 
   const m = 2.4;
-  const headerH = 12.6;
   const accentH = 0.5;
+  const bottomPad = 0.95;
+  const footerH = 9.6;
+  const metaY = H - bottomPad - footerH;
+
+  const titleMaxW = W - 2 * m;
+  const schoolTitle = (school.name || "École").trim().toUpperCase();
+  const phone = (school.phone || "").trim();
+  const address = (school.address || "").trim();
+  const contactLines = [address, phone].filter(Boolean);
+
+  doc.setFont("helvetica", "bold");
+  let titleSize = 11.2;
+  doc.setFontSize(titleSize);
+  while (titleSize > 7.2 && doc.getTextWidth(schoolTitle) > titleMaxW) {
+    titleSize -= 0.35;
+    doc.setFontSize(titleSize);
+  }
+  const titleLines = wrapLines(doc, schoolTitle, titleMaxW, 2);
+  const titleStartY = titleLines.length === 1 ? 5.65 : 4.35;
+  const titleStep = titleSize * 0.32 + 0.2;
+  const titleEndY = titleStartY + (titleLines.length - 1) * titleStep;
+  const contactStartY = titleEndY + 2.4;
+  const headerH =
+    (contactLines.length ? contactStartY + (contactLines.length - 1) * 2.4 : titleEndY) + 1.35;
 
   applyRgb(doc, [255, 255, 255], "fill");
   doc.rect(0, 0, W, H, "F");
@@ -377,39 +401,31 @@ function drawOneBadge(
   applyRgb(doc, secondary, "fill");
   doc.rect(0, headerH, W, accentH, "F");
 
-  const titleMaxW = W - 2 * m;
-  const schoolTitle = (school.name || "École").trim().toUpperCase();
   applyRgb(doc, onPrimary, "text");
   doc.setFont("helvetica", "bold");
-  let titleSize = 11.2;
   doc.setFontSize(titleSize);
-  while (titleSize > 7.2 && doc.getTextWidth(schoolTitle) > titleMaxW) {
-    titleSize -= 0.35;
-    doc.setFontSize(titleSize);
-  }
-  const titleLines = wrapLines(doc, schoolTitle, titleMaxW, 2);
-  let nameY = titleLines.length === 1 ? 8.15 : 6.15;
+  let nameY = titleStartY;
   for (const line of titleLines) {
     doc.text(line, W / 2, nameY, { align: "center" });
-    nameY += titleSize * 0.32 + 0.2;
+    nameY += titleStep;
   }
 
-  const phone = (school.phone || "").trim();
-  const address = (school.address || "").trim();
-  const contact = [phone, address].filter(Boolean).join("   ·   ");
-  if (contact) {
+  if (contactLines.length) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6);
     applyRgb(doc, onPrimary, "text");
-    doc.text(ellipsize(doc, contact, titleMaxW), W / 2, headerH - 1.45, { align: "center" });
+    let contactY = contactStartY;
+    for (const line of contactLines) {
+      doc.text(ellipsize(doc, line, titleMaxW), W / 2, contactY, { align: "center" });
+      contactY += 2.4;
+    }
   }
 
-  const bottomPad = 0.95;
-  const footerH = 9.6;
-  const photoW = 22.2;
-  const photoH = photoW * (4 / 3);
-  const photoX = m;
   const photoY = headerH + accentH + 0.4;
+  const maxPhotoH = Math.max(18, metaY - photoY - 0.4);
+  const photoH = Math.min(22.2 * (4 / 3), maxPhotoH);
+  const photoW = photoH * (3 / 4);
+  const photoX = m;
   const inset = 0.4;
   const innerW = photoW - inset * 2;
   const innerH = innerW * (4 / 3);
@@ -463,7 +479,6 @@ function drawOneBadge(
   const salleW = 14;
   const classW = W - 2 * m - salleW - sigBlockW - gap * 2;
   const metaH = footerH;
-  const metaY = H - bottomPad - metaH;
   const sigX = W - m - sigBlockW;
   const sigY = H - bottomPad - sigBlockH;
 

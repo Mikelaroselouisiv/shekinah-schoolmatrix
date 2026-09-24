@@ -234,9 +234,48 @@ type ExtracurricularActivityItem = {
   class_id: string;
   class_name: string;
   occasion: string;
+  objective?: string | null;
+  parents_concerned?: boolean;
   participation_fee: string | null;
+  contribution_due_date?: string | null;
   dress_code: string | null;
+  location_kind?: string | null;
+  location_text?: string | null;
+  location_label?: string | null;
 };
+
+type ParentMeetingItem = {
+  id: string;
+  meeting_date: string;
+  start_time: string;
+  class_id: string;
+  class_name: string;
+  objective: string;
+  location_kind?: string | null;
+  location_text?: string | null;
+  location_label?: string | null;
+};
+
+type ExamPeriodItem = {
+  id: string;
+  class_id: string;
+  class_name: string;
+  class_level?: string | null;
+  period_name: string;
+  start_date: string;
+  end_date: string;
+  report_date?: string | null;
+};
+
+function placeLabel(kind?: string | null, text?: string | null, label?: string | null): string {
+  if (label) return label;
+  if (kind === "OTHER") return text?.trim() || "—";
+  return "À l'école";
+}
+
+function handoverTitle(level?: string | null): string {
+  return (level ?? "").toUpperCase() === "PRESCOLAIRE" ? "Remise des carnets" : "Remise des bulletins";
+}
 
 type SchoolVacationItem = {
   id: string;
@@ -273,10 +312,12 @@ export function DashboardFicheElevePage() {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [examResults, setExamResults] = useState<ExamResults | null>(null);
   const [formationDecision, setFormationDecision] = useState<FormationStudent | null>(null);
-  const [scheduleTab, setScheduleTab] = useState<"cours" | "examens" | "parascolaires" | "vacances">("cours");
+  const [scheduleTab, setScheduleTab] = useState<"cours" | "examens" | "parascolaires" | "reunions" | "vacances">("cours");
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
+  const [examPeriods, setExamPeriods] = useState<ExamPeriodItem[]>([]);
   const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
+  const [parentMeetings, setParentMeetings] = useState<ParentMeetingItem[]>([]);
   const [schoolVacations, setSchoolVacations] = useState<SchoolVacationItem[]>([]);
   const [dayLists, setDayLists] = useState<
     { day_of_week: number; subject_names: string[]; materials: string[] }[]
@@ -298,13 +339,15 @@ export function DashboardFicheElevePage() {
   const [rosterMode, setRosterMode] = useState<"active" | "alumni">("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
-    { id: string; order_number: string | null; management_code: string | null; first_name: string; last_name: string; class_name?: string | null; is_alumni?: boolean }[]
+    { id: string; order_number: string | null; management_code: string | null; first_name: string; last_name: string; class_id?: string | null; class_name?: string | null; is_alumni?: boolean }[]
   >([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [dossierYears, setDossierYears] = useState<StudentDossierYear[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pickedStudentIdRef = useRef<string | null>(null);
 
 
   const loadClasses = useCallback(async () => {
@@ -354,7 +397,12 @@ export function DashboardFicheElevePage() {
       const res = await fetchWithAuth(`${API_BASE}/students?class_id=${classId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      setStudents(data.students ?? []);
+      const list = data.students ?? [];
+      setStudents(list);
+      const keepId = pickedStudentIdRef.current;
+      if (keepId && list.some((s: { id: string }) => s.id === keepId)) {
+        setSelectedStudentId(keepId);
+      }
     } catch (e) {
       setStudents([]);
     }
@@ -405,20 +453,28 @@ export function DashboardFicheElevePage() {
     if (!withoutNisuFilter && q.length < 2) {
       setSearchResults([]);
       setSearchLoading(false);
+      setSearchError("");
       return;
     }
     setSearchLoading(true);
+    setSearchError("");
     searchTimer.current = setTimeout(async () => {
       try {
         const status = rosterMode === "alumni" ? "alumni" : "active";
         const qs = new URLSearchParams({ status, limit: withoutNisuFilter ? "50" : "20" });
-        if (q.length >= 2) qs.set("q", q);
+        if (q.length >= 2) qs.set("term", q);
         if (withoutNisuFilter) qs.set("without_nisu", "1");
-        const res = await fetchWithAuth(`${API_BASE}/students/search?${qs}`);
-        const data = await res.json();
-        setSearchResults(res.ok ? (data.students ?? []) : []);
+        const res = await fetchWithAuth(`${API_BASE}/students?${qs}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setSearchResults([]);
+          setSearchError(data.message || data.error || `Recherche refusée (${res.status})`);
+          return;
+        }
+        setSearchResults(data.students ?? []);
       } catch {
         setSearchResults([]);
+        setSearchError("Impossible de lancer la recherche.");
       } finally {
         setSearchLoading(false);
       }
@@ -427,6 +483,40 @@ export function DashboardFicheElevePage() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
   }, [searchQuery, rosterMode, restrictToLinkedStudents, withoutNisuFilter]);
+
+  const selectSearchedStudent = useCallback(
+    (s: {
+      id: string;
+      order_number: string | null;
+      management_code: string | null;
+      first_name: string;
+      last_name: string;
+      class_id?: string | null;
+    }) => {
+      pickedStudentIdRef.current = s.id;
+      setStudents((prev) =>
+        prev.some((x) => x.id === s.id)
+          ? prev
+          : [
+              ...prev,
+              {
+                id: s.id,
+                order_number: s.order_number,
+                management_code: s.management_code,
+                first_name: s.first_name,
+                last_name: s.last_name,
+                class_id: s.class_id ?? "",
+              },
+            ],
+      );
+      if (s.class_id) setSelectedClassId(s.class_id);
+      setSelectedStudentId(s.id);
+      setSearchQuery(`${s.last_name} ${s.first_name}`);
+      setSearchResults([]);
+      setSearchOpen(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (initialStudentId) {
@@ -443,7 +533,9 @@ export function DashboardFicheElevePage() {
       setFormationDecision(null);
       setScheduleSlots([]);
       setExamSchedules([]);
+      setExamPeriods([]);
       setExtracurricularActivities([]);
+      setParentMeetings([]);
       setSchoolVacations([]);
       setDossierYears([]);
       return;
@@ -500,12 +592,14 @@ export function DashboardFicheElevePage() {
       else setPayment(null);
 
       if (yearClassId && selectedYearId) {
-        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
+        const [examRes, formationRes, slotsRes, examSchedRes, examPeriodRes, activitiesRes, meetingsRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
           fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${yearClassId}`),
           fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${slotsQs}`),
           fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${yearClassId}`),
+          fetchWithAuth(`${API_BASE}/exam-periods?class_id=${yearClassId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}&academic_year_id=${selectedYearId}`),
+          fetchWithAuth(`${API_BASE}/parent-meetings?class_id=${yearClassId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
           fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}${yearQs}`),
           fetchWithAuth(`${API_BASE}/class-day-lists?class_id=${yearClassId}${yearQs}`),
@@ -515,7 +609,9 @@ export function DashboardFicheElevePage() {
         const formationData = await formationRes.json();
         const slotsData = await slotsRes.json();
         const examSchedData = await examSchedRes.json();
+        const examPeriodData = await examPeriodRes.json();
         const activitiesData = await activitiesRes.json();
+        const meetingsData = await meetingsRes.json();
         const hwData = await hwRes.json();
         const momentsData = await momentsRes.json();
         const dayListData = dayListRes.ok ? await dayListRes.json() : {};
@@ -540,16 +636,20 @@ export function DashboardFicheElevePage() {
         const fs = formationList.find((f: FormationStudent) => f.id === studentId);
         setFormationDecision(fs ?? null);
         setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
+        setExamPeriods(examPeriodRes.ok ? (examPeriodData.exam_periods ?? []) : []);
         setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
+        setParentMeetings(meetingsRes.ok ? (meetingsData.parent_meetings ?? []) : []);
         setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
       } else {
         setExamResults(null);
         setFormationDecision(null);
         if (yearClassId) {
-          const [slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
+          const [slotsRes, examSchedRes, examPeriodRes, activitiesRes, meetingsRes, hwRes, momentsRes, dayListRes, studentSchedRes] = await Promise.all([
             fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${!listMode && roomId ? `&room_id=${roomId}` : ""}`),
             fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${yearClassId}`),
+            fetchWithAuth(`${API_BASE}/exam-periods?class_id=${yearClassId}${selectedYearId ? `&academic_year_id=${selectedYearId}` : ""}`),
             fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}`),
+            fetchWithAuth(`${API_BASE}/parent-meetings?class_id=${yearClassId}${selectedYearId ? `&academic_year_id=${selectedYearId}` : ""}`),
             fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
             fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/class-day-lists?class_id=${yearClassId}`),
@@ -557,7 +657,9 @@ export function DashboardFicheElevePage() {
           ]);
           const slotsData = await slotsRes.json();
           const examSchedData = await examSchedRes.json();
+          const examPeriodData = await examPeriodRes.json();
           const activitiesData = await activitiesRes.json();
+          const meetingsData = await meetingsRes.json();
           const hwData = await hwRes.json();
           const momentsData = await momentsRes.json();
           const dayListData = dayListRes.ok ? await dayListRes.json() : {};
@@ -577,12 +679,16 @@ export function DashboardFicheElevePage() {
             );
           }
           setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
+          setExamPeriods(examPeriodRes.ok ? (examPeriodData.exam_periods ?? []) : []);
           setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
+          setParentMeetings(meetingsRes.ok ? (meetingsData.parent_meetings ?? []) : []);
           setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
         } else {
           setScheduleSlots([]);
           setExamSchedules([]);
+          setExamPeriods([]);
           setExtracurricularActivities([]);
+          setParentMeetings([]);
           setDayLists([]);
         }
       }
@@ -603,7 +709,9 @@ export function DashboardFicheElevePage() {
       setFormationDecision(null);
       setScheduleSlots([]);
       setExamSchedules([]);
+      setExamPeriods([]);
       setExtracurricularActivities([]);
+      setParentMeetings([]);
       setSchoolVacations([]);
       setDayLists([]);
       setDossierYears([]);
@@ -704,6 +812,29 @@ export function DashboardFicheElevePage() {
         });
       }
     }
+    if (examPeriods.length > 0) {
+      sections.push({
+        title: "Période d'examens",
+        table: {
+          columns: [
+            { header: "Période", key: "periode" },
+            { header: "Du", key: "debut" },
+            { header: "Au", key: "fin" },
+            { header: "Remise", key: "remise" },
+          ],
+          rows: [...examPeriods]
+            .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+            .map((p) => ({
+              periode: p.period_name,
+              debut: formatDateJJMMAAAA(p.start_date),
+              fin: formatDateJJMMAAAA(p.end_date),
+              remise: p.report_date
+                ? `${handoverTitle(p.class_level || student?.class_level)} : ${formatDateJJMMAAAA(p.report_date)}`
+                : "—",
+            })),
+        },
+      });
+    }
     if (examSchedules.length > 0) {
       sections.push({
         title: "Horaire des examens",
@@ -736,8 +867,12 @@ export function DashboardFicheElevePage() {
           columns: [
             { header: "Date", key: "date" },
             { header: "Horaire", key: "horaire" },
-            { header: "Occasion", key: "occasion" },
-            { header: "Frais", key: "frais" },
+            { header: "Activité", key: "activite" },
+            { header: "Objectif", key: "objectif" },
+            { header: "Lieu", key: "lieu" },
+            { header: "Parents", key: "parents" },
+            { header: "Cotisation", key: "cotisation" },
+            { header: "Date limite", key: "limite" },
             { header: "Tenue", key: "tenue" },
           ],
           rows: [...extracurricularActivities]
@@ -745,9 +880,34 @@ export function DashboardFicheElevePage() {
             .map((a) => ({
               date: formatDateJJMMAAAA(a.activity_date),
               horaire: `${a.start_time} - ${a.end_time}`,
-              occasion: a.occasion,
-              frais: a.participation_fee ?? "—",
+              activite: a.occasion,
+              objectif: a.objective || "—",
+              lieu: placeLabel(a.location_kind, a.location_text, a.location_label),
+              parents: a.parents_concerned ? "Oui" : "Non",
+              cotisation: a.participation_fee ?? "—",
+              limite: a.contribution_due_date ? formatDateJJMMAAAA(a.contribution_due_date) : "—",
               tenue: a.dress_code ?? "—",
+            })),
+        },
+      });
+    }
+    if (parentMeetings.length > 0) {
+      sections.push({
+        title: "Réunions des parents",
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Heure", key: "heure" },
+            { header: "Objectif", key: "objectif" },
+            { header: "Lieu", key: "lieu" },
+          ],
+          rows: [...parentMeetings]
+            .sort((a, b) => a.meeting_date.localeCompare(b.meeting_date) || a.start_time.localeCompare(b.start_time))
+            .map((m) => ({
+              date: formatDateJJMMAAAA(m.meeting_date),
+              heure: m.start_time,
+              objectif: m.objective,
+              lieu: placeLabel(m.location_kind, m.location_text, m.location_label),
             })),
         },
       });
@@ -772,7 +932,7 @@ export function DashboardFicheElevePage() {
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, extracurricularActivities, schoolVacations, dayLists, student?.class_level]);
+  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, schoolVacations, dayLists, student?.class_level]);
 
   const ficheLevel =
     dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
@@ -817,6 +977,7 @@ export function DashboardFicheElevePage() {
             <select
               value={selectedClassId}
               onChange={(e) => {
+                pickedStudentIdRef.current = null;
                 setSelectedClassId(e.target.value);
                 setSelectedStudentId("");
               }}
@@ -868,9 +1029,11 @@ export function DashboardFicheElevePage() {
               </label>
             )}
             {searchOpen && (withoutNisuFilter || searchQuery.trim().length >= 2) && (
-              <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-[var(--app-border)] bg-white shadow-lg">
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-[var(--app-border)] bg-white shadow-lg">
                 {searchLoading ? (
                   <p className="px-3 py-2 text-sm text-slate-500">Recherche...</p>
+                ) : searchError ? (
+                  <p className="px-3 py-2 text-sm text-red-600">{searchError}</p>
                 ) : searchResults.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-slate-500">Aucun dossier trouvé.</p>
                 ) : (
@@ -879,12 +1042,11 @@ export function DashboardFicheElevePage() {
                       key={s.id}
                       type="button"
                       className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                      onClick={() => {
-                        setSelectedStudentId(s.id);
-                        setSearchQuery(`${s.last_name} ${s.first_name}`);
-                        setSearchResults([]);
-                        setSearchOpen(false);
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectSearchedStudent(s);
                       }}
+                      onClick={() => selectSearchedStudent(s)}
                     >
                       <span className="font-medium">{s.last_name} {s.first_name}</span>
                       {canSeeNisu && s.order_number ? <span className="text-slate-500"> · NISU {s.order_number}</span> : canSeeNisu ? <span className="text-amber-700"> · Sans NISU</span> : null}
@@ -904,6 +1066,8 @@ export function DashboardFicheElevePage() {
               value={selectedStudentId}
               onChange={(e) => {
                 const id = e.target.value;
+                if (!id) return;
+                pickedStudentIdRef.current = null;
                 setSelectedStudentId(id);
                 if (restrictToLinkedStudents) {
                   const s = linkedStudents.find((x) => x.id === id);
@@ -1233,15 +1397,15 @@ export function DashboardFicheElevePage() {
             </div>
           </div>
 
-          {/* Emploi du temps : cours, examens, activités parascolaires */}
+          {/* Agenda : cours, examens, activités, réunions, vacances */}
           <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-2">
-              <span>Emploi du temps</span>
+              <span>Agenda</span>
               <div className="flex items-center gap-2">
                 <ExportPdfButton
                   sections={schedulePdfSections}
-                  mainTitle={`Emploi du temps — ${student.first_name} ${student.last_name}${student.class_name ? ` (${student.class_name})` : ""}`}
-                  filename={`emploi-du-temps-${student.first_name}-${student.last_name}`}
+                  mainTitle={`Agenda — ${student.first_name} ${student.last_name}${student.class_name ? ` (${student.class_name})` : ""}`}
+                  filename={`agenda-${student.first_name}-${student.last_name}`}
                   label="Exporter en PDF"
                   className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                   disabled={schedulePdfSections.length === 0}
@@ -1261,7 +1425,7 @@ export function DashboardFicheElevePage() {
             </div>
             <div className="p-4">
               <div className="flex gap-1 border-b border-[var(--app-border)] mb-4">
-                {(["cours", "examens", "parascolaires", "vacances"] as const).map((t) => (
+                {(["cours", "examens", "parascolaires", "reunions", "vacances"] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -1272,9 +1436,10 @@ export function DashboardFicheElevePage() {
                         : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                     }`}
                   >
-                    {t === "cours" && "Horaire des cours"}
-                    {t === "examens" && "Horaire des examens"}
-                    {t === "parascolaires" && "Activités parascolaires"}
+                    {t === "cours" && "Cours"}
+                    {t === "examens" && "Examens"}
+                    {t === "parascolaires" && "Parascolaire"}
+                    {t === "reunions" && "Réunions"}
                     {t === "vacances" && "Vacances"}
                   </button>
                 ))}
@@ -1365,37 +1530,71 @@ export function DashboardFicheElevePage() {
                 </div>
               )}
               {scheduleTab === "examens" && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                      <tr>
-                        <th className="px-4 py-2 font-medium text-slate-900">Date</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Période</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {examSchedules.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucun examen planifié pour cette classe.</td></tr>
-                      ) : (
-                        [...examSchedules]
-                          .sort(
-                            (a, b) =>
-                              a.exam_date.localeCompare(b.exam_date) ||
-                              a.start_time.localeCompare(b.start_time),
-                          )
-                          .map((e) => (
-                          <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
-                            <td className="px-4 py-2 text-slate-600">{e.start_time} – {e.end_time}</td>
-                            <td className="px-4 py-2 font-medium text-slate-900">{e.subject_name}</td>
-                            <td className="px-4 py-2 text-slate-600">{e.period}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                <div className="space-y-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                        <tr>
+                          <th className="px-4 py-2 font-medium text-slate-900">Période</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Du</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Au</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Remise</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {examPeriods.length === 0 ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période d'examens pour cette classe.</td></tr>
+                        ) : (
+                          [...examPeriods]
+                            .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+                            .map((p) => (
+                              <tr key={p.id} className="border-b border-[var(--app-border)]">
+                                <td className="px-4 py-2 font-medium text-slate-900">{p.period_name}</td>
+                                <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(p.start_date)}</td>
+                                <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(p.end_date)}</td>
+                                <td className="px-4 py-2 text-slate-600">
+                                  {p.report_date
+                                    ? `${handoverTitle(p.class_level || ficheLevel)} : ${formatDateJJMMAAAA(p.report_date)}`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                        <tr>
+                          <th className="px-4 py-2 font-medium text-slate-900">Date</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
+                          <th className="px-4 py-2 font-medium text-slate-900">Période</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {examSchedules.length === 0 ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune matière d'examen planifiée.</td></tr>
+                        ) : (
+                          [...examSchedules]
+                            .sort(
+                              (a, b) =>
+                                a.exam_date.localeCompare(b.exam_date) ||
+                                a.start_time.localeCompare(b.start_time),
+                            )
+                            .map((e) => (
+                            <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                              <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
+                              <td className="px-4 py-2 text-slate-600">{e.start_time} – {e.end_time}</td>
+                              <td className="px-4 py-2 font-medium text-slate-900">{e.subject_name}</td>
+                              <td className="px-4 py-2 text-slate-600">{e.period}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
               {scheduleTab === "parascolaires" && (
@@ -1405,22 +1604,60 @@ export function DashboardFicheElevePage() {
                       <tr>
                         <th className="px-4 py-2 font-medium text-slate-900">Date</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Occasion</th>
-                        <th className="px-4 py-2 font-medium text-slate-900">Frais</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Activité</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Objectif</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Lieu</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Parents</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Cotisation</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Date limite</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Tenue</th>
                       </tr>
                     </thead>
                     <tbody>
                       {extracurricularActivities.length === 0 ? (
-                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Aucune activité parascolaire pour cette classe.</td></tr>
+                        <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500">Aucune activité parascolaire pour cette classe.</td></tr>
                       ) : (
                         extracurricularActivities.map((a) => (
                           <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(a.activity_date)}</td>
                             <td className="px-4 py-2 text-slate-600">{a.start_time} – {a.end_time}</td>
                             <td className="px-4 py-2 font-medium text-slate-900">{a.occasion}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.objective || "—"}</td>
+                            <td className="px-4 py-2 text-slate-600">{placeLabel(a.location_kind, a.location_text, a.location_label)}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.parents_concerned ? "Oui" : "Non"}</td>
                             <td className="px-4 py-2 text-slate-600">{a.participation_fee ?? "—"}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.contribution_due_date ? formatDateJJMMAAAA(a.contribution_due_date) : "—"}</td>
                             <td className="px-4 py-2 text-slate-600">{a.dress_code ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {scheduleTab === "reunions" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Date</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Heure</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Objectif</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Lieu</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parentMeetings.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune réunion des parents pour cette classe.</td></tr>
+                      ) : (
+                        [...parentMeetings]
+                          .sort((a, b) => a.meeting_date.localeCompare(b.meeting_date) || a.start_time.localeCompare(b.start_time))
+                          .map((m) => (
+                          <tr key={m.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(m.meeting_date)}</td>
+                            <td className="px-4 py-2 text-slate-600">{m.start_time}</td>
+                            <td className="px-4 py-2 font-medium text-slate-900">{m.objective}</td>
+                            <td className="px-4 py-2 text-slate-600">{placeLabel(m.location_kind, m.location_text, m.location_label)}</td>
                           </tr>
                         ))
                       )}

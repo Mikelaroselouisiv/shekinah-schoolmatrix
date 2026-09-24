@@ -88,7 +88,6 @@ import {
   type TeacherItem,
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
-import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Schedule'>;
 type TabId = 'cours' | 'examens' | 'parascolaires' | 'vacances';
@@ -210,6 +209,11 @@ export function ScheduleScreen({}: Props) {
   const [formDate, setFormDate] = useState(toYYYYMMDD());
   const [formEndDate, setFormEndDate] = useState(toYYYYMMDD());
   const [formOccasion, setFormOccasion] = useState('');
+  const [formObjective, setFormObjective] = useState('');
+  const [formParents, setFormParents] = useState(false);
+  const [formDue, setFormDue] = useState('');
+  const [formLocationKind, setFormLocationKind] = useState<'SCHOOL' | 'OTHER'>('SCHOOL');
+  const [formLocationText, setFormLocationText] = useState('');
   const [formMotif, setFormMotif] = useState('');
   const [formFee, setFormFee] = useState('');
   const [formDress, setFormDress] = useState('');
@@ -477,6 +481,11 @@ export function ScheduleScreen({}: Props) {
     setFormDate(toYYYYMMDD());
     setFormEndDate(toYYYYMMDD());
     setFormOccasion('');
+    setFormObjective('');
+    setFormParents(false);
+    setFormDue('');
+    setFormLocationKind('SCHOOL');
+    setFormLocationText('');
     setFormMotif('');
     setFormFee('');
     setFormDress('');
@@ -495,8 +504,13 @@ export function ScheduleScreen({}: Props) {
     setFormStart(item.start_time || '14:00');
     setFormEnd(item.end_time || '16:00');
     setFormOccasion(item.occasion || '');
+    setFormObjective(item.objective || '');
+    setFormParents(!!item.parents_concerned);
     setFormFee(item.participation_fee || '');
+    setFormDue((item.contribution_due_date || '').slice(0, 10));
     setFormDress(item.dress_code || '');
+    setFormLocationKind(item.location_kind === 'OTHER' ? 'OTHER' : 'SCHOOL');
+    setFormLocationText(item.location_text || '');
     setShowForm(true);
   }
 
@@ -581,7 +595,7 @@ export function ScheduleScreen({}: Props) {
         }
       } else {
         if (!yearId || !formClassId || !formOccasion.trim() || !formDate) {
-          throw new Error('Année, classe, occasion et date requis.');
+          throw new Error('Année, classe, activité et date requis.');
         }
         const payload = {
           academic_year_id: yearId,
@@ -589,8 +603,13 @@ export function ScheduleScreen({}: Props) {
           start_time: formStart,
           end_time: formEnd,
           occasion: formOccasion.trim(),
+          objective: formObjective.trim() || null,
+          parents_concerned: formParents,
           participation_fee: formFee.trim() || null,
+          contribution_due_date: formDue || null,
           dress_code: formDress.trim() || null,
+          location_kind: formLocationKind,
+          location_text: formLocationKind === 'OTHER' ? formLocationText.trim() : null,
         };
         if (editingActivityId) {
           await updateExtracurricularActivity(editingActivityId, {
@@ -1261,7 +1280,14 @@ export function ScheduleScreen({}: Props) {
                   {` · ${[item.start_time, item.end_time].filter(Boolean).join(' – ')}`}
                 </Text>
                 <Text style={styles.cardTitle}>{item.occasion || 'Activité'}</Text>
-                <Muted>{item.class_name || ''}</Muted>
+                {item.objective ? <Muted>{item.objective}</Muted> : null}
+                <Muted>
+                  {[item.class_name, item.location_label || (item.location_kind === 'OTHER' ? item.location_text : "À l'école")]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Muted>
+                {item.parents_concerned ? <Muted>Parents concernés</Muted> : null}
+                {item.participation_fee ? <Muted>Cotisation · {item.participation_fee}</Muted> : null}
                 {item.dress_code ? <Muted>Tenue · {item.dress_code}</Muted> : null}
                 {canEdit ? (
                   <View style={styles.cardActions}>
@@ -1393,21 +1419,44 @@ export function ScheduleScreen({}: Props) {
         {tab === 'parascolaires' ? (
           <>
             <TextField
-              label="Occasion"
+              label="Activité"
               value={formOccasion}
               onChangeText={setFormOccasion}
             />
             <TextField
-              label="Frais (optionnel)"
+              label="Objectif"
+              value={formObjective}
+              onChangeText={setFormObjective}
+            />
+            <TextField
+              label="Cotisation"
               value={formFee}
               onChangeText={setFormFee}
               keyboardType="decimal-pad"
             />
+            <DateField label="Date limite cotisation" value={formDue} onChange={setFormDue} />
             <TextField
-              label="Tenue (optionnel)"
+              label="Tenue"
               value={formDress}
               onChangeText={setFormDress}
             />
+            <SelectChip
+              label="Lieu"
+              value={formLocationKind === 'OTHER' ? 'Autre lieu' : "À l'école"}
+              onPress={() => setFormLocationKind((k) => (k === 'SCHOOL' ? 'OTHER' : 'SCHOOL'))}
+            />
+            {formLocationKind === 'OTHER' ? (
+              <TextField
+                label="Endroit"
+                value={formLocationText}
+                onChangeText={setFormLocationText}
+              />
+            ) : null}
+            <Pressable onPress={() => setFormParents((v) => !v)} style={{ paddingVertical: 8 }}>
+              <Text style={styles.cardTitle}>
+                {formParents ? '☑' : '☐'} Les parents sont aussi concernés
+              </Text>
+            </Pressable>
           </>
         ) : null}
         {tab !== 'vacances' ? (
@@ -1720,7 +1769,7 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
   chipOn: { borderColor: '#0F766E', backgroundColor: '#F0FDFA' },
-  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
+  list: { paddingHorizontal: 20, paddingBottom: 48 },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -98,7 +98,9 @@ export class GradesController {
         period_id: body.period_id,
       });
       if (hasExisting) {
-        throw new ForbiddenException('Les notes ont déjà été enregistrées. Seul le directeur général peut les modifier.');
+        throw new ForbiddenException(
+          'Les notes ont déjà été enregistrées. Un professeur ne peut plus les modifier.',
+        );
       }
     }
     await this.gradesService.saveGrades(body);
@@ -157,7 +159,9 @@ export class GradesController {
         period_id: body.period_id,
       });
       if (hasExisting) {
-        throw new ForbiddenException('Les notes ont déjà été enregistrées. Seul le directeur général peut les modifier.');
+        throw new ForbiddenException(
+          'Les notes ont déjà été enregistrées. Un professeur ne peut plus les modifier.',
+        );
       }
     }
     await this.preschoolGradesService.savePreschoolGrades(body);
