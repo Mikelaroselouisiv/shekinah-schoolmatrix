@@ -31,6 +31,22 @@ export class HomeworkGrade {
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 
+  /** Préscolaire : l’élève fait partie de ce devoir. */
+  @Column({ type: 'boolean', default: true })
+  included: boolean;
+
+  /** Préscolaire : LIVRE ou PHRASE. */
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  source: 'LIVRE' | 'PHRASE' | null;
+
+  /** Préscolaire : titre du livre ou phrase à écrire / lire. */
+  @Column({ type: 'text', nullable: true })
+  content: string | null;
+
+  /** Préscolaire : PASSE, A_REFAIRE ou A_RELIRE. Vide si non renseigné. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  result: 'PASSE' | 'A_REFAIRE' | 'A_RELIRE' | null;
+
   @CreateDateColumn()
   created_at: Date;
 

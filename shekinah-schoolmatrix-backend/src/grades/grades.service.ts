@@ -9,6 +9,7 @@ import { Period } from '../period/period.entity';
 import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { DEFAULT_BAREME, resolveBareme } from './grade-scale';
 import { periodScopeFromLevel } from '../roles/education-levels';
+import { TeachersService } from '../teachers/teachers.service';
 
 @Injectable()
 export class GradesService {
@@ -25,6 +26,7 @@ export class GradesService {
     private readonly periodRepo: Repository<Period>,
     @InjectRepository(StudentClassAssignment)
     private readonly assignmentRepo: Repository<StudentClassAssignment>,
+    private readonly teachersService: TeachersService,
   ) {}
 
   async getTeacherForClassSubject(classId: string, subjectId: string): Promise<{ id: number; name: string } | null> {
@@ -108,12 +110,15 @@ export class GradesService {
     class_id: string;
     subject_id: string;
     period_id: string;
+    teacher_id?: number;
   }): Promise<any> {
-    const students = await this.studentRepo.find({
-      where: { class: { id: params.class_id }, active: true },
-      relations: ['class'],
-      order: { last_name: 'ASC', first_name: 'ASC' },
-    });
+    const students = params.teacher_id
+      ? await this.teachersService.findActiveStudentsInTeacherRooms(params.teacher_id, params.class_id)
+      : await this.studentRepo.find({
+          where: { class: { id: params.class_id }, active: true },
+          relations: ['class'],
+          order: { last_name: 'ASC', first_name: 'ASC' },
+        });
     const storedCoef = await this.getCoefficient(params.academic_year_id, params.class_id, params.subject_id, params.period_id);
     const defaultCoef = storedCoef ?? DEFAULT_BAREME;
     const existingGrades = await this.gradeRepo.find({

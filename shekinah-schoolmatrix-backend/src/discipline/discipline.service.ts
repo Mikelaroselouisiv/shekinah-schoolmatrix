@@ -41,12 +41,22 @@ export class DisciplineService {
     private readonly classRepo: Repository<Class>,
   ) {}
 
-  async getAttendanceByClassAndDate(classId: string, date: string): Promise<any> {
-    const students = await this.studentRepo.find({
-      where: { class: { id: classId }, active: true },
-      relations: ['class'],
-      order: { last_name: 'ASC', first_name: 'ASC' },
-    });
+  async getAttendanceByClassAndDate(
+    classId: string,
+    date: string,
+    roomIds?: string[] | null,
+  ): Promise<any> {
+    if (roomIds && roomIds.length === 0) {
+      return { class_id: classId, date, students: [] };
+    }
+    const qb = this.studentRepo
+      .createQueryBuilder('s')
+      .where('s.class_id = :classId', { classId })
+      .andWhere('s.active = true')
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC');
+    if (roomIds?.length) qb.andWhere('s.room_id IN (:...roomIds)', { roomIds });
+    const students = await qb.getMany();
     const records = await this.attendanceRepo.find({
       where: { class: { id: classId }, date: new Date(date) },
       relations: ['student', 'class'],

@@ -3,17 +3,12 @@ import type { ReactNode } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Screen } from '../../components/ui';
+import { Screen } from '../../components/ui';
 import { OfflineBanner } from '../../components/OfflineBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { getVisibleFamilies, screensForFamilyVisible } from '../../lib/permissions';
-import {
-  FAMILY_ICONS,
-  SCREEN_ICONS,
-  formatRoleLabel,
-  openProductScreen,
-} from '../../lib/moreNavigation';
+import { FAMILY_ICONS, SCREEN_ICONS, openProductScreen } from '../../lib/moreNavigation';
 import { colors } from '../../theme/tokens';
 import type { MoreStackParamList } from '../../navigation/types';
 import type { MobileFamilyId } from '../../../spec/productMap';
@@ -24,41 +19,16 @@ type Props = NativeStackScreenProps<MoreStackParamList, 'MoreMain'>;
 const MENU_FAMILIES: MobileFamilyId[] = ['life', 'org', 'money', 'insight', 'admin'];
 
 export function MoreScreen({ navigation }: Props) {
-  const { user, roleName, rolePermissions, logout } = useAuth();
-  const { theme, home, context } = useSchool();
+  const { roleName, rolePermissions } = useAuth();
+  const { theme } = useSchool();
   const families = getVisibleFamilies(roleName, rolePermissions).filter((f) =>
     MENU_FAMILIES.includes(f.id as MobileFamilyId),
   );
-
-  const displayName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || 'Compte';
-  const initials = displayName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() || '')
-    .join('');
-  const schoolName = context?.school?.name || home?.name || '';
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <OfflineBanner />
-
-        <View style={styles.profile}>
-          <View style={[styles.avatar, { backgroundColor: theme.accentTint }]}>
-            <Text style={[styles.avatarText, { color: theme.accent }]}>{initials || '·'}</Text>
-          </View>
-          <View style={styles.profileText}>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Text style={styles.profileMeta} numberOfLines={1}>
-              {formatRoleLabel(roleName)}
-              {schoolName ? ` · ${schoolName}` : ''}
-            </Text>
-          </View>
-        </View>
 
         {families.map((family) => {
           const screens = screensForFamilyVisible(
@@ -101,13 +71,6 @@ export function MoreScreen({ navigation }: Props) {
             isLast
           />
         </MenuSection>
-
-        <Button
-          title="Déconnexion"
-          variant="danger"
-          onPress={() => void logout()}
-          style={styles.logout}
-        />
       </ScrollView>
     </Screen>
   );
@@ -189,36 +152,6 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: listBottomPadding(24),
   },
-  profile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  profileText: { flex: 1, gap: 2 },
-  profileName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -0.3,
-  },
-  profileMeta: {
-    fontSize: 14,
-    color: colors.textMuted,
-  },
   section: {
     marginTop: 18,
   },
@@ -281,8 +214,5 @@ const styles = StyleSheet.create({
   rowValue: {
     fontSize: 13,
     color: colors.textMuted,
-  },
-  logout: {
-    marginTop: 28,
   },
 });

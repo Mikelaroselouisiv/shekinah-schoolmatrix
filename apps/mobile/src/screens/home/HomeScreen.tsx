@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -12,21 +12,13 @@ import { Ionicons } from '@expo/vector-icons';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LoadingBlock, Screen } from '../../components/ui';
+import { Screen } from '../../components/ui';
 import { OfflineBanner } from '../../components/OfflineBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { canSeeSensitiveDashboardStats, isTeacherRole } from '../../lib/permissions';
-import { formatTodayLong, studentDisplayName } from '../../lib/format';
-import {
-  getDashboardStats,
-  getImageUrl,
-  getUpcomingBirthdays,
-  type DashboardStats,
-  type LinkedStudent,
-  type UpcomingBirthday,
-} from '../../services/api';
+import { isTeacherRole } from '../../lib/permissions';
+import { getImageUrl, getUpcomingBirthdays, type UpcomingBirthday } from '../../services/api';
 import { colors, softTint } from '../../theme/tokens';
 import { WORK_TAB_BY_ROLE, getScreen } from '../../../spec/productMap';
 import type { AppTabParamList, HomeStackParamList } from '../../navigation/types';
@@ -37,57 +29,68 @@ type Nav = CompositeNavigationProp<
   BottomTabNavigationProp<AppTabParamList>
 >;
 
+function formatClock(d: Date): string {
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function formatDateLong(d: Date): string {
+  return d.toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export function HomeScreen({ navigation }: { navigation: Nav }) {
-  const { user, roleName, rolePermissions, linkedStudents, refreshLinkedStudents } = useAuth();
+  const { user, roleName } = useAuth();
   const { home, context, theme, refetch } = useSchool();
   const { flushQueue } = useNetwork();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [birthdays, setBirthdays] = useState<UpcomingBirthday[]>([]);
+  const [now, setNow] = useState(() => new Date());
 
   const firstName = user?.first_name || user?.email || 'utilisateur';
   const schoolName = context?.school?.name || home?.name || 'Shekinah';
   const yearName = context?.academic_year?.name;
-  const showStats = canSeeSensitiveDashboardStats(roleName, rolePermissions);
   const logoUri = getImageUrl(context?.school?.logo_url || home?.logo_url);
   const work = WORK_TAB_BY_ROLE[roleName];
   const workScreen = work ? getScreen(work.screenId) : null;
-  const pageBg = useMemo(() => softTint(theme.primary, 0.94), [theme.primary]);
-  const linked = linkedStudents;
+  const wash = softTint(theme.accent, 0.78);
+  const washSoft = softTint(theme.accent, 0.9);
+  const cardEdge = softTint(theme.accent, 0.72);
 
   const loadExtras = useCallback(async () => {
-    await refreshLinkedStudents();
-    if (isTeacherRole(roleName)) {
-      try {
-        const data = await getUpcomingBirthdays();
-        setBirthdays(data.birthdays);
-      } catch {
-        setBirthdays([]);
-      }
-    } else {
+    if (!isTeacherRole(roleName)) {
+      setBirthdays([]);
+      return;
+    }
+    try {
+      const data = await getUpcomingBirthdays();
+      setBirthdays(data.birthdays);
+    } catch {
       setBirthdays([]);
     }
-    if (!showStats) return;
-    setLoadingStats(true);
-    try {
-      setStats(await getDashboardStats());
-    } finally {
-      setLoadingStats(false);
-    }
-  }, [showStats, refreshLinkedStudents, roleName]);
+  }, [roleName]);
 
   useEffect(() => {
     void loadExtras();
   }, [loadExtras]);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: '',
       headerShadowVisible: false,
-      headerStyle: { backgroundColor: pageBg },
+      headerStyle: { backgroundColor: colors.bg },
     });
-  }, [navigation, pageBg]);
+  }, [navigation]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -108,16 +111,14 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
     navigation.navigate('Work');
   }
 
-  function openStudent(s: LinkedStudent) {
-    // Toujours via Mes enfants (liés) — multi-enfants Parent ou staff-parent.
-    navigation.navigate('Children', {
-      screen: 'StudentFiche',
-      params: { studentId: s.id, studentName: studentDisplayName(s) },
-    } as never);
-  }
-
   return (
-    <Screen style={{ paddingHorizontal: 0, backgroundColor: pageBg }}>
+    <Screen style={styles.screen}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={[styles.orb, styles.orbTop, { backgroundColor: washSoft }]} />
+        <View style={[styles.orb, styles.orbMid, { backgroundColor: wash }]} />
+        <View style={[styles.orb, styles.orbBottom, { backgroundColor: washSoft }]} />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -125,170 +126,181 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void onRefresh()}
-            tintColor={theme.primary}
+            tintColor={theme.accent}
           />
         }
       >
-        <View style={styles.top}>
-          <OfflineBanner />
+        <OfflineBanner />
 
-          <View style={styles.brand}>
-            <Image
-              source={logoUri ? { uri: logoUri } : require('../../../assets/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={[styles.schoolName, { color: theme.primary }]} numberOfLines={2}>
-              {schoolName}
-            </Text>
-            <Text style={styles.greeting}>Bonjour, {firstName}</Text>
-            <Text style={styles.date}>{formatTodayLong()}</Text>
-            {yearName ? <Text style={styles.year}>{yearName}</Text> : null}
-          </View>
+        <View style={styles.brand}>
+          <Image
+            source={logoUri ? { uri: logoUri } : require('../../../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.schoolName} numberOfLines={2}>
+            {schoolName}
+          </Text>
+          <Text style={styles.greeting}>Bonjour, {firstName}</Text>
         </View>
 
-        <View style={styles.body}>
-          {birthdays.length > 0 ? (
-            <View style={styles.birthdayCard}>
-              <Text style={styles.birthdayTitle}>Anniversaires</Text>
-              {birthdays.map((b) => (
-                <Text key={b.student_id} style={styles.birthdayLine}>
-                  {b.when === 'tomorrow' ? 'Demain' : 'Aujourd’hui'} — {b.first_name} {b.last_name}
-                  {b.room_name ? ` · ${b.room_name}` : ''}
-                  {b.turning_age != null ? ` (${b.turning_age} ans)` : ''}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-          {showStats ? (
-            <View style={styles.block}>
-              {loadingStats && !stats ? (
-                <LoadingBlock label="Stats…" />
-              ) : (
-                <View style={styles.kpiRow}>
-                  <Kpi label="Classes" value={stats?.classesCount} />
-                  <Kpi label="Élèves" value={stats?.studentsCount} />
-                </View>
-              )}
-            </View>
-          ) : null}
+        <View style={[styles.clockCard, { borderColor: cardEdge }]}>
+          <Text style={styles.time}>{formatClock(now)}</Text>
+          <View style={[styles.timeRule, { backgroundColor: theme.accent }]} />
+          <Text style={styles.date}>{formatDateLong(now)}</Text>
+          {yearName ? <Text style={styles.year}>{yearName}</Text> : null}
+        </View>
 
-          {workScreen || roleName === 'PARENT' ? (
-            <Pressable
-              onPress={goWork}
-              style={({ pressed }) => [
-                styles.dashboardCard,
-                pressed && { opacity: 0.88 },
+        {birthdays.length > 0 ? (
+          <View style={styles.birthdayCard}>
+            <Text style={styles.birthdayTitle}>Anniversaires</Text>
+            {birthdays.map((b) => (
+              <Text key={b.student_id} style={styles.birthdayLine}>
+                {b.when === 'tomorrow' ? 'Demain' : 'Aujourd’hui'} — {b.first_name} {b.last_name}
+                {b.room_name ? ` · ${b.room_name}` : ''}
+                {b.turning_age != null ? ` (${b.turning_age} ans)` : ''}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {workScreen || roleName === 'PARENT' ? (
+          <Pressable
+            onPress={goWork}
+            style={({ pressed }) => [
+              styles.dashboardCard,
+              { borderColor: cardEdge, backgroundColor: washSoft },
+              pressed && styles.dashboardPressed,
+            ]}
+          >
+            <Text style={styles.dashboardTitle}>Tableau de bord</Text>
+            <View
+              style={[
+                styles.dashboardRingOuter,
+                { borderColor: theme.accent, backgroundColor: colors.surface },
               ]}
             >
-              <Text style={styles.dashboardTitle}>Tableau de bord</Text>
-              <View
-                style={[
-                  styles.dashboardRingOuter,
-                  { borderColor: theme.accent, backgroundColor: theme.accentTint },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.dashboardRingInner,
-                    { borderColor: theme.accent, backgroundColor: colors.surface },
-                  ]}
-                >
-                  <Ionicons name="stats-chart-outline" size={34} color={theme.accent} />
-                </View>
+              <View style={[styles.dashboardRingInner, { backgroundColor: theme.accentTint }]}>
+                <Ionicons name="stats-chart-outline" size={30} color={theme.accent} />
               </View>
-            </Pressable>
-          ) : null}
-
-          {linked.length > 0 ? (
-            <View style={styles.block}>
-              <Text style={styles.blockLabel}>Mes enfants</Text>
-              {linked.slice(0, 6).map((s) => (
-                <Pressable
-                  key={s.id}
-                  onPress={() => openStudent(s)}
-                  style={({ pressed }) => [
-                    styles.linkedRow,
-                    pressed && { opacity: 0.85 },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.linkedName}>{studentDisplayName(s)}</Text>
-                    <Text style={styles.linkedMeta}>
-                      {s.class_name || s.order_number || '—'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                </Pressable>
-              ))}
             </View>
-          ) : null}
-        </View>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </Screen>
   );
 }
 
-function Kpi({ label, value }: { label: string; value?: number }) {
-  return (
-    <View style={styles.kpi}>
-      <Text style={styles.kpiValue}>{value ?? '—'}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  screen: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+  },
+  orb: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  orbTop: {
+    width: 280,
+    height: 280,
+    top: -110,
+    right: -90,
+  },
+  orbMid: {
+    width: 180,
+    height: 180,
+    top: 220,
+    left: -70,
+    opacity: 0.55,
+  },
+  orbBottom: {
+    width: 320,
+    height: 320,
+    bottom: -140,
+    right: -120,
+    opacity: 0.7,
+  },
   content: {
     flexGrow: 1,
-    paddingBottom: listBottomPadding(24),
-  },
-  top: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 22,
     paddingTop: 8,
+    paddingBottom: listBottomPadding(24),
+    gap: 18,
   },
   brand: {
     alignItems: 'center',
-    paddingTop: 12,
-    paddingBottom: 28,
+    paddingTop: 8,
   },
   logo: {
-    width: 168,
-    height: 168,
-    marginBottom: 20,
+    width: 148,
+    height: 148,
+    marginBottom: 16,
   },
   schoolName: {
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    fontSize: 24,
+    fontWeight: '600',
+    letterSpacing: -0.4,
     textAlign: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 12,
+    color: colors.text,
+    marginBottom: 6,
+    paddingHorizontal: 8,
   },
   greeting: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.textMuted,
+    letterSpacing: 0.1,
+  },
+  clockCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 28,
+    borderWidth: 1,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 2,
+  },
+  time: {
+    fontSize: 64,
+    fontWeight: '300',
+    letterSpacing: -2,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  timeRule: {
+    width: 36,
+    height: 2,
+    borderRadius: 2,
+    marginTop: 10,
+    marginBottom: 14,
+    opacity: 0.85,
+  },
+  date: {
     fontSize: 16,
     fontWeight: '500',
     color: colors.text,
-    marginBottom: 4,
-  },
-  date: {
-    fontSize: 13,
-    color: colors.textMuted,
+    textAlign: 'center',
     textTransform: 'capitalize',
+    letterSpacing: 0.2,
   },
   year: {
     marginTop: 8,
     fontSize: 12,
-    color: colors.textMuted,
     fontWeight: '600',
-  },
-  body: {
-    paddingHorizontal: 20,
-    gap: 14,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
   },
   birthdayCard: {
-    backgroundColor: colors.flameTint,
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 16,
@@ -296,103 +308,55 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   birthdayTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    color: colors.textMuted,
   },
   birthdayLine: {
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
   },
-  block: {
-    gap: 8,
-  },
-  blockLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 2,
-    letterSpacing: 0.2,
-  },
-  kpiRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  kpi: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  kpiValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  kpiLabel: {
-    marginTop: 4,
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
   dashboardCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 20,
-    paddingVertical: 22,
-    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 26,
+    gap: 16,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  dashboardPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
   },
   dashboardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '600',
     color: colors.text,
     textAlign: 'center',
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   },
   dashboardRingOuter: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2.5,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
+    padding: 7,
   },
   dashboardRingInner: {
     width: '100%',
     height: '100%',
     borderRadius: 999,
-    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  linkedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  linkedName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  linkedMeta: {
-    marginTop: 2,
-    fontSize: 12,
-    color: colors.textMuted,
   },
 });

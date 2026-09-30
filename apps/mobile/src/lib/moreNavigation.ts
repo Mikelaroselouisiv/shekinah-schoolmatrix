@@ -16,6 +16,7 @@ export const FAMILY_ICONS: Record<MobileFamilyId, Glyph> = {
 export const SCREEN_ICONS: Record<string, Glyph> = {
   students: 'person-add-outline',
   grades: 'create-outline',
+  'teacher-hub': 'grid-outline',
   discipline: 'hand-left-outline',
   'formation-classe': 'people-outline',
   photography: 'camera-outline',
@@ -35,16 +36,38 @@ export const SCREEN_ICONS: Record<string, Glyph> = {
 };
 
 const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: 'Super administrateur',
+  DIRECTEUR_GENERAL: 'Directeur général',
+  DIRECTEUR_ADMINISTRATIF: 'Directeur administratif',
+  ADMINISTRATEUR: 'Administrateur',
+  SCHOOL_ADMIN: 'Administrateur',
+  DIRECTEUR_PEDAGOGIQUE: 'Directeur pédagogique',
+  DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
   DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL: 'Directeur pédagogique du primaire',
   DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2: 'Directeur pédagogique du primaire',
-  ADMIN_FONDAMENTAL: 'Directeur pédagogique du primaire',
   DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3: 'Directeur pédagogique du secondaire',
   DIRECTEUR_PEDAGOGIQUE_SECONDAIRE: 'Directeur pédagogique du secondaire',
-  ADMIN_SECONDAIRE: 'Directeur pédagogique du secondaire',
-  DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
-  ADMIN_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
   DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE:
     'Directeur pédagogique de la formation supérieure',
+  ADMIN_PRESCOLAIRE: 'Directeur pédagogique du préscolaire',
+  ADMIN_FONDAMENTAL: 'Directeur pédagogique du primaire',
+  ADMIN_SECONDAIRE: 'Directeur pédagogique du secondaire',
+  CENSEUR: 'Censeur',
+  SECRETAIRE_GENERAL: 'Secrétaire général',
+  SECRETAIRE_FORMATION_SUPERIEURE: 'Secrétaire de la formation supérieure',
+  SURVEILLANT_GENERAL: 'Surveillant général',
+  DISCIPLINE: 'Surveillant général',
+  ECONOME: 'Économe',
+  COMPTABLE: 'Comptable',
+  STAFF: 'Personnel',
+  TEACHER: 'Professeur',
+  PROFESSEUR: 'Professeur',
+  PROFESSEURE: 'Professeure',
+  PROF: 'Professeur',
+  ENSEIGNANT: 'Enseignant',
+  ENSEIGNANTE: 'Enseignante',
+  PARENT: 'Parent',
+  PHOTOGRAPHER: 'Photographe',
 };
 
 export function formatRoleLabel(roleName: string | null | undefined): string {
@@ -73,27 +96,35 @@ export function openProductScreen(
     | { navigate: (a: string, b?: object) => void }
     | undefined;
 
+  const openTab = (tab: string, params?: object) => {
+    if (params) parent?.navigate('Main', { screen: tab, params });
+    else parent?.navigate('Main', { screen: tab });
+  };
+
   switch (screenId) {
     case 'fiche-eleve':
-      parent?.navigate('Students');
+      openTab('Students');
       return;
     case 'discipline':
-      parent?.navigate('Work', { screen: 'Discipline', initial: false });
+      openTab('Work', { screen: 'Discipline', initial: false });
       return;
     case 'grades':
-      parent?.navigate('Work', { screen: 'Grades', initial: false });
+      openTab('Work', { screen: 'Grades', initial: false });
+      return;
+    case 'teacher-hub':
+      openTab('Work', { screen: 'WorkMain', initial: false });
       return;
     case 'economat':
-      parent?.navigate('Finance', { screen: 'Payments', initial: false });
+      openTab('Finance', { screen: 'Payments', initial: false });
       return;
     case 'depenses':
-      parent?.navigate('Finance', { screen: 'Expenses', initial: false });
+      openTab('Finance', { screen: 'Expenses', initial: false });
       return;
     case 'photography':
-      parent?.navigate('Work', { screen: 'Photography', initial: false });
+      openTab('Work', { screen: 'Photography', initial: false });
       return;
     case 'schedule':
-      parent?.navigate('Work', { screen: 'Schedule', initial: false });
+      openTab('Work', { screen: 'Schedule', initial: false });
       return;
     case 'stats-academiques':
       navigation.navigate('AcademicStats');
@@ -102,10 +133,10 @@ export function openProductScreen(
       navigation.navigate('FormationClasse');
       return;
     case 'students':
-      parent?.navigate('Students', { screen: 'Enrollment', initial: false });
+      openTab('Students', { screen: 'Enrollment', initial: false });
       return;
     case 'stats-financieres':
-      parent?.navigate('Finance', { screen: 'FinancialMonitor', initial: false });
+      openTab('Finance', { screen: 'FinancialMonitor', initial: false });
       return;
     case 'academic-years':
       navigation.navigate('OrgAcademicYears');

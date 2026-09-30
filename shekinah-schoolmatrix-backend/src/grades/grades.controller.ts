@@ -60,17 +60,19 @@ export class GradesController {
   @DenyParents()
   @Get('form-data')
   async getFormData(
-    @Req() req: { user?: { role?: string } },
+    @Req() req: { user?: { role?: string; userId?: number; sub?: number; id?: number } },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period_id') periodId?: string,
   ) {
+    const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
     const data = await this.gradesService.getGradesFormData({
       academic_year_id: academicYearId!,
       class_id: classId!,
       subject_id: subjectId!,
       period_id: periodId!,
+      teacher_id: isTeacherRoleName(req.user?.role) ? uid : undefined,
     });
     const role = req.user?.role;
     const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;
@@ -120,17 +122,19 @@ export class GradesController {
   @DenyParents()
   @Get('preschool/form-data')
   async getPreschoolFormData(
-    @Req() req: { user?: { role?: string } },
+    @Req() req: { user?: { role?: string; userId?: number; sub?: number; id?: number } },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period_id') periodId?: string,
   ) {
+    const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
     const data = await this.preschoolGradesService.getPreschoolFormData({
       academic_year_id: academicYearId!,
       class_id: classId!,
       subject_id: subjectId!,
       period_id: periodId!,
+      teacher_id: isTeacherRoleName(req.user?.role) ? uid : undefined,
     });
     const role = req.user?.role;
     const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;

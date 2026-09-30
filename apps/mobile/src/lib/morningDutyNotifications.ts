@@ -12,6 +12,7 @@ import {
   getTeacherClasses,
   listSchoolWeekDuties,
 } from '../services/api';
+import { toYYYYMMDD } from './format';
 import {
   dutiesForTeacher,
   dutyDisplayTitle,
@@ -56,10 +57,8 @@ async function markSent(key: string): Promise<void> {
   }
 }
 
-function todayKey(now = new Date()): string {
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${m}-${d}`;
+function todayKey(): string {
+  return toYYYYMMDD();
 }
 
 export async function syncMorningDutyNotifications(

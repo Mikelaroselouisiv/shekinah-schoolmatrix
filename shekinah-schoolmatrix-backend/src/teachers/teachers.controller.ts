@@ -34,6 +34,15 @@ export class TeachersController {
     return { ok: true, classes };
   }
 
+  /** Classe et salle du professeur connecté, pour sa page profil. */
+  @Get('me/places')
+  async myPlaces(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) throw new ForbiddenException('Non authentifié');
+    const places = await this.teachersService.getTeacherPlaces(userId as number);
+    return { ok: true, places };
+  }
+
   /** Anniversaires (aujourd’hui / demain) des élèves des salles du professeur connecté. */
   @Get('me/upcoming-birthdays')
   async myUpcomingBirthdays(

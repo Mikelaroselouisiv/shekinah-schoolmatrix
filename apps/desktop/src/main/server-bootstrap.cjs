@@ -19,7 +19,6 @@ function getBundledStackDir() {
   return null;
 }
 
-const LEGACY_PRODUCT_DIR = 'Shekinah SchoolMatrix';
 const PRODUCT_DIR = 'Shekinah SchoolMatrix';
 const PRESERVE_STACK_FILES = new Set(['.env.server', '.bootstrap-done']);
 
@@ -31,21 +30,9 @@ function stackDirFor(productDir) {
   return path.join(programDataRoot(), productDir, 'server-stack');
 }
 
-/**
- * Dossier stack sur la machine école.
- * Après le renommage Parallèle → Eureka, l'ancien dossier ProgramData contient
- * encore .env.server (mot de passe Postgres) et Docker (schoolmatrix-server).
- * Réutiliser ce dossier évite de recréer une stack vide + Network Error.
- */
+/** Dossier stack Shekinah uniquement — pas de migration depuis Eureka/Parallele. */
 function getInstalledStackDir() {
-  const eureka = stackDirFor(PRODUCT_DIR);
-  const parallele = stackDirFor(LEGACY_PRODUCT_DIR);
-  const paralleleEnv = path.join(parallele, '.env.server');
-  // L'école a déjà tourné sous Parallèle : garder CE dossier (DB_PASS + Docker).
-  if (fs.existsSync(paralleleEnv)) {
-    return parallele;
-  }
-  return eureka;
+  return stackDirFor(PRODUCT_DIR);
 }
 
 function copyFileIfMissing(src, dest) {
@@ -55,13 +42,9 @@ function copyFileIfMissing(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
-/** Copie secrets/état depuis l'install Parallèle si Eureka n'en a pas encore. */
-function migrateLegacySecrets(installed) {
-  const legacy = stackDirFor(LEGACY_PRODUCT_DIR);
-  if (legacy === installed) return;
-  for (const name of PRESERVE_STACK_FILES) {
-    copyFileIfMissing(path.join(legacy, name), path.join(installed, name));
-  }
+/** No-op : Shekinah n'hérite pas de secrets Eureka/Parallele. */
+function migrateLegacySecrets(_installed) {
+  /* tenant isolé */
 }
 
 function copyDirRecursive(src, dest) {

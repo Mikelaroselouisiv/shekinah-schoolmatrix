@@ -10,6 +10,7 @@ import { DisciplineService } from '../discipline/discipline.service';
 import { serializeStudent } from './student.serialize';
 import { isPreschoolClass } from '../utils/preschool';
 import { SchoolProfile } from '../school-profile/school-profile.entity';
+import { HomeworkService } from '../homework/homework.service';
 
 @Injectable()
 export class StudentsDossierService {
@@ -24,6 +25,7 @@ export class StudentsDossierService {
     private readonly preschoolGradesService: PreschoolGradesService,
     private readonly economatService: EconomatService,
     private readonly disciplineService: DisciplineService,
+    private readonly homeworkService: HomeworkService,
   ) {}
 
   async getDossier(studentId: string) {
@@ -85,10 +87,18 @@ export class StudentsDossierService {
       discipline = null;
     }
 
+    let homework: Awaited<ReturnType<HomeworkService['historyForDossier']>> = [];
+    try {
+      homework = await this.homeworkService.historyForDossier(studentId);
+    } catch {
+      homework = [];
+    }
+
     return {
       student: serializeStudent(student),
       years,
       discipline,
+      homework,
     };
   }
 }

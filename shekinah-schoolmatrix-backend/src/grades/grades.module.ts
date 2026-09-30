@@ -15,6 +15,7 @@ import { PreschoolGradesService } from './preschool-grades.service';
 import { GradesController } from './grades.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
 import { LevelScopeModule } from '../auth/level-scope.module';
+import { TeachersModule } from '../teachers/teachers.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { LevelScopeModule } from '../auth/level-scope.module';
     ]),
     ParentScopeModule,
     LevelScopeModule,
+    TeachersModule,
   ],
   controllers: [GradesController],
   providers: [GradesService, PreschoolGradesService],

@@ -29,13 +29,20 @@ export type HomeStackParamList = {
   HomeMain: undefined;
 };
 
+export type ProfileStackParamList = {
+  ProfileMain: undefined;
+  ProfileEdit: undefined;
+  StudentFiche: { studentId: string; studentName?: string };
+};
+
 export type WorkStackParamList = {
   WorkMain: undefined;
   WorkModule: { screenId: string; title?: string };
   Attendance: undefined;
-  TeacherHub: undefined;
+  TeacherHub: { tab?: 'travaux' | 'appel' } | undefined;
+  Agenda: undefined;
   Grades: undefined;
-  Discipline: undefined;
+  Discipline: { tab?: 'retards' | 'points' | 'mesures' } | undefined;
   Photography: undefined;
   Schedule: undefined;
   AcademicStats: undefined;
@@ -63,5 +70,15 @@ export type AppTabParamList = {
         screen?: keyof FinanceStackParamList;
         params?: FinanceStackParamList[keyof FinanceStackParamList];
       };
-  More: undefined;
+  Profile: undefined;
+};
+
+export type RootStackParamList = {
+  Main:
+    | undefined
+    | {
+        screen?: keyof AppTabParamList;
+        params?: object;
+      };
+  Menu: undefined;
 };

@@ -1,3 +1,4 @@
+import { Pressable } from 'react-native';
 import { HeaderBackButton } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
@@ -19,7 +20,9 @@ type OptsArgs = {
  */
 export function stackScreenOptions(
   rootRouteName: string,
+  opts?: { showMenu?: boolean },
 ): (args: OptsArgs) => NativeStackNavigationOptions {
+  const showMenu = opts?.showMenu !== false;
   return ({ navigation, route }) => {
     const isRoot = route.name === rootRouteName;
 
@@ -48,6 +51,19 @@ export function stackScreenOptions(
               }}
             />
           ),
+      headerRight: showMenu
+        ? () => (
+            <Pressable
+              onPress={() => navigation.navigate('Menu')}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Menu"
+              style={{ marginRight: 4, padding: 4 }}
+            >
+              <Ionicons name="menu-outline" size={26} color={colors.text} />
+            </Pressable>
+          )
+        : undefined,
     };
   };
 }

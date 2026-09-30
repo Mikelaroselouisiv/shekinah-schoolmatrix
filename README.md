@@ -60,7 +60,7 @@ _archive/                         ← Ancien monde AWS/ECR/Next — ne pas utili
 
 ## Agence — dupliquer pour une nouvelle école
 
-Ce dépôt est le **prototype Parallele**. Pour créer un SchoolMatrix isolé pour une autre école (Shekinah, etc.) : [docs/AGENCY-TENANT-CLONE.md](docs/AGENCY-TENANT-CLONE.md) et le skill `.cursor/skills/schoolmatrix-tenant-clone/`.
+Ce dépôt est **Shekinah SchoolMatrix** (fork isolé). Pour créer un SchoolMatrix isolé pour une autre école : [docs/AGENCY-TENANT-CLONE.md](docs/AGENCY-TENANT-CLONE.md) et le skill `.cursor/skills/schoolmatrix-tenant-clone/`.
 
 ## Livraison production
 

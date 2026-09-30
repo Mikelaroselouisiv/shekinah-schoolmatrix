@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { Pressable } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import { HomeScreen } from '../screens/home/HomeScreen';
 import { WorkScreen } from '../screens/work/WorkScreen';
 import { WorkModuleScreen } from '../screens/work/WorkModuleScreen';
 import { TeacherHubScreen } from '../screens/work/TeacherHubScreen';
+import { AgendaScreen } from '../screens/work/AgendaScreen';
 import { AttendanceScreen } from '../screens/work/AttendanceScreen';
 import { GradesScreen } from '../screens/work/GradesScreen';
 import { DisciplineScreen } from '../screens/work/DisciplineScreen';
@@ -27,6 +29,8 @@ import { PaymentsScreen } from '../screens/finance/PaymentsScreen';
 import { ExpensesScreen } from '../screens/finance/ExpensesScreen';
 import { FinancialMonitorScreen } from '../screens/finance/FinancialMonitorScreen';
 import { MoreScreen } from '../screens/more/MoreScreen';
+import { ProfileScreen } from '../screens/profile/ProfileScreen';
+import { ProfileEditScreen } from '../screens/profile/ProfileEditScreen';
 import { FamilyScreensScreen } from '../screens/more/FamilyScreensScreen';
 import { ComingSoonScreen } from '../screens/more/ComingSoonScreen';
 import { OrganisationHubScreen } from '../screens/org/OrganisationHubScreen';
@@ -44,6 +48,7 @@ import type {
   FinanceStackParamList,
   HomeStackParamList,
   MoreStackParamList,
+  ProfileStackParamList,
   StudentsStackParamList,
   WorkStackParamList,
 } from './types';
@@ -56,6 +61,7 @@ const ChildrenStackNav = createNativeStackNavigator<ChildrenStackParamList>();
 const StudentsStackNav = createNativeStackNavigator<StudentsStackParamList>();
 const FinanceStackNav = createNativeStackNavigator<FinanceStackParamList>();
 const MoreStackNav = createNativeStackNavigator<MoreStackParamList>();
+const ProfileStackNav = createNativeStackNavigator<ProfileStackParamList>();
 
 function HomeStack() {
   return (
@@ -76,7 +82,8 @@ function WorkStack() {
       <WorkStackNav.Screen name="WorkModule" component={WorkModuleScreen} options={{ title: 'Module' }} />
       <WorkStackNav.Screen name="Attendance" component={AttendanceScreen} options={{ title: 'Appel' }} />
       <WorkStackNav.Screen name="TeacherHub" component={TeacherHubScreen} options={{ title: 'Tableau professeur' }} />
-      <WorkStackNav.Screen name="Grades" component={GradesScreen} options={{ title: 'Notes' }} />
+      <WorkStackNav.Screen name="Agenda" component={AgendaScreen} options={{ title: 'Agenda' }} />
+      <WorkStackNav.Screen name="Grades" component={GradesScreen} options={{ title: 'Saisie des notes' }} />
       <WorkStackNav.Screen
         name="Discipline"
         component={DisciplineScreen}
@@ -173,10 +180,49 @@ function FinanceStack() {
   );
 }
 
-function MoreStack() {
+function ProfileStack() {
   return (
-    <MoreStackNav.Navigator screenOptions={stackScreenOptions('MoreMain')}>
-      <MoreStackNav.Screen name="MoreMain" component={MoreScreen} options={{ title: 'Menu' }} />
+    <ProfileStackNav.Navigator screenOptions={stackScreenOptions('ProfileMain')}>
+      <ProfileStackNav.Screen
+        name="ProfileMain"
+        component={ProfileScreen}
+        options={{ title: 'Profil' }}
+      />
+      <ProfileStackNav.Screen
+        name="ProfileEdit"
+        component={ProfileEditScreen}
+        options={{ title: 'Modifier le profil' }}
+      />
+      <ProfileStackNav.Screen
+        name="StudentFiche"
+        component={StudentFicheScreen as never}
+        options={{ title: 'Fiche élève' }}
+      />
+    </ProfileStackNav.Navigator>
+  );
+}
+
+export function MoreStack() {
+  return (
+    <MoreStackNav.Navigator screenOptions={stackScreenOptions('MoreMain', { showMenu: false })}>
+      <MoreStackNav.Screen
+        name="MoreMain"
+        component={MoreScreen}
+        options={({ navigation }) => ({
+          title: 'Menu',
+          headerLeft: () => (
+            <Pressable
+              onPress={() => navigation.getParent()?.goBack()}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer le menu"
+              style={{ marginLeft: 8, padding: 4 }}
+            >
+              <Ionicons name="close" size={26} color={colors.text} />
+            </Pressable>
+          ),
+        })}
+      />
       <MoreStackNav.Screen
         name="FamilyScreens"
         component={FamilyScreensScreen}
@@ -242,7 +288,7 @@ function MoreStack() {
 }
 
 const TAB_CONFIG: Record<
-  MobileTabId,
+  Exclude<MobileTabId, 'more'>,
   {
     name: keyof AppTabParamList;
     label: string;
@@ -270,7 +316,12 @@ const TAB_CONFIG: Record<
     icon: 'cash-outline',
     component: FinanceStack,
   },
-  more: { name: 'More', label: 'Menu', icon: 'menu-outline', component: MoreStack },
+  profile: {
+    name: 'Profile',
+    label: 'Profil',
+    icon: 'person-circle-outline',
+    component: ProfileStack,
+  },
 };
 
 export function AppTabs() {
@@ -292,6 +343,7 @@ export function AppTabs() {
       })}
     >
       {visible.map((id) => {
+        if (id === 'more') return null;
         const conf = TAB_CONFIG[id];
         return (
           <Tab.Screen

@@ -15,6 +15,7 @@ import {
   PRESCHOOL_EVAL_FREQUENCY,
   PRESCHOOL_EVAL_LEVEL,
 } from './preschool-scale';
+import { TeachersService } from '../teachers/teachers.service';
 
 @Injectable()
 export class PreschoolGradesService {
@@ -31,6 +32,7 @@ export class PreschoolGradesService {
     private readonly subjectRepo: Repository<Subject>,
     @InjectRepository(StudentClassAssignment)
     private readonly assignmentRepo: Repository<StudentClassAssignment>,
+    private readonly teachersService: TeachersService,
   ) {}
 
   async getTeacherForClassSubject(classId: string, subjectId: string): Promise<{ id: number; name: string } | null> {
@@ -73,20 +75,25 @@ export class PreschoolGradesService {
   }
 
   private async ensureAssignments(academicYearId: string, classId: string, students: Student[]) {
-    for (const s of students) {
-      const existing = await this.assignmentRepo.findOne({
-        where: { student: { id: s.id }, academic_year: { id: academicYearId } },
-      });
-      if (existing) continue;
-      const a = this.assignmentRepo.create({
-        student: { id: s.id },
-        academic_year: { id: academicYearId },
-        class: { id: classId },
-        decision: null,
-        average: null,
-      });
-      await this.assignmentRepo.save(a);
-    }
+    if (!students.length) return;
+    const existing = await this.assignmentRepo.find({
+      where: { academic_year: { id: academicYearId }, class: { id: classId } },
+      relations: ['student'],
+    });
+    const have = new Set(existing.map((row) => row.student?.id).filter((id): id is string => !!id));
+    const missing = students.filter((student) => !have.has(student.id));
+    if (!missing.length) return;
+    await this.assignmentRepo.save(
+      missing.map((student) =>
+        this.assignmentRepo.create({
+          student: { id: student.id },
+          academic_year: { id: academicYearId },
+          class: { id: classId },
+          decision: null,
+          average: null,
+        }),
+      ),
+    );
   }
 
   async getPreschoolFormData(params: {
@@ -94,12 +101,15 @@ export class PreschoolGradesService {
     class_id: string;
     subject_id: string;
     period_id: string;
+    teacher_id?: number;
   }): Promise<any> {
-    const students = await this.studentRepo.find({
-      where: { class: { id: params.class_id }, active: true },
-      relations: ['class'],
-      order: { last_name: 'ASC', first_name: 'ASC' },
-    });
+    const students = params.teacher_id
+      ? await this.teachersService.findActiveStudentsInTeacherRooms(params.teacher_id, params.class_id)
+      : await this.studentRepo.find({
+          where: { class: { id: params.class_id }, active: true },
+          relations: ['class'],
+          order: { last_name: 'ASC', first_name: 'ASC' },
+        });
     await this.ensureAssignments(params.academic_year_id, params.class_id, students);
     const assignments = await this.assignmentRepo.find({
       where: { academic_year: { id: params.academic_year_id } },

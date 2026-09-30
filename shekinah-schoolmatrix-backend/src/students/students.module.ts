@@ -19,6 +19,7 @@ import { LevelScopeModule } from '../auth/level-scope.module';
 import { GradesModule } from '../grades/grades.module';
 import { EconomatModule } from '../economat/economat.module';
 import { DisciplineModule } from '../discipline/discipline.module';
+import { HomeworkModule } from '../homework/homework.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { DisciplineModule } from '../discipline/discipline.module';
     GradesModule,
     EconomatModule,
     DisciplineModule,
+    HomeworkModule,
   ],
   controllers: [StudentsController, StudentPhotosController],
   providers: [StudentsService, StudentsDossierService, StudentPhotosService, StudentAiImportService],

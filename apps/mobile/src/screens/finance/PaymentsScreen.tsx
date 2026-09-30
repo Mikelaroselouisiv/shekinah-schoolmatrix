@@ -364,7 +364,7 @@ export function PaymentsScreen({}: Props) {
     if (picker === 'student') {
       return students.map((s) => ({
         id: s.id,
-        label: [s.order_number, studentDisplayName(s)].filter(Boolean).join(' — '),
+        label: studentDisplayName(s),
       }));
     }
     if (picker === 'service') {
@@ -666,18 +666,18 @@ function SelectRow({
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
   form: {
-    marginTop: 14,
+    marginTop: 8,
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 14,
+    padding: 16,
   },
   fieldLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   select: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 10,
@@ -688,10 +688,10 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    paddingVertical: 12,
+    fontSize: 18,
     color: colors.text,
     backgroundColor: colors.bg,
     marginTop: 4,
@@ -699,8 +699,8 @@ const styles = StyleSheet.create({
   },
   duesBox: {
     marginBottom: 12,
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bg,
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'transparent',
   },
@@ -732,8 +732,8 @@ const styles = StyleSheet.create({
   dueBalance: { fontSize: 16, fontWeight: '800', color: colors.text },
   balanceBox: {
     marginBottom: 12,
-    padding: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 16,
     backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -770,10 +770,10 @@ const styles = StyleSheet.create({
   filters: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   txCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 12,
+    padding: 14,
     marginBottom: 8,
   },
   txCardCancelled: {
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
   txCancelText: { fontSize: 13, fontWeight: '600', color: '#DC2626' },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.45)',
+    backgroundColor: 'rgba(28,25,23,0.45)',
     justifyContent: 'flex-end',
   },
   modalSheet: {

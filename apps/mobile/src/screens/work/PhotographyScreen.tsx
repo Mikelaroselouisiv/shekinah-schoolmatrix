@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   Button,
@@ -18,13 +19,14 @@ import {
   LoadingBlock,
   Screen,
   SearchBar,
-  SegmentedControl,
   Title,
 } from '../../components/ui';
 import { studentDisplayName } from '../../lib/format';
 import { promptPickImage } from '../../lib/pickImage';
 import { colors } from '../../theme/tokens';
+import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
+import { isTeacherRole } from '../../lib/permissions';
 import {
   addStudentPhoto,
   deleteStudentPhoto,
@@ -32,7 +34,9 @@ import {
   getImageUrl,
   getRooms,
   getStudents,
+  getTeacherClasses,
   listStudentPhotos,
+  listStudentsInTeacherRoom,
   uploadImage,
   type ClassItem,
   type RoomItem,
@@ -46,20 +50,31 @@ import { listBottomPadding } from '../../lib/layout';
 type Props = NativeStackScreenProps<WorkStackParamList, 'Photography'>;
 type PickerKind = 'class' | 'room' | null;
 
-const PHOTO_KINDS: { id: string; label: string }[] = [
-  { id: 'profile', label: 'Profil' },
-  { id: 'identity', label: 'Identité' },
-  { id: 'souvenir', label: 'Souvenir' },
-  { id: 'promotion', label: 'Promo' },
-  { id: 'other', label: 'Autre' },
+const PHOTO_KINDS: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'profile', label: 'Profil', icon: 'person-outline' },
+  { id: 'identity', label: 'Identité', icon: 'card-outline' },
+  { id: 'souvenir', label: 'Souvenir', icon: 'images-outline' },
+  { id: 'promotion', label: 'Promo', icon: 'ribbon-outline' },
+  { id: 'other', label: 'Autre', icon: 'ellipsis-horizontal' },
 ];
 
 const KIND_LABEL: Record<string, string> = Object.fromEntries(
   PHOTO_KINDS.map((k) => [k.id, k.label]),
 );
 
+function foldName(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function placeLine(student: { class_name?: string | null; room_name?: string | null }) {
+  return [student.class_name, student.room_name].filter(Boolean).join(' · ');
+}
+
 export function PhotographyScreen({}: Props) {
-  const allowed = useCanAccess('photography');
+  const { roleName, user } = useAuth();
+  const teacher = isTeacherRole(roleName);
+  const teacherId = user?.id ?? user?.userId ?? null;
+  const allowed = useCanAccess('photography') || teacher;
   const { theme } = useSchool();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<RoomItem[]>([]);
@@ -90,6 +105,26 @@ export function PhotographyScreen({}: Props) {
     setLoadingList(true);
     setError('');
     try {
+      if (teacher) {
+        if (!teacherId) {
+          setStudents([]);
+          return;
+        }
+        const mine = await getTeacherClasses();
+        const groups = await Promise.all(
+          mine.map((item) => listStudentsInTeacherRoom(item.id, teacherId)),
+        );
+        const byId = new Map<string, StudentListItem>();
+        for (const student of groups.flat()) byId.set(student.id, student);
+        setStudents(
+          [...byId.values()].sort(
+            (a, b) =>
+              a.last_name.localeCompare(b.last_name, 'fr', { sensitivity: 'base' }) ||
+              a.first_name.localeCompare(b.first_name, 'fr', { sensitivity: 'base' }),
+          ),
+        );
+        return;
+      }
       const list = await getStudents({
         class_id: classId || undefined,
         room_id: roomId || undefined,
@@ -101,12 +136,16 @@ export function PhotographyScreen({}: Props) {
     } finally {
       setLoadingList(false);
     }
-  }, [classId, roomId]);
+  }, [teacher, teacherId, classId, roomId]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        if (teacher) {
+          await loadStudents();
+          return;
+        }
         const [c, r] = await Promise.all([getClasses(), getRooms()]);
         if (cancelled) return;
         setClasses(c);
@@ -127,8 +166,8 @@ export function PhotographyScreen({}: Props) {
   }, []);
 
   useEffect(() => {
-    if (!boot) void loadStudents();
-  }, [boot, loadStudents]);
+    if (!boot && !teacher) void loadStudents();
+  }, [boot, teacher, loadStudents]);
 
   useEffect(() => {
     if (!selected) {
@@ -156,12 +195,11 @@ export function PhotographyScreen({}: Props) {
   }, [selected?.id]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = foldName(query.trim());
     if (!q) return students;
-    return students.filter((s) => {
-      const full = `${s.first_name} ${s.last_name} ${s.order_number ?? ''}`.toLowerCase();
-      return full.includes(q);
-    });
+    return students.filter((student) =>
+      foldName(`${student.first_name} ${student.last_name}`).includes(q),
+    );
   }, [students, query]);
 
   async function uploadPicked(image: {
@@ -248,20 +286,26 @@ export function PhotographyScreen({}: Props) {
     );
   }
 
+  const selectedPlace = selected ? placeLine(selected) : '';
+  const selectedThumb = selected ? getImageUrl(selected.photo_identity_student) : null;
+
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
       <View style={styles.top}>
-        <Title>Photographie</Title>
+        <Title>{teacher ? 'Photos' : 'Photographie'}</Title>
 
-        <View style={styles.filters}>
-          <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-          <SelectChip label="Salle" value={roomLabel} onPress={() => setPicker('room')} />
-        </View>
+        {teacher ? null : (
+          <View style={styles.filters}>
+            <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
+            <SelectChip label="Salle" value={roomLabel} onPress={() => setPicker('room')} />
+          </View>
+        )}
 
-        <SearchBar value={query} onChangeText={setQuery} placeholder="Nom ou NISU…" />
+        <SearchBar value={query} onChangeText={setQuery} placeholder="Nom" />
         <ErrorBanner message={error} />
         {success ? (
           <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={16} color="#3F6212" />
             <Text style={styles.successText}>{success}</Text>
           </View>
         ) : null}
@@ -269,49 +313,85 @@ export function PhotographyScreen({}: Props) {
 
       {selected ? (
         <ScrollView contentContainerStyle={styles.detail}>
-          <Pressable onPress={() => setSelected(null)} style={styles.backRow}>
-            <Text style={[styles.backText, { color: theme.primary }]}>‹ Liste élèves</Text>
+          <Pressable onPress={() => setSelected(null)} style={styles.backRow} hitSlop={8}>
+            <Ionicons name="chevron-back" size={20} color={colors.ink} />
+            <Text style={styles.backText}>Liste</Text>
           </Pressable>
-          <Text style={styles.studentName}>{studentDisplayName(selected)}</Text>
-          <Text style={styles.metaLine}>
-            {[selected.order_number, selected.class_name, selected.room_name]
-              .filter(Boolean)
-              .join(' · ')}
-          </Text>
 
-          <Text style={styles.sectionLabel}>Type</Text>
-          <SegmentedControl options={PHOTO_KINDS} value={kind} onChange={setKind} />
-
-          <View style={styles.actions}>
-            <Button
-              title={saving ? 'Envoi…' : 'Ajouter une photo'}
-              onPress={startAddPhoto}
-              disabled={saving}
-            />
+          <View style={styles.hero}>
+            {selectedThumb ? (
+              <Image source={{ uri: selectedThumb }} style={styles.heroAvatar} />
+            ) : (
+              <View style={[styles.heroAvatar, styles.avatarEmpty]}>
+                <Text style={styles.heroInitial}>
+                  {(selected.first_name?.[0] || '?').toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.studentName}>{studentDisplayName(selected)}</Text>
+              {selectedPlace ? <Text style={styles.placeLine}>{selectedPlace}</Text> : null}
+            </View>
           </View>
 
-          <Text style={styles.sectionLabel}>Photos ({photos.length})</Text>
+          <Text style={styles.sectionLabel}>Type</Text>
+          <View style={styles.kindRow}>
+            {PHOTO_KINDS.map((item) => {
+              const on = kind === item.id;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setKind(item.id)}
+                  style={[
+                    styles.kindChip,
+                    on && { borderColor: theme.accent, backgroundColor: theme.accentTint },
+                  ]}
+                >
+                  <Ionicons name={item.icon} size={16} color={on ? theme.accent : colors.inkSoft} />
+                  <Text style={[styles.kindLabel, on && { color: theme.accent }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Button
+            title={saving ? 'Envoi…' : 'Ajouter une photo'}
+            icon="camera-outline"
+            onPress={startAddPhoto}
+            disabled={saving}
+            style={styles.addBtn}
+          />
+
+          <Text style={styles.sectionLabel}>
+            {photos.length === 0 ? 'Photos' : `Photos · ${photos.length}`}
+          </Text>
           {loadingPhotos ? (
             <LoadingBlock label="Photos…" />
           ) : photos.length === 0 ? (
             <EmptyState title="Aucune photo" />
           ) : (
             <View style={styles.photoGrid}>
-              {photos.map((p) => {
-                const uri = getImageUrl(p.url);
+              {photos.map((photo) => {
+                const uri = getImageUrl(photo.url);
                 return (
-                  <View key={p.id} style={styles.photoCard}>
+                  <View key={photo.id} style={styles.photoCard}>
                     {uri ? (
                       <Image source={{ uri }} style={styles.photo} />
                     ) : (
                       <View style={[styles.photo, styles.photoPlaceholder]}>
-                        <Text style={styles.mutedSmall}>—</Text>
+                        <Ionicons name="image-outline" size={28} color={colors.textMuted} />
                       </View>
                     )}
-                    <Text style={styles.photoKind}>{KIND_LABEL[p.kind] || p.kind}</Text>
-                    <Pressable onPress={() => confirmDelete(p.id)}>
-                      <Text style={styles.deleteLink}>Supprimer</Text>
-                    </Pressable>
+                    <View style={styles.photoFoot}>
+                      <Text style={styles.photoKind}>{KIND_LABEL[photo.kind] || photo.kind}</Text>
+                      <Pressable
+                        onPress={() => confirmDelete(photo.id)}
+                        hitSlop={8}
+                        accessibilityLabel="Supprimer"
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      </Pressable>
+                    </View>
                   </View>
                 );
               })}
@@ -326,12 +406,13 @@ export function PhotographyScreen({}: Props) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
-            <EmptyState title="Aucun élève" />
+            <EmptyState title={teacher ? 'Aucun élève dans votre salle' : 'Aucun élève'} />
           }
           renderItem={({ item }) => {
             const thumb = getImageUrl(item.photo_identity_student);
+            const place = placeLine(item);
             return (
-              <Pressable style={styles.studentRow} onPress={() => setSelected(item)}>
+              <Pressable style={styles.studentCard} onPress={() => setSelected(item)}>
                 {thumb ? (
                   <Image source={{ uri: thumb }} style={styles.avatar} />
                 ) : (
@@ -343,13 +424,9 @@ export function PhotographyScreen({}: Props) {
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{studentDisplayName(item)}</Text>
-                  <Text style={styles.mutedSmall}>
-                    {[item.order_number, item.class_name, item.room_name]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Text>
+                  {place ? <Text style={styles.placeLine}>{place}</Text> : null}
                 </View>
-                <Text style={styles.chevron}>›</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
               </Pressable>
             );
           }}
@@ -366,9 +443,7 @@ export function PhotographyScreen({}: Props) {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setPicker(null)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {picker === 'class' ? 'Classe' : 'Salle'}
-              </Text>
+              <Text style={styles.modalTitle}>{picker === 'class' ? 'Classe' : 'Salle'}</Text>
               <Pressable onPress={() => setPicker(null)} hitSlop={12}>
                 <Text style={styles.modalClose}>Fermer</Text>
               </Pressable>
@@ -420,71 +495,118 @@ function SelectChip({
 }
 
 const styles = StyleSheet.create({
-  top: { paddingHorizontal: 20, paddingBottom: 8 },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 10 },
+  top: { paddingHorizontal: 20, paddingBottom: 8, gap: 10 },
+  filters: { flexDirection: 'row', gap: 8 },
   chip: {
-    minWidth: '46%',
-    flexGrow: 1,
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: colors.surface,
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
-  chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
-  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
-  studentRow: {
+  chipValue: { fontSize: 15, color: colors.text, fontWeight: '700', marginTop: 2 },
+  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: listBottomPadding(16), gap: 10 },
+  studentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    gap: 14,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22 },
+  avatar: { width: 56, height: 56, borderRadius: 18 },
   avatarEmpty: {
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontWeight: '800', color: colors.textMuted },
+  avatarInitial: { fontWeight: '700', fontSize: 18, color: colors.inkSoft },
   rowTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  mutedSmall: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  chevron: { fontSize: 22, color: colors.textMuted },
-  detail: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
-  backRow: { marginBottom: 8 },
-  backText: { fontWeight: '700', fontSize: 15 },
+  placeLine: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  detail: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24), gap: 4 },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 2,
+    marginBottom: 12,
+    marginLeft: -4,
+  },
+  backText: { fontWeight: '600', fontSize: 16, color: colors.ink },
+  hero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginBottom: 8,
+  },
+  heroAvatar: { width: 72, height: 72, borderRadius: 22 },
+  heroInitial: { fontWeight: '700', fontSize: 26, color: colors.inkSoft },
   studentName: { fontSize: 22, fontWeight: '800', color: colors.text },
-  metaLine: { fontSize: 13, color: colors.textMuted, marginTop: 4, marginBottom: 8 },
   sectionLabel: {
-    marginTop: 18,
+    marginTop: 16,
     marginBottom: 8,
     fontSize: 13,
     fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
+    color: colors.inkSoft,
   },
-  actions: { gap: 8, marginTop: 12 },
+  kindRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  kindChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  kindLabel: { fontSize: 14, fontWeight: '600', color: colors.inkSoft },
+  addBtn: { marginTop: 16 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  photoCard: { width: '46%', flexGrow: 1 },
+  photoCard: {
+    width: '47%',
+    flexGrow: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
   photo: {
     width: '100%',
     aspectRatio: 3 / 4,
-    borderRadius: 10,
     backgroundColor: colors.bg,
   },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  photoKind: { marginTop: 6, fontWeight: '700', color: colors.text },
-  deleteLink: { marginTop: 4, color: colors.danger, fontWeight: '600', fontSize: 13 },
-  successBanner: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#ECFDF5',
+  photoFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  successText: { color: '#065F46', fontWeight: '600' },
+  photoKind: { fontWeight: '700', color: colors.text, fontSize: 14 },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#F3F7EA',
+  },
+  successText: { color: '#3F6212', fontWeight: '600' },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(28,25,23,0.45)',
@@ -493,8 +615,8 @@ const styles = StyleSheet.create({
   modalSheet: {
     maxHeight: '55%',
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     paddingHorizontal: 16,
     paddingBottom: 20,
     paddingTop: 8,

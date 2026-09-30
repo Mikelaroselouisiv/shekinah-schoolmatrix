@@ -333,6 +333,8 @@ export function DashboardFicheElevePage() {
       teacher_name: string | null;
       score: string | null;
       comment: string | null;
+      coefficient?: number | null;
+      result_label?: string | null;
     }[]
   >([]);
   const [error, setError] = useState("");
@@ -565,9 +567,25 @@ export function DashboardFicheElevePage() {
       if (sData?.class_id && rosterMode !== "alumni") setSelectedClassId(sData.class_id);
 
       let years: StudentDossierYear[] = [];
+      let dossierHomework: {
+        id: string;
+        kind: string;
+        title: string;
+        instructions: string | null;
+        due_date: string | null;
+        subject_name: string | null;
+        teacher_name: string | null;
+        score: string | null;
+        comment: string | null;
+        coefficient?: number | null;
+        result_label?: string | null;
+      }[] | null = null;
       if (dossierRes) {
         const dossierData = await dossierRes.json();
-        if (dossierRes.ok) years = dossierData.years ?? [];
+        if (dossierRes.ok) {
+          years = dossierData.years ?? [];
+          if (Array.isArray(dossierData.homework)) dossierHomework = dossierData.homework;
+        }
       }
       setDossierYears(years);
       const yearEntry = years.find((y) => y.academic_year_id === selectedYearId);
@@ -639,7 +657,7 @@ export function DashboardFicheElevePage() {
         setExamPeriods(examPeriodRes.ok ? (examPeriodData.exam_periods ?? []) : []);
         setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
         setParentMeetings(meetingsRes.ok ? (meetingsData.parent_meetings ?? []) : []);
-        setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
+        setHomework(dossierHomework ?? (hwRes.ok ? (hwData.assignments ?? []) : []));
       } else {
         setExamResults(null);
         setFormationDecision(null);
@@ -682,7 +700,7 @@ export function DashboardFicheElevePage() {
           setExamPeriods(examPeriodRes.ok ? (examPeriodData.exam_periods ?? []) : []);
           setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
           setParentMeetings(meetingsRes.ok ? (meetingsData.parent_meetings ?? []) : []);
-          setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
+          setHomework(dossierHomework ?? (hwRes.ok ? (hwData.assignments ?? []) : []));
         } else {
           setScheduleSlots([]);
           setExamSchedules([]);
@@ -1711,7 +1729,7 @@ export function DashboardFicheElevePage() {
                       <th className="px-4 py-2 font-medium">Titre</th>
                       <th className="px-4 py-2 font-medium">Matière</th>
                       <th className="px-4 py-2 font-medium">Pour le</th>
-                      <th className="px-4 py-2 font-medium">Note</th>
+                      <th className="px-4 py-2 font-medium">Appréciation</th>
                       <th className="px-4 py-2 font-medium">Commentaire</th>
                     </tr>
                   </thead>
@@ -1727,7 +1745,15 @@ export function DashboardFicheElevePage() {
                         </td>
                         <td className="px-4 py-2">{h.subject_name ?? "—"}</td>
                         <td className="px-4 py-2">{h.due_date ?? "—"}</td>
-                        <td className="px-4 py-2">{h.score ?? "—"}</td>
+                        <td className="px-4 py-2">
+                          {h.result_label
+                            ? h.result_label
+                            : h.score
+                              ? h.coefficient != null
+                                ? `${h.score} / ${h.coefficient}`
+                                : h.score
+                              : "—"}
+                        </td>
                         <td className="px-4 py-2">{h.comment ?? "—"}</td>
                       </tr>
                     ))}

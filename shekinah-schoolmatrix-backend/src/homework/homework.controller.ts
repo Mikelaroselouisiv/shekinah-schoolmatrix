@@ -36,7 +36,9 @@ function userIdOf(req: AuthReq): number {
  * Travaux de classe (devoirs / leçons).
  *
  * Site parent / WordPress : `GET /homework/student/:studentId`
- * avec JWT PARENT (élève lié) — notes en temps réel.
+ * avec JWT PARENT (élève lié). Chaque travail peut porter
+ * `coefficient`, `score`, `result` (PASSE | A_REFAIRE | A_RELIRE) et `result_label`.
+ * Ces champs restent vides tant que le professeur ne note pas.
  */
 @Controller('homework')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
@@ -57,16 +59,33 @@ export class HomeworkController {
     @Query('class_id') classId?: string,
     @Query('kind') kind?: string,
     @Query('academic_year_id') academicYearId?: string,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
   ) {
     const uid = userIdOf(req);
     const teacherOnly = isTeacherRoleName(req.user?.role);
-    const list = await this.homeworkService.listForTeacher({
+    const page = await this.homeworkService.listForTeacher({
       teacherId: teacherOnly ? uid : undefined,
       class_id: classId,
       kind,
       academic_year_id: academicYearId,
+      q,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
     });
-    return { ok: true, assignments: list };
+    return { ok: true, ...page };
+  }
+
+  @DenyParents()
+  @Get('roster')
+  async roster(@Req() req: AuthReq, @Query('class_id') classId?: string) {
+    const students = await this.homeworkService.listRoster(
+      userIdOf(req),
+      req.user?.role,
+      classId ?? '',
+    );
+    return { ok: true, students };
   }
 
   @DenyParents()
@@ -93,6 +112,8 @@ export class HomeworkController {
       class_id: string;
       subject_id?: string | null;
       academic_year_id?: string | null;
+      student_ids?: string[];
+      coefficient?: string | number | null;
     },
   ) {
     const assignment = await this.homeworkService.create(
@@ -115,6 +136,8 @@ export class HomeworkController {
       instructions: string | null;
       due_date: string | null;
       subject_id: string | null;
+      student_ids?: string[];
+      coefficient: string | number | null;
     }>,
   ) {
     const assignment = await this.homeworkService.update(
@@ -143,13 +166,35 @@ export class HomeworkController {
       student_id?: string;
       score?: string | null;
       comment?: string | null;
-      records?: { student_id: string; score?: string | null; comment?: string | null }[];
+      included?: boolean;
+      source?: 'LIVRE' | 'PHRASE' | null;
+      content?: string | null;
+      result?: 'PASSE' | 'A_REFAIRE' | 'A_RELIRE' | null;
+      records?: {
+        student_id: string;
+        score?: string | null;
+        comment?: string | null;
+        included?: boolean;
+        source?: 'LIVRE' | 'PHRASE' | null;
+        content?: string | null;
+        result?: 'PASSE' | 'A_REFAIRE' | 'A_RELIRE' | null;
+      }[];
     },
   ) {
     const records =
       body.records ??
       (body.student_id
-        ? [{ student_id: body.student_id, score: body.score, comment: body.comment }]
+        ? [
+            {
+              student_id: body.student_id,
+              score: body.score,
+              comment: body.comment,
+              included: body.included,
+              source: body.source,
+              content: body.content,
+              result: body.result,
+            },
+          ]
         : []);
     const assignment = await this.homeworkService.upsertGrades(
       id,

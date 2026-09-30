@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   Button,
@@ -15,59 +17,67 @@ import {
   ErrorBanner,
   LoadingBlock,
   Screen,
-  SegmentedControl,
-  Title,
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { toYYYYMMDD } from '../../lib/format';
 import {
   createHomework,
-  getAttendance,
+  listStudentsInTeacherRoom,
+  deleteHomework,
   getHomework,
+  updateHomework,
   getTeacherClasses,
   getTeacherSubjectsInClass,
   listHomework,
   listClassDayLists,
-  listSchoolWeekDuties,
   replaceClassDayLists,
-  saveAttendanceBulk,
   saveHomeworkGrade,
-  type AttendanceStatus,
-  type AttendanceStudent,
   type ClassItem,
   type HomeworkAssignment,
   type HomeworkKind,
+  type HomeworkResult,
   type SubjectItem,
 } from '../../services/api';
-import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, mergeMaterialCatalog, toggleMaterialLabel, ensureMaterialLabel, MORNING_WEEKDAYS } from '../../lib/morningOpening';
-import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
-import { useNetwork } from '../../context/NetworkContext';
+import { emptyClassDayLists, classDayListsFromApi, mergeMaterialCatalog, toggleMaterialLabel, ensureMaterialLabel, MORNING_WEEKDAYS } from '../../lib/morningOpening';
+import { AttendanceBoard } from './AttendanceBoard';
+import { listBottomPadding } from '../../lib/layout';
 import { colors } from '../../theme/tokens';
 import type { WorkStackParamList } from '../../navigation/types';
+
+const HOMEWORK_RESULTS: { id: HomeworkResult; label: string; color: string; bg: string }[] = [
+  { id: 'PASSE', label: 'Passé', color: '#3F6212', bg: '#F3F7EA' },
+  { id: 'A_REFAIRE', label: 'À refaire', color: '#C2410C', bg: '#FFF7ED' },
+  { id: 'A_RELIRE', label: 'À relire', color: '#57534E', bg: '#F5F5F4' },
+];
 import { AccessDenied, useCanAccess } from '../../lib/access';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'TeacherHub'>;
-type HubTab = 'travaux' | 'appel' | 'materiel';
+type HubTab = 'travaux' | 'appel';
 
-const STATUSES: { value: AttendanceStatus; label: string }[] = [
-  { value: 'PRESENT', label: 'Présent' },
-  { value: 'ABSENT', label: 'Absent' },
-  { value: 'LATE', label: 'Retard' },
-  { value: 'EXCUSED', label: 'Excusé' },
-];
+const HUB_TITLES: Record<HubTab, string> = {
+  travaux: 'Devoirs et leçons',
+  appel: 'Appel',
+};
 
-export function TeacherHubScreen({}: Props) {
+export function TeacherHubScreen({ navigation, route }: Props) {
   const allowed = useCanAccess('teacher-hub') || useCanAccess('grades');
-  const { theme, context } = useSchool();
+  const { theme } = useSchool();
   const { user } = useAuth();
   const userId = user?.id ?? user?.userId ?? null;
-  const [tab, setTab] = useState<HubTab>('travaux');
+  const [tab, setTab] = useState<HubTab>(route.params?.tab ?? 'travaux');
+
+  useEffect(() => {
+    if (route.params?.tab) setTab(route.params.tab);
+  }, [route.params?.tab]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: HUB_TITLES[tab] });
+  }, [navigation, tab]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [morningLines, setMorningLines] = useState<{ day: string; label: string }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -83,73 +93,28 @@ export function TeacherHubScreen({}: Props) {
     })();
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const yearName =
-          context?.academic_year?.name || context?.current_academic_year_name || undefined;
-        const list = await listSchoolWeekDuties({ academic_year: yearName });
-        const mine = dutiesForTeacher(
-          list,
-          userId,
-          classes.map((c) => c.id),
-        ).sort((a, b) => a.day_of_week - b.day_of_week);
-        setMorningLines(
-          mine.map((d) => ({
-            day: weekdayLabel(d.day_of_week),
-            label:
-              d.kind === 'FLAG'
-                ? `Montée du drapeau${d.class_name ? ` · ${d.class_name}` : ''}`
-                : dutyDisplayTitle(d),
-          })),
-        );
-      } catch {
-        setMorningLines([]);
-      }
-    })();
-  }, [classes, userId, context?.academic_year?.name, context?.current_academic_year_name]);
-
   if (!allowed) return <AccessDenied />;
   if (loading) return <LoadingBlock />;
 
   return (
     <Screen>
-      <Title>Tableau professeur</Title>
-      {morningLines.length > 0 ? (
-        <View style={styles.morningBox}>
-          <Text style={styles.morningKicker}>Début de journée</Text>
-          {morningLines.map((line, i) => (
-            <Text key={`${line.day}-${line.label}-${i}`} style={styles.morningLine}>
-              {line.day} · {line.label}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-      <SegmentedControl
-        options={[
-          { id: 'travaux', label: 'Travaux' },
-          { id: 'appel', label: 'Appel' },
-          { id: 'materiel', label: 'Matériel' },
-        ]}
-        value={tab}
-        onChange={(id) => setTab(id as HubTab)}
-      />
       {error ? <ErrorBanner message={error} /> : null}
       {classes.length === 0 ? (
         <EmptyState title="Aucune classe affectée" />
       ) : tab === 'travaux' ? (
-        <HomeworkPanel classes={classes} classId={classId} onClassId={setClassId} accent={theme.accent} />
-      ) : tab === 'appel' ? (
-        <AttendancePanel
+        <HomeworkPanel
+          classes={classes}
+          classId={classId}
+          onClassId={setClassId}
+          accent={theme.accent}
+          teacherId={userId}
+        />
+      ) : (
+        <AttendanceBoard
           classes={classes.filter((c) => c.can_take_attendance)}
           classId={classId}
           onClassId={setClassId}
-        />
-      ) : (
-        <MaterialsPanel
-          classes={classes.filter((c) => c.can_set_materials)}
-          classId={classId}
-          onClassId={setClassId}
+          teacherId={userId}
         />
       )}
     </Screen>
@@ -180,94 +145,88 @@ function ClassChips({
   );
 }
 
-function AttendancePanel({
-  classes,
-  classId,
-  onClassId,
-}: {
-  classes: ClassItem[];
-  classId: string;
-  onClassId: (id: string) => void;
-}) {
-  const { online } = useNetwork();
-  const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
-  const [date, setDate] = useState(toYYYYMMDD());
-  const [students, setStudents] = useState<AttendanceStudent[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+function todayInHaiti(): string {
+  return toYYYYMMDD();
+}
 
-  const load = useCallback(async () => {
-    if (!activeId) return;
-    try {
-      const data = await getAttendance(activeId, date);
-      setStudents(data.students || []);
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement appel impossible');
-    }
-  }, [activeId, date]);
+function lessonStillOpen(dueDate?: string | null): boolean {
+  if (!dueDate) return true;
+  return dueDate.slice(0, 10) >= todayInHaiti();
+}
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+function formatDue(value: string | null | undefined): string {
+  if (!value) return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
 
-  if (classes.length === 0) {
-    return (
-      <EmptyState title="Appel réservé au préscolaire et aux 1er / 2e cycles fondamentaux" />
-    );
+function normalizeSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function homeworkRows(value: unknown): HomeworkAssignment[] {
+  if (Array.isArray(value)) return value;
+  if (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray((value as { assignments?: unknown }).assignments)
+  ) {
+    return (value as { assignments: HomeworkAssignment[] }).assignments;
   }
+  return [];
+}
 
+function matchesHomework(
+  item: { title: string; subject_name?: string | null; instructions?: string | null },
+  query: string,
+): boolean {
+  const needle = normalizeSearch(query.trim());
+  if (!needle) return true;
+  return [item.title, item.subject_name, item.instructions].some((part) =>
+    normalizeSearch(part || '').includes(needle),
+  );
+}
+
+function byLastName(
+  a: { last_name: string; first_name: string },
+  b: { last_name: string; first_name: string },
+) {
   return (
-    <ScrollView contentContainerStyle={styles.pad}>
-      <ClassChips classes={classes} classId={activeId} onClassId={onClassId} />
-      <DateField value={date} onChange={setDate} />
-      {error ? <ErrorBanner message={error} /> : null}
-      {students.map((s) => (
-        <View key={s.id} style={styles.row}>
-          <Text style={styles.name}>
-            {s.last_name} {s.first_name}
+    a.last_name.localeCompare(b.last_name, 'fr', { sensitivity: 'base' }) ||
+    a.first_name.localeCompare(b.first_name, 'fr', { sensitivity: 'base' })
+  );
+}
+
+function ListFold({
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.hwFold}>
+      <Pressable onPress={onToggle} style={styles.hwFoldHead}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.hwFoldTitle}>{title}</Text>
+          <Text style={styles.hwFoldSummary} numberOfLines={1}>
+            {summary}
           </Text>
-          <View style={styles.pills}>
-            {STATUSES.map((st) => (
-              <Pressable
-                key={st.value}
-                onPress={() =>
-                  setStudents((prev) =>
-                    prev.map((x) => (x.id === s.id ? { ...x, status: st.value } : x)),
-                  )
-                }
-                style={[
-                  styles.pill,
-                  (s.status || 'PRESENT') === st.value && styles.pillOn,
-                ]}
-              >
-                <Text style={styles.pillText}>{st.label}</Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
-      ))}
-      <Button
-        title={saving ? 'Enregistrement…' : 'Enregistrer l’appel'}
-        disabled={saving || students.length === 0}
-        onPress={async () => {
-          setSaving(true);
-          try {
-            const records = students.map((s) => ({
-              student_id: s.id,
-              status: (s.status as string) || 'PRESENT',
-            }));
-            if (online) await saveAttendanceBulk(activeId, date, records);
-            else await saveAttendanceWithQueue(activeId, date, records);
-            await load();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Enregistrement impossible');
-          } finally {
-            setSaving(false);
-          }
-        }}
-      />
-    </ScrollView>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.inkSoft} />
+      </Pressable>
+      {open ? <View style={styles.hwFoldBody}>{children}</View> : null}
+    </View>
   );
 }
 
@@ -276,12 +235,19 @@ function HomeworkPanel({
   classId,
   onClassId,
   accent,
+  teacherId,
 }: {
   classes: ClassItem[];
   classId: string;
   onClassId: (id: string) => void;
   accent: string;
+  teacherId: number | null;
 }) {
+  const { theme } = useSchool();
+  const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
+  const activeClass = classes.find((c) => c.id === activeId);
+  const [mode, setMode] = useState<'list' | 'compose' | 'detail'>('list');
+  const [filter, setFilter] = useState<'ALL' | HomeworkKind>('ALL');
   const [kind, setKind] = useState<HomeworkKind>('DEVOIR');
   const [title, setTitle] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -291,114 +257,811 @@ function HomeworkPanel({
   const [list, setList] = useState<HomeworkAssignment[]>([]);
   const [detail, setDetail] = useState<HomeworkAssignment | null>(null);
   const [error, setError] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [coefficient, setCoefficient] = useState('');
+  const [savingCoef, setSavingCoef] = useState(false);
+  const [roster, setRoster] = useState<
+    { student_id: string; first_name: string; last_name: string }[]
+  >([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [subjectsOpen, setSubjectsOpen] = useState(false);
+  const [childrenOpen, setChildrenOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [loadingList, setLoadingList] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pageRef = useRef(0);
+  const hasMoreRef = useRef(false);
+  const loadingRef = useRef(false);
+  const preschool = !!activeClass?.is_preschool || !!detail?.is_preschool;
+
+  const scopeStudents = useCallback(
+    async (item: HomeworkAssignment) => {
+      const classKey = item.class_id || activeId;
+      if (!teacherId || !classKey) return item;
+      const mine = await listStudentsInTeacherRoom(classKey, teacherId);
+      const allowed = new Set(mine.map((student) => student.id));
+      return {
+        ...item,
+        students: (item.students ?? [])
+          .filter((student) => allowed.has(student.student_id))
+          .sort(byLastName),
+      };
+    },
+    [teacherId, activeId],
+  );
 
   useEffect(() => {
-    if (!classId) return;
-    (async () => {
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const loadPage = useCallback(
+    async (reset: boolean) => {
+      if (!activeId) return;
+      if (!reset && (loadingRef.current || !hasMoreRef.current)) return;
+      loadingRef.current = true;
+      setLoadingList(true);
+      const offset = reset ? 0 : pageRef.current;
       try {
-        const [subs, hw] = await Promise.all([
-          getTeacherSubjectsInClass(classId),
-          listHomework(classId),
+        const [subs, page] = await Promise.all([
+          reset ? getTeacherSubjectsInClass(activeId) : Promise.resolve(null),
+          listHomework({
+            classId: activeId,
+            kind: filter === 'ALL' ? undefined : filter,
+            q: debouncedQuery || undefined,
+            limit: 20,
+            offset,
+          }),
         ]);
-        setSubjects(subs);
-        setList(hw);
+        if (subs) setSubjects(subs);
+        const rows = Array.isArray(page.assignments) ? page.assignments : [];
+        setList((prev) => (reset ? rows : [...(Array.isArray(prev) ? prev : []), ...rows]));
+        pageRef.current = offset + rows.length;
+        hasMoreRef.current = page.has_more;
+        setHasMore(page.has_more);
         setError('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Chargement travaux impossible');
+        setError(err instanceof Error ? err.message : 'Chargement impossible');
+      } finally {
+        loadingRef.current = false;
+        setLoadingList(false);
       }
-    })();
-  }, [classId]);
+    },
+    [activeId, filter, debouncedQuery],
+  );
+
+  useEffect(() => {
+    void loadPage(true);
+  }, [loadPage]);
+
+  useEffect(() => {
+    setMode('list');
+    setDetail(null);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!detail) return;
+    setCoefficient(detail.coefficient != null ? String(detail.coefficient) : '');
+  }, [detail?.id, detail?.coefficient]);
+
+  useEffect(() => {
+    if (!preschool || !activeId || !teacherId) {
+      setRoster([]);
+      return;
+    }
+    let cancelled = false;
+    void listStudentsInTeacherRoom(activeId, teacherId)
+      .then((students) => {
+        if (cancelled) return;
+        setRoster(
+          students.map((student) => ({
+            student_id: student.id,
+            first_name: student.first_name,
+            last_name: student.last_name,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setRoster([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preschool, activeId, teacherId]);
+
+  function resetForm() {
+    setKind('DEVOIR');
+    setTitle('');
+    setInstructions('');
+    setDue('');
+    setCoefficient('');
+    setSubjectId('');
+    setSelectedIds([]);
+    setEditingId(null);
+  }
+
+  function beginEdit(item: HomeworkAssignment) {
+    setEditingId(item.id);
+    setKind(item.kind);
+    setTitle(item.title);
+    setInstructions(item.instructions ?? '');
+    setDue(item.due_date?.slice(0, 10) ?? '');
+    setCoefficient(item.coefficient != null ? String(item.coefficient) : '');
+    setSubjectId(item.subject_id ?? '');
+    setSelectedIds(
+      (item.students ?? []).filter((student) => student.included).map((student) => student.student_id),
+    );
+    setChildrenOpen(true);
+    setError('');
+    setMode('compose');
+  }
+
+  function toggleStudent(id: string) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function confirmDelete(item: HomeworkAssignment) {
+    Alert.alert('Supprimer', `Supprimer « ${item.title} » ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setDeleting(true);
+            try {
+              await deleteHomework(item.id);
+              setDetail(null);
+              resetForm();
+              await loadPage(true);
+              setMode('list');
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Suppression impossible');
+            } finally {
+              setDeleting(false);
+            }
+          })();
+        },
+      },
+    ]);
+  }
+
+  const visible = homeworkRows(list).filter((item) => matchesHomework(item, query));
+
+  const detailMeta = detail
+    ? [detail.subject_name, detail.due_date ? `Pour le ${formatDue(detail.due_date)}` : null]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   return (
-    <ScrollView contentContainerStyle={styles.pad}>
-      <ClassChips classes={classes} classId={classId} onClassId={onClassId} />
-      {error ? <ErrorBanner message={error} /> : null}
-      <Text style={styles.label}>Nouveau travail</Text>
-      <SegmentedControl
-        options={[
-          { id: 'DEVOIR', label: 'Devoir' },
-          { id: 'LECON', label: 'Leçon' },
-        ]}
-        value={kind}
-        onChange={(id) => setKind(id as HomeworkKind)}
-      />
-      <TextInput
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Titre"
-        style={styles.input}
-      />
-      <TextInput
-        value={instructions}
-        onChangeText={setInstructions}
-        placeholder="Consigne"
-        multiline
-        style={[styles.input, { minHeight: 72 }]}
-      />
-      <DateField value={due} onChange={setDue} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {subjects.map((s) => (
+    <ScrollView
+      contentContainerStyle={styles.hwPad}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      onScroll={(event) => {
+        if (mode !== 'list') return;
+        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const nearEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+        if (nearEnd) void loadPage(false);
+      }}
+      scrollEventThrottle={200}
+    >
+      {mode === 'list' ? (
+        <>
+          {classes.length > 1 ? (
+            <ClassChips classes={classes} classId={activeId} onClassId={onClassId} />
+          ) : activeClass ? (
+            <Text style={styles.hwClassName}>{activeClass.name}</Text>
+          ) : null}
+          <View style={styles.hwFilters}>
+            {(
+              [
+                ['ALL', 'Tout'],
+                ['DEVOIR', 'Devoirs'],
+                ['LECON', 'Leçons'],
+              ] as const
+            ).map(([id, label]) => {
+              const on = filter === id;
+              return (
+                <Pressable
+                  key={id}
+                  onPress={() => setFilter(id)}
+                  style={[styles.hwFilter, on && styles.hwFilterOn]}
+                >
+                  <Text style={[styles.hwFilterText, on && styles.hwFilterTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {error ? <ErrorBanner message={error} /> : null}
           <Pressable
-            key={s.id}
-            onPress={() => setSubjectId(s.id === subjectId ? '' : s.id)}
-            style={[styles.chip, subjectId === s.id && styles.chipOn]}
+            onPress={() => {
+              resetForm();
+              setError('');
+              setMode('compose');
+            }}
+            style={({ pressed }) => [styles.hwAdd, pressed && { opacity: 0.92 }]}
           >
-            <Text style={[styles.chipText, subjectId === s.id && styles.chipTextOn]}>{s.name}</Text>
+            <View style={[styles.hwAddIcon, { backgroundColor: theme.accentTint }]}>
+              <Ionicons name="add" size={22} color={accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.hwAddTitle}>Ajouter</Text>
+              <Text style={styles.hwAddHint}>Un devoir ou une leçon</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
           </Pressable>
-        ))}
-      </ScrollView>
-      <Button
-        title="Publier"
-        disabled={!title.trim()}
-        onPress={async () => {
-          try {
-            await createHomework({
-              kind,
-              title: title.trim(),
-              instructions: instructions.trim() || null,
-              due_date: due || null,
-              class_id: classId,
-              subject_id: subjectId || null,
-            });
-            setTitle('');
-            setInstructions('');
-            setList(await listHomework(classId));
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Publication impossible');
+          <View style={styles.hwSearchBox}>
+            <Ionicons name="search" size={18} color={colors.inkSoft} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Rechercher un devoir ou une leçon"
+              placeholderTextColor={colors.textMuted}
+              style={styles.hwSearch}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {query ? (
+              <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.inkSoft} />
+              </Pressable>
+            ) : null}
+          </View>
+          {visible.length === 0 && !loadingList ? (
+            <EmptyState
+              title={
+                query.trim()
+                  ? 'Aucun résultat'
+                  : filter === 'DEVOIR'
+                    ? 'Aucun devoir'
+                    : filter === 'LECON'
+                      ? 'Aucune leçon'
+                      : 'Rien pour le moment'
+              }
+            />
+          ) : (
+            visible.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={async () => {
+                  try {
+                    setDetail(await scopeStudents(await getHomework(item.id)));
+                    setMode('detail');
+                    setError('');
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Ouverture impossible');
+                  }
+                }}
+                style={({ pressed }) => [styles.hwItem, pressed && { opacity: 0.92 }]}
+              >
+                <View style={styles.hwItemTop}>
+                  <Text style={[styles.hwKind, { color: accent, backgroundColor: theme.accentTint }]}>
+                    {item.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'}
+                  </Text>
+                  {item.due_date ? (
+                    <Text style={styles.hwDue}>Pour le {formatDue(item.due_date)}</Text>
+                  ) : null}
+                </View>
+                <Text style={styles.hwItemTitle}>{item.title}</Text>
+                {item.subject_name ? <Text style={styles.hwMeta}>{item.subject_name}</Text> : null}
+                {item.is_preschool ? (
+                  <Text style={styles.hwMeta}>
+                    {item.student_count
+                      ? `${item.student_count} élève${item.student_count > 1 ? 's' : ''}`
+                      : 'Aucun élève choisi'}
+                  </Text>
+                ) : null}
+                {item.instructions ? (
+                  <Text style={styles.hwExcerpt} numberOfLines={2}>
+                    {item.instructions}
+                  </Text>
+                ) : null}
+              </Pressable>
+            ))
+          )}
+          {loadingList ? <Text style={styles.hwLoading}>Chargement…</Text> : null}
+          {!loadingList && hasMore ? <Text style={styles.hwLoading}>Faites défiler pour la suite</Text> : null}
+        </>
+      ) : null}
+
+      {mode === 'compose' ? (
+        <>
+          <Pressable onPress={() => setMode('list')} style={styles.hwBack}>
+            <Ionicons name="chevron-back" size={20} color={colors.ink} />
+            <Text style={styles.hwBackText}>Retour</Text>
+          </Pressable>
+          <Text style={styles.hwSection}>{editingId ? 'Modifier' : 'Nouveau'}</Text>
+          {error ? <ErrorBanner message={error} /> : null}
+          <View style={styles.hwKindRow}>
+            {(
+              [
+                ['DEVOIR', 'Devoir'],
+                ['LECON', 'Leçon'],
+              ] as const
+            ).map(([id, label]) => {
+              const on = kind === id;
+              return (
+                <Pressable
+                  key={id}
+                  onPress={() => setKind(id)}
+                  style={[
+                    styles.hwKindCard,
+                    on && { borderColor: accent, backgroundColor: theme.accentTint },
+                  ]}
+                >
+                  <Ionicons
+                    name={id === 'DEVOIR' ? 'create-outline' : 'book-outline'}
+                    size={20}
+                    color={on ? accent : colors.inkSoft}
+                  />
+                  <Text style={[styles.hwKindCardText, on && { color: accent }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.hwFieldLabel}>Titre</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Ex. Lecture pages 12 à 15"
+            placeholderTextColor={colors.textMuted}
+            style={styles.hwInput}
+          />
+          <Text style={styles.hwFieldLabel}>Consigne</Text>
+          <TextInput
+            value={instructions}
+            onChangeText={setInstructions}
+            placeholder="Ce que les élèves doivent faire"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={[styles.hwInput, styles.hwInputMulti]}
+          />
+          <DateField label="Pour le" value={due} onChange={setDue} />
+          {!preschool ? (
+            <>
+              <Text style={styles.hwFieldLabel}>Coefficient</Text>
+              <TextInput
+                value={coefficient}
+                onChangeText={setCoefficient}
+                placeholder="10"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                style={styles.hwScore}
+              />
+            </>
+          ) : null}
+          {subjects.length > 0 ? (
+            <ListFold
+              title="Matière"
+              summary={subjects.find((subject) => subject.id === subjectId)?.name ?? 'Aucune'}
+              open={subjectsOpen}
+              onToggle={() => setSubjectsOpen((open) => !open)}
+            >
+              {subjects.map((subject) => {
+                const on = subjectId === subject.id;
+                return (
+                  <Pressable
+                    key={subject.id}
+                    onPress={() => setSubjectId(on ? '' : subject.id)}
+                    style={[
+                      styles.hwSubjectRow,
+                      on && { borderColor: accent, backgroundColor: theme.accentTint },
+                    ]}
+                  >
+                    <View style={[styles.hwRadio, on && { borderColor: accent }]}>
+                      {on ? <View style={[styles.hwRadioDot, { backgroundColor: accent }]} /> : null}
+                    </View>
+                    <Text style={[styles.hwSubjectName, on && { color: accent }]}>{subject.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ListFold>
+          ) : null}
+          {preschool ? (
+            <ListFold
+              title="Enfants"
+              summary={
+                selectedIds.length === 0
+                  ? 'Aucun'
+                  : `${selectedIds.length} sélectionné${selectedIds.length > 1 ? 's' : ''}`
+              }
+              open={childrenOpen}
+              onToggle={() => setChildrenOpen((open) => !open)}
+            >
+              {roster.length === 0 ? (
+                <EmptyState title="Aucun élève" />
+              ) : (
+                [...roster].sort(byLastName).map((student) => {
+                  const on = selectedIds.includes(student.student_id);
+                  return (
+                    <Pressable
+                      key={student.student_id}
+                      onPress={() => toggleStudent(student.student_id)}
+                      style={styles.hwSubjectRow}
+                    >
+                      <View
+                        style={[
+                          styles.hwCheck,
+                          on && { backgroundColor: accent, borderColor: accent },
+                        ]}
+                      >
+                        {on ? <Ionicons name="checkmark" size={14} color={colors.surface} /> : null}
+                      </View>
+                      <Text style={styles.hwSubjectName}>
+                        {student.last_name} {student.first_name}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ListFold>
+          ) : null}
+          <View style={styles.hwActions}>
+            <Button
+              title="Annuler"
+              variant="ghost"
+              onPress={() => {
+                resetForm();
+                setMode('list');
+              }}
+              style={styles.hwActionBtn}
+            />
+            <Button
+              title={publishing ? 'Enregistrement…' : editingId ? 'Enregistrer' : 'Publier'}
+              disabled={
+                !title.trim() ||
+                publishing ||
+                (preschool && (!instructions.trim() || selectedIds.length === 0))
+              }
+              style={styles.hwActionBtn}
+              onPress={async () => {
+                if (!activeId) return;
+                setPublishing(true);
+                try {
+                  const payload = {
+                    kind,
+                    title: title.trim(),
+                    instructions: instructions.trim() || null,
+                    due_date: due || null,
+                    subject_id: subjectId || null,
+                    student_ids: preschool ? selectedIds : undefined,
+                    coefficient: preschool ? undefined : coefficient.trim() ? coefficient.trim() : null,
+                  };
+                  if (editingId) await updateHomework(editingId, payload);
+                  else await createHomework({ ...payload, class_id: activeId });
+                  resetForm();
+                  setFilter(kind);
+                  await loadPage(true);
+                  setMode('list');
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Publication impossible');
+                } finally {
+                  setPublishing(false);
+                }
+              }}
+            />
+          </View>
+        </>
+      ) : null}
+
+      {mode === 'detail' && detail ? (
+        <>
+          <Pressable
+            onPress={() => {
+              setDetail(null);
+              setMode('list');
+            }}
+            style={styles.hwBack}
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.ink} />
+            <Text style={styles.hwBackText}>Retour</Text>
+          </Pressable>
+          {lessonStillOpen(detail.due_date) ? (
+            <View style={styles.hwActions}>
+              <Button
+                title="Modifier"
+                icon="create-outline"
+                onPress={() => beginEdit(detail)}
+                style={styles.hwActionBtn}
+              />
+              <Button
+                title={deleting ? 'Suppression…' : 'Supprimer'}
+                icon="trash-outline"
+                variant="danger"
+                disabled={deleting}
+                onPress={() => confirmDelete(detail)}
+                style={styles.hwActionBtn}
+              />
+            </View>
+          ) : null}
+          <Text style={[styles.hwKind, { color: accent, backgroundColor: theme.accentTint }]}>
+            {detail.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'}
+          </Text>
+          <Text style={styles.hwDetailTitle}>{detail.title}</Text>
+          {detailMeta ? <Text style={styles.hwMeta}>{detailMeta}</Text> : null}
+          {detail.instructions ? (
+            <Text style={styles.hwInstructions}>{detail.instructions}</Text>
+          ) : null}
+          {!preschool ? (
+            <View style={styles.hwStudent}>
+              <Text style={styles.hwFieldLabel}>Coefficient</Text>
+              {lessonStillOpen(detail.due_date) ? (
+                <View style={styles.hwNoteRow}>
+                  <TextInput
+                    value={coefficient}
+                    onChangeText={setCoefficient}
+                    placeholder="10"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="decimal-pad"
+                    style={styles.hwScore}
+                  />
+                  <Button
+                    title={savingCoef ? 'Enregistrement…' : 'Enregistrer'}
+                    variant="ghost"
+                    disabled={savingCoef}
+                    onPress={async () => {
+                      setSavingCoef(true);
+                      try {
+                        const next = await updateHomework(detail.id, {
+                          coefficient: coefficient.trim() ? coefficient.trim() : null,
+                        });
+                        setDetail(await scopeStudents(next));
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Coefficient impossible');
+                      } finally {
+                        setSavingCoef(false);
+                      }
+                    }}
+                  />
+                </View>
+              ) : (
+                <Text style={styles.hwMeta}>
+                  {detail.coefficient != null ? String(detail.coefficient) : '—'}
+                </Text>
+              )}
+            </View>
+          ) : null}
+          <Text style={styles.hwSection}>
+            {preschool ? 'Enfants' : 'Élèves'}
+          </Text>
+          {preschool ? (
+            (detail.students ?? []).filter((student) => student.included).sort(byLastName).length === 0 ? (
+              <EmptyState title="Aucun élève" />
+            ) : (
+              (detail.students ?? [])
+                .filter((student) => student.included)
+                .sort(byLastName)
+                .map((student) => (
+                  <AppreciationRow
+                    key={student.student_id}
+                    student={student}
+                    editable={lessonStillOpen(detail.due_date)}
+                    onSave={async (result) => {
+                      const next = await saveHomeworkGrade(detail.id, {
+                        student_id: student.student_id,
+                        result,
+                      });
+                      setDetail(await scopeStudents(next));
+                    }}
+                  />
+                ))
+            )
+          ) : (detail.students ?? []).length === 0 ? (
+            <EmptyState title="Aucun élève" />
+          ) : (
+            detail.students?.map((student) => (
+              <GradeEditor
+                key={student.student_id}
+                student={student}
+                coefficient={detail.coefficient}
+                editable={lessonStillOpen(detail.due_date)}
+                onSave={async (score, comment) => {
+                  const next = await saveHomeworkGrade(detail.id, {
+                    student_id: student.student_id,
+                    score,
+                    comment,
+                  });
+                  setDetail(await scopeStudents(next));
+                }}
+              />
+            ))
+          )}
+        </>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+function PreschoolWorkEditor({
+  student,
+  accent,
+  tint,
+  editable = true,
+  onSave,
+}: {
+  student: {
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    included?: boolean;
+    source?: 'LIVRE' | 'PHRASE' | null;
+    content?: string | null;
+  };
+  accent: string;
+  tint: string;
+  editable?: boolean;
+  onSave: (body: {
+    included: boolean;
+    source: 'LIVRE' | 'PHRASE' | null;
+    content: string | null;
+  }) => Promise<void>;
+}) {
+  const [included, setIncluded] = useState(!!student.included);
+  const [source, setSource] = useState<'LIVRE' | 'PHRASE'>(student.source === 'PHRASE' ? 'PHRASE' : 'LIVRE');
+  const [content, setContent] = useState(student.content ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setIncluded(!!student.included);
+    setSource(student.source === 'PHRASE' ? 'PHRASE' : 'LIVRE');
+    setContent(student.content ?? '');
+  }, [student.student_id, student.included, student.source, student.content]);
+
+  if (!editable) {
+    return (
+      <View style={styles.hwStudent}>
+        <Text style={styles.hwStudentName}>
+          {student.last_name} {student.first_name}
+        </Text>
+        {student.included ? (
+          <Text style={styles.hwMeta}>
+            {[student.source === 'PHRASE' ? 'Phrase' : student.source === 'LIVRE' ? 'Livre' : null, student.content]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : (
+          <Text style={styles.hwMeta}>Non concerné</Text>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.hwStudent}>
+      <Pressable
+        onPress={() => {
+          const next = !included;
+          setIncluded(next);
+          if (!next && student.included) {
+            setSaving(true);
+            void onSave({ included: false, source: null, content: null }).finally(() => setSaving(false));
           }
         }}
-      />
-      {list.map((a) => (
-        <Pressable
-          key={a.id}
-          onPress={async () => setDetail(await getHomework(a.id))}
-          style={[styles.card, { borderColor: accent }]}
-        >
-          <Text style={styles.kind}>{a.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'}</Text>
-          <Text style={styles.cardTitle}>{a.title}</Text>
-          {a.due_date ? <Text style={styles.meta}>Pour le {a.due_date}</Text> : null}
-        </Pressable>
-      ))}
-      {detail?.students?.map((s) => (
-        <GradeEditor
-          key={s.student_id}
-          student={s}
-          onSave={async (score, comment) => {
-            const next = await saveHomeworkGrade(detail.id, {
-              student_id: s.student_id,
-              score,
-              comment,
-            });
-            setDetail(next);
-          }}
-        />
-      ))}
-    </ScrollView>
+        style={styles.hwInclude}
+      >
+        <View style={[styles.hwCheck, included && { backgroundColor: accent, borderColor: accent }]}>
+          {included ? <Ionicons name="checkmark" size={14} color={colors.surface} /> : null}
+        </View>
+        <Text style={styles.hwStudentName}>
+          {student.last_name} {student.first_name}
+        </Text>
+      </Pressable>
+      {included ? (
+        <>
+          <View style={styles.hwSubjectList}>
+            {(
+              [
+                ['LIVRE', 'Livre', 'book-outline'],
+                ['PHRASE', 'Phrase', 'create-outline'],
+              ] as const
+            ).map(([id, label, icon]) => {
+              const on = source === id;
+              return (
+                <Pressable
+                  key={id}
+                  onPress={() => setSource(id)}
+                  style={[styles.hwSubjectRow, on && { borderColor: accent, backgroundColor: tint }]}
+                >
+                  <Ionicons name={icon} size={18} color={on ? accent : colors.inkSoft} />
+                  <Text style={[styles.hwSubjectName, on && { color: accent }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={content}
+            onChangeText={setContent}
+            placeholder={source === 'LIVRE' ? 'Titre du livre, page…' : 'La phrase à écrire ou à lire'}
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={[styles.hwInput, styles.hwInputMulti]}
+          />
+          <Button
+            title={saving ? 'Enregistrement…' : 'Enregistrer'}
+            variant="ghost"
+            disabled={saving}
+            onPress={async () => {
+              setSaving(true);
+              try {
+                await onSave({ included: true, source, content: content.trim() || null });
+              } finally {
+                setSaving(false);
+              }
+            }}
+          />
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function AppreciationRow({
+  student,
+  editable,
+  onSave,
+}: {
+  student: {
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    result?: HomeworkResult | null;
+    result_label?: string | null;
+  };
+  editable: boolean;
+  onSave: (result: HomeworkResult | null) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const current = student.result ?? null;
+  const choices = editable
+    ? HOMEWORK_RESULTS
+    : HOMEWORK_RESULTS.filter((item) => item.id === current);
+
+  return (
+    <View style={styles.hwStudent}>
+      <Text style={styles.hwStudentName}>
+        {student.last_name} {student.first_name}
+      </Text>
+      {choices.length ? (
+        <View style={styles.hwResultRow}>
+          {choices.map((item) => {
+            const on = current === item.id;
+            return (
+              <Pressable
+                key={item.id}
+                disabled={!editable || saving}
+                onPress={() => {
+                  setSaving(true);
+                  void onSave(on ? null : item.id).finally(() => setSaving(false));
+                }}
+                style={[
+                  styles.hwResultChip,
+                  {
+                    borderColor: on ? item.color : colors.border,
+                    backgroundColor: on ? item.bg : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.hwResultLabel, { color: on ? item.color : colors.inkSoft }]}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 function GradeEditor({
   student,
+  coefficient,
+  editable = true,
   onSave,
 }: {
   student: {
@@ -408,28 +1071,72 @@ function GradeEditor({
     score: string | null;
     comment: string | null;
   };
+  coefficient?: number | null;
+  editable?: boolean;
   onSave: (score: string, comment: string) => Promise<void>;
 }) {
   const [score, setScore] = useState(student.score ?? '');
   const [comment, setComment] = useState(student.comment ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setScore(student.score ?? '');
+    setComment(student.comment ?? '');
+  }, [student.student_id, student.score, student.comment]);
+
+  if (!editable) {
+    return (
+      <View style={styles.hwStudent}>
+        <Text style={styles.hwStudentName}>
+          {student.last_name} {student.first_name}
+        </Text>
+        <Text style={styles.hwMeta}>
+          {student.score
+            ? coefficient != null
+              ? `${student.score} / ${coefficient}`
+              : student.score
+            : '—'}
+          {student.comment ? ` · ${student.comment}` : ''}
+        </Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.row}>
-      <Text style={styles.name}>
+    <View style={styles.hwStudent}>
+      <Text style={styles.hwStudentName}>
         {student.last_name} {student.first_name}
       </Text>
-      <TextInput
-        value={score}
-        onChangeText={setScore}
-        onEndEditing={() => void onSave(score, comment)}
-        placeholder="Note"
-        style={styles.score}
-      />
+      <View style={styles.hwNoteRow}>
+        <TextInput
+          value={score}
+          onChangeText={setScore}
+          placeholder="Note"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="decimal-pad"
+          style={styles.hwScore}
+        />
+        {coefficient != null ? <Text style={styles.hwMeta}>/ {coefficient}</Text> : null}
+      </View>
       <TextInput
         value={comment}
         onChangeText={setComment}
-        onEndEditing={() => void onSave(score, comment)}
         placeholder="Commentaire"
-        style={styles.input}
+        placeholderTextColor={colors.textMuted}
+        style={styles.hwComment}
+      />
+      <Button
+        title={saving ? 'Enregistrement…' : 'Enregistrer'}
+        variant="ghost"
+        disabled={saving}
+        onPress={async () => {
+          setSaving(true);
+          try {
+            await onSave(score, comment);
+          } finally {
+            setSaving(false);
+          }
+        }}
       />
     </View>
   );
@@ -656,5 +1363,247 @@ const styles = StyleSheet.create({
     padding: 8,
     width: 80,
     marginBottom: 6,
+  },
+  hwPad: { paddingBottom: listBottomPadding(16), gap: 12 },
+  hwSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+  },
+  hwSearch: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.text,
+  },
+  hwLoading: {
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 8,
+  },
+  hwSubjectList: { gap: 8 },
+  hwFold: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  hwFoldHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  hwFoldTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  hwFoldSummary: { fontSize: 13, fontWeight: '500', color: colors.inkSoft },
+  hwFoldBody: { gap: 8, paddingHorizontal: 10, paddingBottom: 10 },
+  hwSubjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  hwRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hwRadioDot: { width: 10, height: 10, borderRadius: 5 },
+  hwSubjectName: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
+  hwInclude: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  hwCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  hwClassName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.inkSoft,
+    marginBottom: 2,
+  },
+  hwFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  hwFilter: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  hwFilterOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  hwFilterText: { fontSize: 13, fontWeight: '600', color: colors.text },
+  hwFilterTextOn: { color: colors.surface },
+  hwAdd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  hwAddIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hwAddTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  hwAddHint: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  hwItem: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 6,
+  },
+  hwItemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  hwKind: {
+    alignSelf: 'flex-start',
+    overflow: 'hidden',
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  hwDue: { fontSize: 12, fontWeight: '600', color: colors.inkSoft },
+  hwItemTitle: { fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: colors.text },
+  hwMeta: { fontSize: 13, fontWeight: '500', color: colors.inkSoft },
+  hwExcerpt: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
+  hwBack: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start' },
+  hwBackText: { fontSize: 16, fontWeight: '600', color: colors.ink },
+  hwSection: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+    marginTop: 8,
+  },
+  hwKindRow: { flexDirection: 'row', gap: 10 },
+  hwKindCard: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  hwKindCardText: { fontSize: 15, fontWeight: '600', color: colors.text },
+  hwFieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  hwInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: 16,
+  },
+  hwInputMulti: { minHeight: 96, textAlignVertical: 'top' },
+  hwSubjects: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  hwActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  hwActionBtn: { flex: 1 },
+  hwDetailTitle: {
+    fontSize: 26,
+    fontWeight: '600',
+    letterSpacing: -0.4,
+    color: colors.text,
+  },
+  hwInstructions: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  hwStudent: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 8,
+  },
+  hwStudentName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  hwNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hwResultRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  hwResultChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  hwResultLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  hwScore: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    width: 96,
+    color: colors.text,
+    fontSize: 16,
+    backgroundColor: colors.bg,
+  },
+  hwComment: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 16,
+    backgroundColor: colors.bg,
   },
 });

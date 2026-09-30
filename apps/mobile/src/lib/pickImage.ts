@@ -7,12 +7,19 @@ export type PickedImage = {
   fileName?: string | null;
 };
 
+export type PickImageOptions = {
+  /** Recadrage natif. Par défaut : activé, format portrait. */
+  allowsEditing?: boolean;
+  aspect?: [number, number];
+};
+
 /**
  * Demande la permission puis ouvre la caméra ou la galerie système.
  * Pas de sélecteur custom — UI native uniquement.
  */
 export async function pickImageFromDevice(
   source: 'camera' | 'library',
+  pickOptions?: PickImageOptions,
 ): Promise<PickedImage | null> {
   if (source === 'camera') {
     const current = await ImagePicker.getCameraPermissionsAsync();
@@ -55,9 +62,8 @@ export async function pickImageFromDevice(
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ['images'],
     quality: 0.85,
-    // Crop natif après prise / sélection (Android + iOS)
-    allowsEditing: true,
-    aspect: [3, 4],
+    allowsEditing: pickOptions?.allowsEditing ?? true,
+    aspect: pickOptions?.aspect ?? [3, 4],
   };
 
   const result =
@@ -77,13 +83,14 @@ export async function pickImageFromDevice(
 /** Propose Caméra ou Galerie, puis lance le flux avec permission. */
 export function promptPickImage(
   onPicked: (image: PickedImage) => void,
+  pickOptions?: PickImageOptions,
 ): void {
   Alert.alert('Photo', 'Choisir la source', [
     {
       text: 'Caméra',
       onPress: () => {
         void (async () => {
-          const img = await pickImageFromDevice('camera');
+          const img = await pickImageFromDevice('camera', pickOptions);
           if (img) onPicked(img);
         })();
       },
@@ -92,7 +99,7 @@ export function promptPickImage(
       text: 'Galerie',
       onPress: () => {
         void (async () => {
-          const img = await pickImageFromDevice('library');
+          const img = await pickImageFromDevice('library', pickOptions);
           if (img) onPicked(img);
         })();
       },

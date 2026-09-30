@@ -4,11 +4,13 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -55,6 +57,31 @@ import { periodScopeFromLevel } from '../../lib/educationLevels';
 type Props = NativeStackScreenProps<WorkStackParamList, 'Grades'>;
 
 type PickerKind = 'year' | 'class' | 'subject' | 'period' | null;
+
+const TONE: Record<string, { ink: string; wash: string }> = {
+  EXCELLENT: { ink: '#3F6212', wash: '#F3F7EA' },
+  TRES_BIEN: { ink: '#3F6212', wash: '#F3F7EA' },
+  BIEN: { ink: '#57534E', wash: '#F5F5F4' },
+  ASSEZ_BIEN: { ink: '#C2410C', wash: '#FFF7ED' },
+  TOUJOURS: { ink: '#3F6212', wash: '#F3F7EA' },
+  SOUVENT: { ink: '#57534E', wash: '#F5F5F4' },
+  PARFOIS: { ink: '#C2410C', wash: '#FFF7ED' },
+  JAMAIS: { ink: '#B91C1C', wash: '#FEF2F2' },
+  ADMIS: { ink: '#3F6212', wash: '#F3F7EA' },
+  ADMIS_AILLEURS: { ink: '#57534E', wash: '#F5F5F4' },
+  REDOUBLER: { ink: '#C2410C', wash: '#FFF7ED' },
+  AJOURNE: { ink: '#C2410C', wash: '#FFF7ED' },
+  RENVOYE_DEFINITIVEMENT: { ink: '#B91C1C', wash: '#FEF2F2' },
+};
+
+function toneOf(value: string) {
+  return TONE[value] ?? { ink: colors.inkSoft, wash: colors.bg };
+}
+
+function initialOf(name: string) {
+  const letter = name.trim().charAt(0);
+  return letter ? letter.toUpperCase() : '?';
+}
 
 export function GradesScreen({}: Props) {
   const allowed = useCanAccess('grades');
@@ -103,6 +130,9 @@ export function GradesScreen({}: Props) {
         if (cancelled) return;
         setYears(y);
         setClasses(c);
+        if (isTeacher && c.length > 0) {
+          setClassId((prev) => (prev && c.some((item) => item.id === prev) ? prev : c[0].id));
+        }
         const preferredYear =
           context?.academic_year?.id && y.some((yy) => yy.id === context.academic_year?.id)
             ? context.academic_year.id
@@ -130,8 +160,14 @@ export function GradesScreen({}: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const list = (await getPeriods(yearId)).filter(
-          (p) => (p.scope || 'ECOLE') === periodScopeFromLevel(selectedClass?.level),
+        const all = await getPeriods(yearId);
+        const scope =
+          selectedClass?.is_preschool || periodScopeFromLevel(selectedClass?.level) === 'PRESCOLAIRE'
+            ? 'PRESCOLAIRE'
+            : 'ECOLE';
+        const scoped = all.filter((p) => (p.scope || 'ECOLE') === scope);
+        const list = (scoped.length ? scoped : all).sort(
+          (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
         );
         if (cancelled) return;
         setPeriods(list);
@@ -153,7 +189,7 @@ export function GradesScreen({}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [yearId, classId, selectedClass?.level, context?.current_period_id, context?.current_preschool_period_id]);
+  }, [yearId, classId, selectedClass?.level, selectedClass?.is_preschool, context?.current_period_id, context?.current_preschool_period_id]);
 
   useEffect(() => {
     setSubjectId('');
@@ -281,7 +317,7 @@ export function GradesScreen({}: Props) {
   const yearLabel = years.find((y) => y.id === yearId)?.name || 'Année';
   const classLabel = selectedClass?.name || 'Classe';
   const subjectLabel = subjects.find((s) => s.id === subjectId)?.name || 'Matière';
-  const periodLabel = periods.find((p) => p.id === periodId)?.name || 'Période';
+  const periodLabel = periods.find((p) => p.id === periodId)?.name || 'Contrôle';
 
   const pickerItems = useMemo(() => {
     if (picker === 'year') return years.map((y) => ({ id: y.id, label: y.name }));
@@ -318,24 +354,95 @@ export function GradesScreen({}: Props) {
     return <AccessDenied />;
   }
 
+  const notedCount = isPreschool
+    ? preschoolRows.filter((row) => (evalMode === 'LEVEL' ? row.level : row.frequency)).length
+    : rows.filter((row) => row.grade_value != null).length;
+  const emptyTitle = !classId
+    ? 'Choisissez une classe'
+    : !subjectId
+      ? 'Choisissez une matière'
+      : !periodId
+        ? 'Choisissez une période'
+        : 'Choisissez une année';
+  const selectedPickerId =
+    picker === 'year' ? yearId : picker === 'class' ? classId : picker === 'subject' ? subjectId : periodId;
+
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
       <View style={styles.top}>
         <Title>Saisie des notes</Title>
 
-        <View style={styles.filters}>
-          <SelectChip label="Année" value={yearLabel} onPress={() => setPicker('year')} />
-          <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-          <SelectChip
-            label="Matière"
-            value={subjectLabel}
-            onPress={() => setPicker('subject')}
-            disabled={!classId}
-          />
-          <SelectChip label="Période" value={periodLabel} onPress={() => setPicker('period')} />
-        </View>
+        {isTeacher ? (
+          <View style={styles.teacherHead}>
+            {classes.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
+                {classes.map((item) => {
+                  const on = item.id === classId;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => setClassId(item.id)}
+                      style={[styles.pill, on && styles.pillOn]}
+                    >
+                      <Text style={[styles.pillText, on && styles.pillTextOn]}>{item.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : selectedClass ? (
+              <Text style={styles.classTitle}>{selectedClass.name}</Text>
+            ) : null}
 
-        {teacherName ? <Muted>Professeur · {teacherName}</Muted> : null}
+            <View style={styles.filters}>
+              <SelectChip label="Année" value={yearLabel} onPress={() => setPicker('year')} />
+              <SelectChip
+                label="Contrôle"
+                value={periodLabel}
+                onPress={() => setPicker('period')}
+                disabled={periods.length === 0}
+              />
+            </View>
+
+            {subjects.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
+                {subjects.map((item) => {
+                  const on = item.id === subjectId;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => setSubjectId(item.id)}
+                      style={[styles.pill, on && { backgroundColor: theme.accentTint, borderColor: theme.accent }]}
+                    >
+                      <Text style={[styles.pillText, on && { color: theme.accent }]}>{item.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : subjectId ? (
+              <Text style={styles.subjectTitle}>{subjectLabel}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.filters}>
+            <SelectChip label="Année" value={yearLabel} onPress={() => setPicker('year')} />
+            <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
+            <SelectChip
+              label="Matière"
+              value={subjectLabel}
+              onPress={() => setPicker('subject')}
+              disabled={!classId}
+            />
+            <SelectChip label="Contrôle" value={periodLabel} onPress={() => setPicker('period')} />
+          </View>
+        )}
+
+        {teacherName && !isTeacher ? (
+          <View style={styles.teacherLine}>
+            <Ionicons name="person-outline" size={14} color={colors.inkSoft} />
+            <Text style={styles.teacherText}>{teacherName}</Text>
+          </View>
+        ) : null}
+
         {isPreschool ? (
           <View style={styles.modeWrap}>
             <Pressable
@@ -343,7 +450,10 @@ export function GradesScreen({}: Props) {
                 setEvalMode(PRESCHOOL_EVAL_LEVEL);
                 if (subjectId) void setSubjectPreschoolEval(subjectId, PRESCHOOL_EVAL_LEVEL);
               }}
-              style={[styles.modeChip, evalMode === 'LEVEL' && styles.modeChipOn]}
+              style={[
+                styles.modeChip,
+                evalMode === 'LEVEL' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
             >
               <Text style={[styles.modeText, evalMode === 'LEVEL' && styles.modeTextOn]}>Niveau</Text>
             </Pressable>
@@ -352,30 +462,46 @@ export function GradesScreen({}: Props) {
                 setEvalMode(PRESCHOOL_EVAL_FREQUENCY);
                 if (subjectId) void setSubjectPreschoolEval(subjectId, PRESCHOOL_EVAL_FREQUENCY);
               }}
-              style={[styles.modeChip, evalMode === 'FREQUENCY' && styles.modeChipOn]}
+              style={[
+                styles.modeChip,
+                evalMode === 'FREQUENCY' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
             >
-              <Text style={[styles.modeText, evalMode === 'FREQUENCY' && styles.modeTextOn]}>Fréquence</Text>
+              <Text style={[styles.modeText, evalMode === 'FREQUENCY' && styles.modeTextOn]}>
+                Fréquence
+              </Text>
             </Pressable>
           </View>
         ) : null}
-        {!canEdit ? (
+
+        {!canEdit && ready ? (
           <View style={styles.lockBanner}>
-            <Text style={styles.lockText}>
-              Notes déjà enregistrées — modification réservée à la direction.
-            </Text>
+            <Ionicons name="lock-closed" size={14} color="#C2410C" />
+            <Text style={styles.lockText}>Déjà enregistrées. Seule la direction peut modifier.</Text>
           </View>
         ) : null}
 
         <ErrorBanner message={error} />
         {success ? (
           <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={16} color="#3F6212" />
             <Text style={styles.successText}>{success}</Text>
           </View>
         ) : null}
       </View>
 
       {!ready ? (
-        <EmptyState title="Complétez les filtres" />
+        <EmptyState
+          title={
+            isTeacher && classes.length === 0
+              ? 'Aucune classe'
+              : !yearId
+                ? 'Choisissez une année'
+                : !periodId
+                  ? 'Choisissez un contrôle'
+                  : emptyTitle
+          }
+        />
       ) : formLoading ? (
         <View style={styles.loadingList}>
           <ActivityIndicator color={theme.primary} />
@@ -386,7 +512,7 @@ export function GradesScreen({}: Props) {
           keyExtractor={(item) => item.student_id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={[styles.list, { paddingBottom: 140 + insets.bottom }]}
+          contentContainerStyle={[styles.list, { paddingBottom: 120 + insets.bottom }]}
           ListEmptyComponent={<EmptyState title="Aucun élève" />}
           renderItem={({ item }) =>
             isPreschool ? (
@@ -417,31 +543,54 @@ export function GradesScreen({}: Props) {
 
       {ready && listData.length > 0 && canEdit ? (
         <View style={[styles.sticky, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Text style={styles.stickyMeta}>
+            {notedCount} / {listData.length}
+          </Text>
           <Button
-            title={saving ? 'Enregistrement…' : 'Enregistrer les notes'}
+            title={saving ? 'Enregistrement…' : 'Enregistrer'}
+            icon="checkmark"
             onPress={() => void handleSave()}
             disabled={saving}
+            style={{ flex: 1 }}
           />
         </View>
       ) : null}
 
-      <Modal visible={!!picker} animationType="slide" transparent>
-        <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Sélection</Text>
+      <Modal visible={!!picker} animationType="slide" transparent onRequestClose={() => setPicker(null)}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPicker(null)} />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {picker === 'year'
+                  ? 'Année'
+                  : picker === 'class'
+                    ? 'Classe'
+                    : picker === 'subject'
+                      ? 'Matière'
+                      : 'Contrôle'}
+              </Text>
+              <Pressable onPress={() => setPicker(null)} hitSlop={12}>
+                <Text style={styles.modalClose}>Fermer</Text>
+              </Pressable>
+            </View>
             <FlatList
               data={pickerItems}
-              keyExtractor={(i) => i.id}
-              renderItem={({ item }) => (
-                <Pressable style={styles.modalRow} onPress={() => onPick(item.id)}>
-                  <Text style={styles.modalRowText}>{item.label}</Text>
-                </Pressable>
-              )}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const on = item.id === selectedPickerId;
+                return (
+                  <Pressable style={styles.modalRow} onPress={() => onPick(item.id)}>
+                    <Text style={[styles.modalRowText, on && styles.modalRowOn]}>{item.label}</Text>
+                    {on ? <Ionicons name="checkmark" size={18} color={theme.accent} /> : null}
+                  </Pressable>
+                );
+              }}
               ListEmptyComponent={<Muted>Aucune option</Muted>}
             />
-            <Button title="Fermer" variant="ghost" onPress={() => setPicker(null)} />
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </Screen>
   );
@@ -464,10 +613,13 @@ function SelectChip({
       disabled={disabled}
       style={[styles.chip, disabled && { opacity: 0.45 }]}
     >
-      <Text style={styles.chipLabel}>{label}</Text>
-      <Text style={styles.chipValue} numberOfLines={1}>
-        {value}
-      </Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.chipLabel}>{label}</Text>
+        <Text style={styles.chipValue} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
+      <Ionicons name="chevron-down" size={16} color={colors.inkSoft} />
     </Pressable>
   );
 }
@@ -483,11 +635,19 @@ function StandardRow({
   defaultCoef: number | null;
   onChange: (row: GradeFormRow) => void;
 }) {
+  const filled = row.grade_value != null;
   return (
     <View style={styles.card}>
-      <Text style={styles.studentName}>{row.student_name}</Text>
+      <View style={styles.cardHead}>
+        <View style={[styles.initial, filled && styles.initialOn]}>
+          <Text style={[styles.initialText, filled && styles.initialTextOn]}>
+            {initialOf(row.student_name)}
+          </Text>
+        </View>
+        <Text style={styles.studentName}>{row.student_name}</Text>
+      </View>
       <View style={styles.fieldsRow}>
-        <View style={{ flex: 1 }}>
+        <View style={styles.noteBox}>
           <Text style={styles.fieldLabel}>Note</Text>
           <TextInput
             editable={editable}
@@ -503,10 +663,10 @@ function StandardRow({
             }}
             placeholder="—"
             placeholderTextColor={colors.textMuted}
-            style={styles.input}
+            style={styles.noteInput}
           />
         </View>
-        <View style={{ width: 90 }}>
+        <View style={styles.coefBox}>
           <Text style={styles.fieldLabel}>Coef.</Text>
           <TextInput
             editable={editable}
@@ -519,18 +679,17 @@ function StandardRow({
                 coefficient: Number.isNaN(num) ? defaultCoef ?? 1 : num,
               });
             }}
-            style={styles.input}
+            style={styles.coefInput}
           />
         </View>
       </View>
-      <Text style={styles.fieldLabel}>Détail</Text>
       <TextInput
         editable={editable}
         value={row.detail || ''}
         onChangeText={(detail) => onChange({ ...row, detail })}
-        placeholder="Optionnel"
+        placeholder="Détail"
         placeholderTextColor={colors.textMuted}
-        style={styles.input}
+        style={styles.detailInput}
       />
     </View>
   );
@@ -549,16 +708,26 @@ function ChoiceRow({
 }) {
   return (
     <View style={styles.choiceWrap}>
-      {options.map((o) => {
-        const on = value === o.value;
+      {options.map((option) => {
+        const on = value === option.value;
+        const tone = toneOf(option.value);
         return (
           <Pressable
-            key={o.value}
+            key={option.value}
             disabled={!editable}
-            onPress={() => onChange(on ? null : o.value)}
-            style={[styles.choice, on && styles.choiceOn, !editable && { opacity: 0.45 }]}
+            onPress={() => onChange(on ? null : option.value)}
+            style={[
+              styles.choice,
+              {
+                backgroundColor: on ? tone.ink : tone.wash,
+                borderColor: on ? tone.ink : 'transparent',
+              },
+              !editable && { opacity: 0.55 },
+            ]}
           >
-            <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{o.label}</Text>
+            <Text style={[styles.choiceText, { color: on ? colors.surface : tone.ink }]}>
+              {option.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -579,9 +748,17 @@ function PreschoolRow({
   showDecision: boolean;
   onChange: (row: PreschoolGradeRow) => void;
 }) {
+  const filled = evalMode === PRESCHOOL_EVAL_LEVEL ? !!row.level : !!row.frequency;
   return (
     <View style={styles.card}>
-      <Text style={styles.studentName}>{row.student_name}</Text>
+      <View style={styles.cardHead}>
+        <View style={[styles.initial, filled && styles.initialOn]}>
+          <Text style={[styles.initialText, filled && styles.initialTextOn]}>
+            {initialOf(row.student_name)}
+          </Text>
+        </View>
+        <Text style={styles.studentName}>{row.student_name}</Text>
+      </View>
       {evalMode === PRESCHOOL_EVAL_LEVEL ? (
         <>
           <Text style={styles.fieldLabel}>Niveau</Text>
@@ -603,12 +780,13 @@ function PreschoolRow({
           />
         </>
       )}
-      <Text style={styles.fieldLabel}>Observation</Text>
       <TextInput
         editable={editable}
         value={row.observation || ''}
         onChangeText={(observation) => onChange({ ...row, observation })}
-        style={styles.input}
+        placeholder="Observation"
+        placeholderTextColor={colors.textMuted}
+        style={styles.detailInput}
       />
       {showDecision ? (
         <>
@@ -626,109 +804,184 @@ function PreschoolRow({
 }
 
 const styles = StyleSheet.create({
-  top: { paddingHorizontal: 20, paddingBottom: 8 },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 8 },
+  top: { paddingHorizontal: 20, paddingBottom: 8, gap: 10 },
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     width: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
-  chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
+  chipValue: { fontSize: 15, color: colors.text, fontWeight: '700', marginTop: 2 },
+  teacherHead: { gap: 10 },
+  classTitle: { fontSize: 18, fontWeight: '800', color: colors.ink },
+  subjectTitle: { fontSize: 15, fontWeight: '600', color: colors.inkSoft },
+  pillRow: { gap: 8 },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pillOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  pillText: { color: colors.inkSoft, fontWeight: '600', fontSize: 13 },
+  pillTextOn: { color: colors.surface },
+  teacherLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  teacherText: { fontSize: 13, color: colors.inkSoft, fontWeight: '600' },
   lockBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: '#FFF7ED',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  lockText: { color: '#C2410C', fontSize: 13 },
+  lockText: { flex: 1, color: '#C2410C', fontSize: 13, fontWeight: '600' },
   successBanner: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F3F7EA',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  successText: { color: '#15803D', fontSize: 14 },
-  list: { paddingHorizontal: 20 },
+  successText: { color: '#3F6212', fontSize: 14, fontWeight: '600' },
+  list: { paddingHorizontal: 20, paddingTop: 8, gap: 10 },
   loadingList: { paddingVertical: 40, alignItems: 'center' },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 14,
-    marginBottom: 10,
+    gap: 12,
   },
-  studentName: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 10 },
-  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  initial: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  initialOn: { backgroundColor: '#F3F7EA' },
+  initialText: { fontWeight: '700', fontSize: 15, color: colors.inkSoft },
+  initialTextOn: { color: '#3F6212' },
+  studentName: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
+  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  choiceOn: { backgroundColor: '#0F766E', borderColor: '#0F766E' },
-  choiceText: { fontSize: 12, fontWeight: '600', color: colors.text },
-  choiceTextOn: { color: '#fff' },
-  modeWrap: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  choiceText: { fontSize: 13, fontWeight: '600' },
+  modeWrap: { flexDirection: 'row', gap: 8 },
   modeChip: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
   },
-  modeChipOn: { backgroundColor: '#0F766E', borderColor: '#0F766E' },
-  modeText: { fontSize: 12, fontWeight: '700', color: colors.text },
-  modeTextOn: { color: '#fff' },
-  fieldsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  fieldLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600', marginBottom: 4 },
-  input: {
+  modeText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
+  modeTextOn: { color: colors.surface },
+  fieldsRow: { flexDirection: 'row', gap: 10 },
+  noteBox: { flex: 1, gap: 6 },
+  coefBox: { width: 88, gap: 6 },
+  fieldLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  noteInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 22,
+    fontWeight: '700',
     color: colors.text,
     backgroundColor: colors.bg,
-    marginBottom: 8,
+  },
+  coefInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    backgroundColor: colors.bg,
+    textAlign: 'center',
+  },
+  detailInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.text,
+    backgroundColor: colors.bg,
   },
   sticky: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 12,
     backgroundColor: colors.bg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  stickyMeta: { fontSize: 15, fontWeight: '700', color: colors.ink, minWidth: 52 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.45)',
+    backgroundColor: 'rgba(28,25,23,0.45)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
     maxHeight: '70%',
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 20,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    paddingTop: 8,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 12 },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+  modalClose: { fontSize: 15, fontWeight: '600', color: colors.textMuted },
   modalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  modalRowText: { fontSize: 16, color: colors.text },
+  modalRowText: { fontSize: 16, color: colors.text, fontWeight: '600' },
+  modalRowOn: { color: colors.ink },
 });

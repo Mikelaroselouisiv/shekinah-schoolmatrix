@@ -40,7 +40,11 @@ export class DisciplineController {
       return { ok: true, class_id: classId, date, students: [] };
     }
     await this.assertTeacherAttendance(req, classId);
-    return this.disciplineService.getAttendanceByClassAndDate(classId, date);
+    const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    const roomIds = isTeacherRoleName(req.user?.role) && uid
+      ? await this.teachersService.getTeacherRoomIdsForClass(uid, classId)
+      : null;
+    return this.disciplineService.getAttendanceByClassAndDate(classId, date, roomIds);
   }
 
   /**

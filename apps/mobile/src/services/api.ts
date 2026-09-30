@@ -130,6 +130,57 @@ export async function getMe(): Promise<SessionUser | null> {
   return (data as SessionUser) ?? null;
 }
 
+export async function updateOwnProfile(body: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+}): Promise<SessionUser | null> {
+  try {
+    const { data } = await api.patch<{ user?: SessionUser }>('/users/me', body);
+    return data?.user ?? null;
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible d’enregistrer le profil'));
+  }
+}
+
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  try {
+    await api.patch('/users/me/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de changer le mot de passe'));
+  }
+}
+
+export async function uploadOwnPhoto(
+  uri: string,
+  options?: { mimeType?: string; fileName?: string },
+): Promise<SessionUser | null> {
+  const mimeType = options?.mimeType || 'image/jpeg';
+  const fileName = options?.fileName || `profil-${Date.now()}.jpg`;
+  const form = new FormData();
+  form.append('file', {
+    uri,
+    type: mimeType,
+    name: fileName,
+  } as unknown as Blob);
+  try {
+    const { data } = await api.post<{ user?: SessionUser }>('/users/me/photo', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+    return data?.user ?? null;
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible d’enregistrer la photo'));
+  }
+}
+
 export type SchoolHome = {
   id?: string;
   name?: string;
@@ -199,7 +250,7 @@ export async function getCurrentContext(): Promise<SchoolContext | null> {
 }
 
 const GCS_PUBLIC_UPLOADS =
-  'https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads';
+  'https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads';
 
 function extractUploadFilename(stored: string): string | null {
   const s = stored.trim();
@@ -526,6 +577,8 @@ function unwrapList<T>(data: unknown): T[] {
       'exam_schedules',
       'extracurricular_activities',
       'school_vacations',
+      'parent_meetings',
+      'exam_periods',
       'rooms',
       'teachers',
       'assignments',
@@ -986,6 +1039,53 @@ export async function deleteSchoolVacation(id: string): Promise<void> {
   await api.delete(`/school-vacations/${id}`);
 }
 
+export type ParentMeetingItem = {
+  id: string;
+  academic_year_id?: string;
+  academic_year_name?: string;
+  meeting_date?: string;
+  start_time?: string;
+  class_id?: string;
+  class_name?: string;
+  objective?: string;
+  location_label?: string | null;
+};
+
+export type ExamPeriodItem = {
+  id: string;
+  academic_year_id?: string;
+  class_id?: string;
+  class_name?: string;
+  period_name?: string;
+  start_date?: string;
+  end_date?: string;
+  report_date?: string | null;
+};
+
+export async function listParentMeetings(params?: {
+  academic_year_id?: string;
+  class_id?: string;
+}): Promise<ParentMeetingItem[]> {
+  try {
+    const { data } = await api.get('/parent-meetings', { params });
+    return unwrapList<ParentMeetingItem>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function listExamPeriods(params?: {
+  academic_year_id?: string;
+  class_id?: string;
+}): Promise<ExamPeriodItem[]> {
+  try {
+    const { data } = await api.get('/exam-periods', { params });
+    return unwrapList<ExamPeriodItem>(data);
+  } catch {
+    return [];
+  }
+}
+
 export async function getRooms(classId?: string): Promise<RoomItem[]> {
   const { data } = await api.get('/rooms', {
     params: classId ? { class_id: classId } : undefined,
@@ -1126,6 +1226,16 @@ export async function getTeacherClasses(): Promise<ClassItem[]> {
   return unwrapList<ClassItem>(data);
 }
 
+export type TeacherPlace = {
+  class_name: string;
+  room_name: string | null;
+};
+
+export async function getTeacherPlaces(): Promise<TeacherPlace[]> {
+  const { data } = await api.get<{ places?: TeacherPlace[] }>('/teachers/me/places');
+  return data?.places ?? [];
+}
+
 export type UpcomingBirthday = {
   student_id: string;
   first_name: string;
@@ -1154,29 +1264,98 @@ export async function getUpcomingBirthdays(): Promise<{
 
 export type HomeworkKind = 'DEVOIR' | 'LECON';
 
+export type HomeworkSource = 'LIVRE' | 'PHRASE';
+
+export type HomeworkResult = 'PASSE' | 'A_REFAIRE' | 'A_RELIRE';
+
+export type HomeworkStudentWork = {
+  student_id: string;
+  first_name: string;
+  last_name: string;
+  included?: boolean;
+  source?: HomeworkSource | null;
+  content?: string | null;
+  score: string | null;
+  comment: string | null;
+  result?: HomeworkResult | null;
+  result_label?: string | null;
+};
+
 export type HomeworkAssignment = {
   id: string;
   kind: HomeworkKind;
   title: string;
   instructions: string | null;
   due_date: string | null;
+  coefficient?: number | null;
   class_id: string | null;
   class_name: string | null;
+  subject_id?: string | null;
   subject_name: string | null;
+  is_preschool?: boolean;
+  student_count?: number;
   score?: string | null;
   comment?: string | null;
-  students?: {
-    student_id: string;
-    first_name: string;
-    last_name: string;
-    score: string | null;
-    comment: string | null;
-  }[];
+  source?: HomeworkSource | null;
+  content?: string | null;
+  result?: HomeworkResult | null;
+  result_label?: string | null;
+  students?: HomeworkStudentWork[];
 };
 
-export async function listHomework(classId?: string): Promise<HomeworkAssignment[]> {
-  const { data } = await api.get('/homework', { params: classId ? { class_id: classId } : undefined });
-  return data?.assignments || [];
+export async function listHomework(params?: {
+  classId?: string;
+  kind?: HomeworkKind;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ assignments: HomeworkAssignment[]; has_more: boolean }> {
+  const { data } = await api.get('/homework', {
+    params: {
+      class_id: params?.classId,
+      kind: params?.kind,
+      q: params?.q,
+      limit: params?.limit,
+      offset: params?.offset,
+    },
+  });
+  const raw = data?.assignments;
+  const assignments = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.assignments)
+      ? raw.assignments
+      : [];
+  return {
+    assignments,
+    has_more: Boolean(data?.has_more ?? raw?.has_more),
+  };
+}
+
+export async function listHomeworkRoster(classId: string): Promise<
+  { student_id: string; first_name: string; last_name: string }[]
+> {
+  const { data } = await api.get('/homework/roster', { params: { class_id: classId } });
+  return data?.students ?? [];
+}
+
+export async function updateHomework(
+  id: string,
+  body: {
+    kind?: HomeworkKind;
+    title?: string;
+    instructions?: string | null;
+    due_date?: string | null;
+    subject_id?: string | null;
+    student_ids?: string[];
+    coefficient?: string | number | null;
+  },
+): Promise<HomeworkAssignment> {
+  const { data } = await api.patch(`/homework/${id}`, body);
+  return data.assignment;
+}
+
+export async function deleteHomework(id: string): Promise<void> {
+  await api.delete(`/homework/${id}`);
 }
 
 export async function getHomework(id: string): Promise<HomeworkAssignment> {
@@ -1191,6 +1370,8 @@ export async function createHomework(body: {
   due_date?: string | null;
   class_id: string;
   subject_id?: string | null;
+  student_ids?: string[];
+  coefficient?: string | number | null;
 }): Promise<HomeworkAssignment> {
   const { data } = await api.post('/homework', body);
   return data.assignment;
@@ -1198,7 +1379,15 @@ export async function createHomework(body: {
 
 export async function saveHomeworkGrade(
   id: string,
-  body: { student_id: string; score?: string | null; comment?: string | null },
+  body: {
+    student_id: string;
+    score?: string | null;
+    comment?: string | null;
+    included?: boolean;
+    source?: HomeworkSource | null;
+    content?: string | null;
+    result?: HomeworkResult | null;
+  },
 ): Promise<HomeworkAssignment> {
   const { data } = await api.put(`/homework/${id}/grades`, body);
   return data.assignment;
@@ -1207,6 +1396,17 @@ export async function saveHomeworkGrade(
 export async function getStudentHomework(studentId: string): Promise<HomeworkAssignment[]> {
   const { data } = await api.get(`/homework/student/${studentId}`);
   return data?.assignments || [];
+}
+
+/** Historique des devoirs et leçons du dossier scolaire, y compris les classes précédentes. */
+export async function getStudentDossierHomework(studentId: string): Promise<HomeworkAssignment[]> {
+  try {
+    const { data } = await api.get(`/students/${studentId}/dossier`);
+    if (Array.isArray(data?.homework)) return data.homework;
+  } catch {
+    /* Le dossier complet n'est pas ouvert à tous les rôles. */
+  }
+  return getStudentHomework(studentId);
 }
 
 export async function saveSlotMaterials(slotId: string, materials: string | null): Promise<void> {
@@ -2067,6 +2267,36 @@ export async function listTeacherAssignments(params?: {
 }): Promise<TeacherAssignment[]> {
   const { data } = await api.get('/teachers/assignments', { params });
   return unwrapList<TeacherAssignment>(data);
+}
+
+/** Élèves de la classe qui sont dans les salles de ce professeur. */
+export async function listStudentsInTeacherRoom(
+  classId: string,
+  teacherId: number,
+): Promise<StudentListItem[]> {
+  const [assignments, slots, students] = await Promise.all([
+    listTeacherAssignments({ class_id: classId }),
+    listScheduleSlots({ class_id: classId, teacher_id: teacherId }),
+    getStudents({ class_id: classId }),
+  ]);
+  const roomIds = new Set(
+    [
+      ...assignments
+        .filter((item) => Number(item.teacher_id) === Number(teacherId) && item.room_id)
+        .map((item) => item.room_id as string),
+      ...slots
+        .filter((slot) => Number(slot.teacher_id) === Number(teacherId) && slot.room_id)
+        .map((slot) => slot.room_id as string),
+    ],
+  );
+  if (roomIds.size === 0) return [];
+  return students
+    .filter((student) => student.active !== false && !!student.room_id && roomIds.has(student.room_id))
+    .sort(
+      (a, b) =>
+        a.last_name.localeCompare(b.last_name, 'fr', { sensitivity: 'base' }) ||
+        a.first_name.localeCompare(b.first_name, 'fr', { sensitivity: 'base' }),
+    );
 }
 
 export async function searchStaffTeachers(q?: string): Promise<TeacherItem[]> {

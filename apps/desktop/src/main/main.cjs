@@ -29,7 +29,7 @@ if (userDataOverride) {
       : path.join(os.tmpdir(), userDataOverride),
   );
 } else if (isDev && /:3001\b/.test(apiBase)) {
-  app.setPath('userData', path.join(os.tmpdir(), 'eureka-sm-dev-mirror'));
+  app.setPath('userData', path.join(os.tmpdir(), 'shekinah-sm-dev-mirror'));
 }
 
 let mainWindow = null;

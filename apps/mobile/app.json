@@ -2,7 +2,7 @@
   "expo": {
     "name": "Shekinah",
     "slug": "shekinah-schoolmatrix-mobile",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shekinah.schoolmatrix",
-      "buildNumber": "6",
+      "buildNumber": "5",
       "appleTeamId": "P227YQ54ZL",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -62,8 +62,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Shekinah utilise vos photos pour les fiches élèves.",
-          "cameraPermission": "Shekinah utilise la caméra pour photographier les élèves."
+          "photosPermission": "Shekinah utilise vos photos pour les fiches élèves et votre photo de profil.",
+          "cameraPermission": "Shekinah utilise la caméra pour les fiches élèves et votre photo de profil."
         }
       ],
       [

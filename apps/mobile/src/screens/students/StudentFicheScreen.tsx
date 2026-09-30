@@ -31,7 +31,7 @@ import {
   getImageUrl,
   getPaymentStatus,
   getStudent,
-  getStudentHomework,
+  getStudentDossierHomework,
   getStudentSchedule,
   listSchoolVacations,
   type ClassDayList,
@@ -148,7 +148,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         setScheduleMode(null);
       }
       try {
-        setHomework(await getStudentHomework(studentId));
+        setHomework(await getStudentDossierHomework(studentId));
       } catch {
         setHomework([]);
       }
@@ -443,7 +443,17 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                     {h.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'} · {h.title}
                   </Text>
                   <Text style={styles.detailMeta}>
-                    {[h.subject_name, h.due_date, h.score ? `Note ${h.score}` : null, h.comment]
+                    {[
+                      h.subject_name,
+                      h.due_date,
+                      h.result_label,
+                      h.score
+                        ? h.coefficient != null
+                          ? `${h.score}/${h.coefficient}`
+                          : h.score
+                        : null,
+                      h.comment,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </Text>

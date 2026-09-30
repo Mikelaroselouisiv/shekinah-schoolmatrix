@@ -202,9 +202,21 @@ export function weekdayLabel(index: number): string {
 }
 
 export function tomorrowWeekdayIndex(now = new Date()): number {
-  const d = new Date(now);
-  d.setDate(d.getDate() + 1);
-  return d.getDay();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Port-au-Prince',
+    weekday: 'short',
+  }).format(tomorrow);
+  const index: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return index[weekday] ?? 0;
 }
 
 export function namesJoin(names: string[]): string {

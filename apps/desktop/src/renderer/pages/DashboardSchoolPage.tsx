@@ -174,7 +174,7 @@ export function DashboardSchoolPage() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="École Eureka"
+            placeholder="École Shekinah"
             className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
             required
           />
@@ -227,7 +227,7 @@ export function DashboardSchoolPage() {
             type="text"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
-            placeholder="https://ecole-eureka.com"
+            placeholder="https://ecole-shekinah.com"
             className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
           />
         </div>

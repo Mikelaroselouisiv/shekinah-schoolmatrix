@@ -3,13 +3,15 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
+  Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FormModal } from '../../components/FormModal';
 import {
@@ -24,11 +26,15 @@ import {
   Title,
 } from '../../components/ui';
 import { studentDisplayName } from '../../lib/format';
+import { listBottomPadding } from '../../lib/layout';
+import { formatRoleLabel } from '../../lib/moreNavigation';
 import { colors } from '../../theme/tokens';
 import {
   createUser,
   deleteUser,
   findStudentByOrderNumber,
+  getImageUrl,
+  getStudent,
   getUser,
   listRoles,
   listUsers,
@@ -40,14 +46,25 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
-import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'UsersAdmin'>;
 
 const TAKE = 25;
 
+type UserDetail = OrgUser & {
+  address?: string | null;
+  whatsapp?: string | null;
+  order_number?: string | null;
+  must_change_password?: boolean;
+};
+
 function displayName(u: OrgUser): string {
   return [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
+}
+
+function initialOf(u: OrgUser): string {
+  const letter = (u.first_name || u.last_name || u.email || '?').trim().charAt(0);
+  return letter ? letter.toUpperCase() : '?';
 }
 
 export function UsersAdminScreen({}: Props) {
@@ -56,6 +73,7 @@ export function UsersAdminScreen({}: Props) {
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [query, setQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [boot, setBoot] = useState(true);
@@ -81,6 +99,9 @@ export function UsersAdminScreen({}: Props) {
   const [nisuInput, setNisuInput] = useState('');
   const [linking, setLinking] = useState(false);
 
+  const [viewUser, setViewUser] = useState<UserDetail | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [linkedNames, setLinkedNames] = useState<string[]>([]);
   const [rolePicker, setRolePicker] = useState(false);
   const [resetUser, setResetUser] = useState<OrgUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
@@ -89,13 +110,18 @@ export function UsersAdminScreen({}: Props) {
     setRoles(await listRoles());
   }, []);
 
-  const loadFirstPage = useCallback(async (q: string) => {
-    const res = await listUsers({ q: q || undefined, page: 1, take: TAKE });
+  const loadFirstPage = useCallback(async (q: string, role = roleFilter) => {
+    const res = await listUsers({
+      q: q || undefined,
+      role: role || undefined,
+      page: 1,
+      take: TAKE,
+    });
     setUsers(res.users);
     setTotal(res.total);
     setPage(1);
     return res;
-  }, []);
+  }, [roleFilter]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQuery(query.trim()), 300);
@@ -131,7 +157,12 @@ export function UsersAdminScreen({}: Props) {
       setListLoading(true);
       setError('');
       try {
-        const res = await listUsers({ q: searchQuery || undefined, page: 1, take: TAKE });
+        const res = await listUsers({
+          q: searchQuery || undefined,
+          role: roleFilter || undefined,
+          page: 1,
+          take: TAKE,
+        });
         if (cancelled || gen !== searchGen.current) return;
         setUsers(res.users);
         setTotal(res.total);
@@ -153,7 +184,7 @@ export function UsersAdminScreen({}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [allowed, searchQuery, loadFirstPage]);
+  }, [allowed, searchQuery, roleFilter, loadFirstPage]);
 
   async function loadMore() {
     if (loadMoreLock.current || listLoading || loadingMore) return;
@@ -164,6 +195,7 @@ export function UsersAdminScreen({}: Props) {
     try {
       const res = await listUsers({
         q: searchQuery || undefined,
+        role: roleFilter || undefined,
         page: page + 1,
         take: TAKE,
       });
@@ -190,10 +222,46 @@ export function UsersAdminScreen({}: Props) {
     setPhone('');
     setPassword('');
     setRoleName(roles[0]?.name || 'PARENT');
+    setRolePicker(false);
     setLinkedIds([]);
     setLinkedLabels({});
     setNisuInput('');
     setFormOpen(true);
+    setError('');
+  }
+
+  async function openView(u: OrgUser) {
+    setViewUser(u);
+    setLinkedNames([]);
+    setViewLoading(true);
+    setError('');
+    try {
+      const full = (await getUser(u.id)) as UserDetail;
+      setViewUser(full);
+      const ids = full.linked_student_ids ?? [];
+      if (ids.length) {
+        const students = await Promise.all(ids.map((id) => getStudent(id).catch(() => null)));
+        setLinkedNames(students.map((s, i) => (s ? studentDisplayName(s) : ids[i]!)));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setViewLoading(false);
+    }
+  }
+
+  function editFromView() {
+    const current = viewUser;
+    setViewUser(null);
+    if (current) void openEdit(current);
+  }
+
+  function resetFromView() {
+    const current = viewUser;
+    setViewUser(null);
+    if (!current) return;
+    setResetUser(current);
+    setNewPassword('');
     setError('');
   }
 
@@ -208,6 +276,7 @@ export function UsersAdminScreen({}: Props) {
       setPhone(full.phone || '');
       setPassword('');
       setRoleName(full.role || 'PARENT');
+      setRolePicker(false);
       setLinkedIds(full.linked_student_ids || []);
       setLinkedLabels({});
       setNisuInput('');
@@ -346,6 +415,32 @@ export function UsersAdminScreen({}: Props) {
       <View style={styles.top}>
         <Title>Utilisateurs</Title>
         <SearchBar value={query} onChangeText={setQuery} placeholder="Nom, email ou téléphone…" />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.roleFilters}
+        >
+          <Pressable
+            style={[styles.filterChip, !roleFilter && styles.filterChipOn]}
+            onPress={() => setRoleFilter('')}
+          >
+            <Text style={[styles.filterChipText, !roleFilter && styles.filterChipTextOn]}>Tous</Text>
+          </Pressable>
+          {roles.map((role) => {
+            const on = roleFilter === role.name;
+            return (
+              <Pressable
+                key={role.id}
+                style={[styles.filterChip, on && styles.filterChipOn]}
+                onPress={() => setRoleFilter(role.name)}
+              >
+                <Text style={[styles.filterChipText, on && styles.filterChipTextOn]}>
+                  {formatRoleLabel(role.name)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
         <Muted>
           {total} utilisateur{total > 1 ? 's' : ''}
         </Muted>
@@ -379,7 +474,7 @@ export function UsersAdminScreen({}: Props) {
           ) : (
             <EmptyState
               title={
-                searchQuery
+                searchQuery || roleFilter
                   ? 'Aucun utilisateur ne correspond à la recherche.'
                   : 'Aucun utilisateur'
               }
@@ -391,34 +486,91 @@ export function UsersAdminScreen({}: Props) {
             <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primaryFallback} />
           ) : null
         }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{displayName(item)}</Text>
-            <Muted>
-              {item.email}
-              {item.role ? ` · ${item.role}` : ''}
-              {item.active === false ? ' · inactif' : ''}
-            </Muted>
-            <View style={styles.actions}>
-              <Pressable onPress={() => openEdit(item)}>
-                <Text style={styles.link}>Modifier</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setResetUser(item);
-                  setNewPassword('');
-                  setError('');
-                }}
-              >
-                <Text style={styles.link}>Mot de passe</Text>
-              </Pressable>
-              <Pressable onPress={() => confirmDelete(item)}>
-                <Text style={styles.danger}>Supprimer</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const photo = getImageUrl(item.profile_photo_url);
+          return (
+            <Pressable style={styles.card} onPress={() => void openView(item)}>
+              {photo ? (
+                <Image source={{ uri: photo }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarEmpty]}>
+                  <Text style={styles.avatarInitial}>{initialOf(item)}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{displayName(item)}</Text>
+                <Text style={styles.cardMeta} numberOfLines={1}>
+                  {item.active === false ? 'Inactif · ' : ''}
+                  {item.email}
+                </Text>
+              </View>
+              {item.role ? (
+                <View style={styles.rolePill}>
+                  <Text style={styles.rolePillText} numberOfLines={1}>
+                    {formatRoleLabel(item.role)}
+                  </Text>
+                </View>
+              ) : null}
+              <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
+            </Pressable>
+          );
+        }}
       />
+
+      <FormModal visible={!!viewUser} onRequestClose={() => setViewUser(null)}>
+        {viewUser ? (
+          <>
+            <View style={styles.viewHead}>
+              {getImageUrl(viewUser.profile_photo_url) ? (
+                <Image source={{ uri: getImageUrl(viewUser.profile_photo_url)! }} style={styles.viewAvatar} />
+              ) : (
+                <View style={[styles.viewAvatar, styles.avatarEmpty]}>
+                  <Text style={styles.viewInitial}>{initialOf(viewUser)}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetTitle}>{displayName(viewUser)}</Text>
+                <Text style={styles.cardMeta}>
+                  {viewUser.active === false ? 'Inactif' : 'Actif'}
+                  {viewUser.role ? ` · ${formatRoleLabel(viewUser.role)}` : ''}
+                </Text>
+              </View>
+            </View>
+            {viewLoading ? <ActivityIndicator color={colors.ink} style={{ marginVertical: 12 }} /> : null}
+            <Info label="Email" value={viewUser.email} />
+            <Info label="Téléphone" value={viewUser.phone} />
+            <Info label="WhatsApp" value={viewUser.whatsapp} />
+            <Info label="Adresse" value={viewUser.address} />
+            <Info label="Rôle" value={viewUser.role ? formatRoleLabel(viewUser.role) : null} />
+            <Info label="NISU" value={viewUser.order_number} />
+            {linkedNames.length ? (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Élèves liés</Text>
+                {linkedNames.map((name, index) => (
+                  <Text key={`${name}-${index}`} style={styles.infoValue}>
+                    {name}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.viewActions}>
+              <Button title="Modifier" icon="create-outline" onPress={editFromView} />
+              <Button title="Mot de passe" icon="key-outline" variant="ghost" onPress={resetFromView} />
+              <Button
+                title="Supprimer"
+                icon="trash-outline"
+                variant="danger"
+                onPress={() => {
+                  const current = viewUser;
+                  setViewUser(null);
+                  if (current) confirmDelete(current);
+                }}
+              />
+              <Button title="Fermer" variant="ghost" onPress={() => setViewUser(null)} />
+            </View>
+          </>
+        ) : null}
+      </FormModal>
 
       <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
         <Text style={styles.sheetTitle}>
@@ -439,10 +591,51 @@ export function UsersAdminScreen({}: Props) {
           onChangeText={setPhone}
           keyboardType="phone-pad"
         />
-        <Pressable style={styles.chip} onPress={() => setRolePicker(true)}>
+        <Pressable
+          style={styles.chip}
+          onPress={() => {
+            setRolePicker((open) => !open);
+            if (!roles.length) {
+              void loadRoles().catch((err) =>
+                setError(err instanceof Error ? err.message : 'Erreur'),
+              );
+            }
+          }}
+        >
           <Text style={styles.chipLabel}>Rôle</Text>
-          <Text style={styles.chipValue}>{roleName}</Text>
+          <View style={styles.chipValueRow}>
+            <Text style={styles.chipValue}>{formatRoleLabel(roleName)}</Text>
+            <Ionicons
+              name={rolePicker ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={colors.inkSoft}
+            />
+          </View>
         </Pressable>
+        {rolePicker ? (
+          <View style={styles.roleChoices}>
+            {roles.length === 0 ? (
+              <Muted>Aucun rôle disponible.</Muted>
+            ) : (
+              roles.map((item) => {
+                const on = item.name === roleName;
+                return (
+                  <Pressable
+                    key={item.id}
+                    style={[styles.pickRow, on && styles.pickRowOn]}
+                    onPress={() => {
+                      setRoleName(item.name);
+                      setRolePicker(false);
+                    }}
+                  >
+                    <Text style={styles.cardTitle}>{formatRoleLabel(item.name)}</Text>
+                    {item.description ? <Muted>{item.description}</Muted> : null}
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        ) : null}
         <TextField
           label={editing ? 'Mot de passe (optionnel)' : 'Mot de passe *'}
           value={password}
@@ -504,43 +697,69 @@ export function UsersAdminScreen({}: Props) {
         <Button title="Annuler" variant="ghost" onPress={() => setResetUser(null)} />
       </FormModal>
 
-      <Modal visible={rolePicker} animationType="slide" transparent>
-        <Pressable style={styles.modalBackdrop} onPress={() => setRolePicker(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <FlatList
-              data={roles}
-              keyExtractor={(r) => String(r.id)}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={styles.pickRow}
-                  onPress={() => {
-                    setRoleName(item.name);
-                    setRolePicker(false);
-                  }}
-                >
-                  <Text style={styles.cardTitle}>{item.name}</Text>
-                  {item.description ? <Muted>{item.description}</Muted> : null}
-                </Pressable>
-              )}
-            />
-            <Button title="Fermer" variant="ghost" onPress={() => setRolePicker(false)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
     </Screen>
+  );
+}
+
+function Info({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   top: { paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
-  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
+  roleFilters: { gap: 8, paddingVertical: 2 },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  filterChipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  filterChipText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
+  filterChipTextOn: { color: colors.surface },
+  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: listBottomPadding(24), gap: 10 },
   card: {
-    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  avatar: { width: 48, height: 48, borderRadius: 16 },
+  avatarEmpty: { backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { fontSize: 18, fontWeight: '700', color: colors.inkSoft },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  rolePill: {
+    maxWidth: 108,
+    borderRadius: 999,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  rolePillText: { fontSize: 11, fontWeight: '700', color: colors.inkSoft },
+  viewHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 8 },
+  viewAvatar: { width: 72, height: 72, borderRadius: 22 },
+  viewInitial: { fontSize: 26, fontWeight: '700', color: colors.inkSoft },
+  viewActions: { gap: 8, marginTop: 16, marginBottom: 28 },
+  infoRow: {
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 8 },
+  infoLabel: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  infoValue: { fontSize: 16, fontWeight: '600', color: colors.text, marginTop: 2 },
   link: { color: colors.primaryFallback, fontWeight: '700' },
   danger: { color: colors.danger, fontWeight: '700' },
   successBanner: {
@@ -549,19 +768,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECFDF5',
   },
   successText: { color: '#065F46', fontWeight: '600' },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    maxHeight: '90%',
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    gap: 8,
-  },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 },
   chip: {
     borderWidth: 1,
@@ -571,7 +777,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   chipLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  chipValue: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2 },
+  chipValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  chipValue: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2, flex: 1 },
+  roleChoices: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
   subHead: {
     marginTop: 10,
     marginBottom: 4,
@@ -589,4 +804,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  pickRowOn: { backgroundColor: colors.surface, marginHorizontal: -12, paddingHorizontal: 12 },
 });

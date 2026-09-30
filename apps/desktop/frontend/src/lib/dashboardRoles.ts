@@ -38,7 +38,7 @@ const ROLES_ECONOME: string[] = ["ECONOME"];
 const ROLES_COMPTABLE: string[] = ["COMPTABLE"];
 
 /** Rôles qui voient Discipline (appel, retard, points disciplinaires). */
-const ROLES_DISCIPLINE: string[] = ["DISCIPLINE"];
+const ROLES_DISCIPLINE: string[] = ["DISCIPLINE", "SURVEILLANT_GENERAL"];
 
 /** Rôles photographe (photos élèves uniquement via onglet Photographie). */
 const ROLES_PHOTOGRAPHY: string[] = ["PHOTOGRAPHER"];

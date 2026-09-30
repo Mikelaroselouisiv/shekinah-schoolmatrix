@@ -1,38 +1,42 @@
 import { useEffect, useMemo } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { EmptyState, Screen } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { canAccessPermission, ROLES_FULL } from '../../lib/permissions';
-import { getImageUrl } from '../../services/api';
-import { colors } from '../../theme/tokens';
-import type { FinanceStackParamList, FinanceFocus } from '../../navigation/types';
+import { colors, softTint } from '../../theme/tokens';
+import { listBottomPadding } from '../../lib/layout';
+import type { FinanceFocus, FinanceStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<FinanceStackParamList, 'FinanceMain'>;
 
 const MODULES: {
   id: FinanceFocus;
   title: string;
+  hint: string;
   permission: string;
   icon: keyof typeof Ionicons.glyphMap;
 }[] = [
   {
     id: 'paiements',
     title: 'Paiements',
+    hint: 'Encaisser un élève et voir l’historique',
     permission: 'finance',
     icon: 'wallet-outline',
   },
   {
     id: 'depenses',
     title: 'Dépenses',
+    hint: 'Brouillons, validation et caisse',
     permission: 'finance',
     icon: 'card-outline',
   },
   {
     id: 'moniteur',
     title: 'Moniteur',
+    hint: 'Suivi des recettes et des dépenses',
     permission: 'stats-financieres',
     icon: 'stats-chart-outline',
   },
@@ -40,9 +44,10 @@ const MODULES: {
 
 export function FinanceScreen({ navigation, route }: Props) {
   const { roleName, rolePermissions } = useAuth();
-  const { home, context, theme } = useSchool();
+  const { theme } = useSchool();
   const isFull = ROLES_FULL.includes(roleName) || rolePermissions.includes('full_access');
-  const logoUri = getImageUrl(context?.school?.logo_url || home?.logo_url);
+  const wash = softTint(theme.accent, 0.78);
+  const washSoft = softTint(theme.accent, 0.9);
 
   const available = useMemo(
     () =>
@@ -51,13 +56,6 @@ export function FinanceScreen({ navigation, route }: Props) {
       ),
     [isFull, roleName, rolePermissions],
   );
-
-  function goHome() {
-    const parent = navigation.getParent() as
-      | { navigate: (name: string) => void }
-      | undefined;
-    parent?.navigate('Home');
-  }
 
   function openModule(id: FinanceFocus) {
     if (!available.some((m) => m.id === id)) return;
@@ -91,46 +89,33 @@ export function FinanceScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen style={{ paddingHorizontal: 0 }}>
-      <ScrollView
-        contentContainerStyle={styles.centeredContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Pressable
-          onPress={goHome}
-          accessibilityRole="button"
-          accessibilityLabel="Retour à l’accueil"
-          style={({ pressed }) => [styles.logoWrap, pressed && { opacity: 0.85 }]}
-        >
-          <Image
-            source={logoUri ? { uri: logoUri } : require('../../../assets/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </Pressable>
-
-        <View style={styles.grid}>
-          {available.map((m) => (
+    <Screen style={styles.screen}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={[styles.orb, styles.orbTop, { backgroundColor: washSoft }]} />
+        <View style={[styles.orb, styles.orbMid, { backgroundColor: wash }]} />
+      </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.head}>
+          <Text style={styles.kicker}>Finance</Text>
+          <Text style={styles.title}>Tableau de bord</Text>
+        </View>
+        <View style={styles.list}>
+          {available.map((item) => (
             <Pressable
-              key={m.id}
-              onPress={() => openModule(m.id)}
-              style={({ pressed }) => [
-                styles.tile,
-                pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-              ]}
+              key={item.id}
+              onPress={() => openModule(item.id)}
+              accessibilityRole="button"
+              accessibilityLabel={item.title}
+              style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
             >
-              <View
-                style={[
-                  styles.iconRing,
-                  {
-                    borderColor: theme.accent,
-                    backgroundColor: theme.accentTint,
-                  },
-                ]}
-              >
-                <Ionicons name={m.icon} size={30} color={theme.accent} />
+              <View style={[styles.actionIcon, { backgroundColor: theme.accentTint }]}>
+                <Ionicons name={item.icon} size={22} color={theme.accent} />
               </View>
-              <Text style={styles.tileLabel}>{m.title}</Text>
+              <View style={styles.actionCopy}>
+                <Text style={styles.actionTitle}>{item.title}</Text>
+                <Text style={styles.actionHint}>{item.hint}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
             </Pressable>
           ))}
         </View>
@@ -140,54 +125,46 @@ export function FinanceScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  centeredContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+  screen: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
   },
-  logoWrap: {
-    alignSelf: 'center',
-    marginBottom: 28,
+  orb: { position: 'absolute', borderRadius: 999 },
+  orbTop: { width: 260, height: 260, top: -120, right: -80 },
+  orbMid: { width: 180, height: 180, top: 280, left: -80, opacity: 0.5 },
+  content: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: listBottomPadding(24), gap: 22 },
+  head: { gap: 4, paddingTop: 4 },
+  kicker: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
   },
-  logo: {
-    width: 96,
-    height: 96,
-  },
-  grid: {
+  title: { fontSize: 32, fontWeight: '600', letterSpacing: -0.6, color: colors.text },
+  list: { gap: 12 },
+  action: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    alignItems: 'center',
     gap: 14,
-  },
-  tile: {
-    width: '47%',
-    flexGrow: 1,
-    minWidth: '42%',
-    aspectRatio: 1,
-    maxHeight: 180,
     backgroundColor: colors.surface,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  actionPressed: { opacity: 0.92, transform: [{ scale: 0.985 }] },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    padding: 16,
   },
-  iconRing: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    textAlign: 'center',
-    letterSpacing: -0.2,
-  },
+  actionCopy: { flex: 1, gap: 2 },
+  actionTitle: { fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: colors.text },
+  actionHint: { fontSize: 13, fontWeight: '500', color: colors.textMuted },
 });

@@ -33,6 +33,10 @@ export class HomeworkAssignment {
   @Column({ type: 'date', nullable: true })
   due_date: string | null;
 
+  /** Barème facultatif (classe normale). Vide si le professeur ne note pas. */
+  @Column({ type: 'numeric', precision: 6, scale: 2, nullable: true })
+  coefficient: string | null;
+
   @ManyToOne(() => Class, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'class_id' })
   class: Class;

@@ -1,5 +1,5 @@
 /**
- * Jeu de données fictif pour Postgres DEV (shekinah-db-dev :5435 uniquement).
+ * Jeu de données fictif pour Postgres DEV (shekinah-db-dev :5436 uniquement).
  *
  * Usage (depuis shekinah-schoolmatrix-backend) :
  *   npm run seed:dev          (ou : node scripts/seed-dev-demo.js)
@@ -77,13 +77,13 @@ function birthForLevel(level, i) {
 }
 
 function nisu(n) {
-  return `PAR${String(n).padStart(6, '0')}`;
+  return `SHE${String(n).padStart(6, '0')}`;
 }
 
 async function main() {
   const host = process.env.DB_HOST || 'localhost';
-  const port = Number(process.env.DB_PORT || 5435);
-  if (!['localhost', '127.0.0.1'].includes(host) || ![5435, 5438].includes(port)) {
+  const port = Number(process.env.DB_PORT || 5436);
+  if (!['localhost', '127.0.0.1'].includes(host) || ![5436, 5437].includes(port)) {
     throw new Error(`Refus : ce script ne cible que Postgres DEV local (reçu ${host}:${port}).`);
   }
 
@@ -960,7 +960,7 @@ async function main() {
         (SELECT COUNT(*) FROM schedule_slot) AS slots
     `);
 
-    console.log('\n=== Seed DEV Eureka terminé ===');
+    console.log('\n=== Seed DEV Shekinah terminé ===');
     console.log(counts.rows[0]);
     console.log(`\nMot de passe de TOUS les comptes fictifs : ${DEMO_PASSWORD}`);
     console.log('\nComptes staff (email ou téléphone) :');

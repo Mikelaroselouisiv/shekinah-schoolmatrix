@@ -25,7 +25,14 @@ export type MobileFamilyId =
   | "admin"
   | "account";
 
-export type MobileTabId = "home" | "work" | "students" | "finance" | "more" | "children";
+export type MobileTabId =
+  | "home"
+  | "work"
+  | "students"
+  | "finance"
+  | "more"
+  | "children"
+  | "profile";
 
 export type DeliveryPhase = "P0" | "P1" | "P2" | "P3" | "P4" | "P5" | "desktop-only";
 
@@ -73,7 +80,8 @@ export const MOBILE_TABS: MobileTabDef[] = [
   },
   { id: "students", label: "Élèves", purpose: "Recherche → Fiche élève" },
   { id: "finance", label: "Finance", purpose: "Paiements / dépenses / moniteur si droits" },
-  { id: "more", label: "Menu", purpose: "Menu par familles + compte" },
+  { id: "profile", label: "Profil", purpose: "Réglages du compte et enfants liés" },
+  { id: "more", label: "Menu", purpose: "Menu par familles, ouvert par le bouton en haut à droite" },
 ];
 
 /** Familles du hub Plus. */
@@ -92,7 +100,8 @@ export const MOBILE_FAMILIES: MobileFamilyDef[] = [
  */
 export const WORK_TAB_BY_ROLE: Record<string, { screenId: string; secondaryScreenIds?: string[] }> = {
   DISCIPLINE: { screenId: "discipline", secondaryScreenIds: ["discipline"] },
-  TEACHER: { screenId: "teacher-hub", secondaryScreenIds: ["grades"] },
+  SURVEILLANT_GENERAL: { screenId: "discipline", secondaryScreenIds: ["discipline"] },
+  TEACHER: { screenId: "teacher-hub" },
   ECONOME: { screenId: "economat", secondaryScreenIds: ["depenses"] },
   PHOTOGRAPHER: { screenId: "photography" },
   PARENT: { screenId: "fiche-eleve" },

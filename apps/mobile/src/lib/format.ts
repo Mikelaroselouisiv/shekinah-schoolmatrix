@@ -7,23 +7,42 @@ export function formatMoney(value: number | null | undefined): string {
   });
 }
 
-/** Date ISO / Date → JJ/MM/AAAA */
+const HAITI_TZ = 'America/Port-au-Prince';
+
+/** Aujourd’hui selon le calendrier d’Haïti. */
+export function haitiToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: HAITI_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/** Date ISO / Date → JJ/MM/AAAA, en heure d’Haïti pour un instant. */
 export function formatDateJJMMAAAA(value: string | Date | null | undefined): string {
   if (!value) return '—';
-  const d = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) {
-    // déjà JJ/MM/AAAA ?
-    if (typeof value === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
-    return String(value);
+  if (typeof value === 'string') {
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
   }
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return String(value);
+  const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: HAITI_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(d)
+    .split('-');
+  return `${day}/${month}/${year}`;
 }
 
 export function formatTodayLong(): string {
   return new Date().toLocaleDateString('fr-FR', {
+    timeZone: HAITI_TZ,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -31,8 +50,12 @@ export function formatTodayLong(): string {
   });
 }
 
-/** Date locale → YYYY-MM-DD (API attendance). */
-export function toYYYYMMDD(d: Date = new Date()): string {
+/**
+ * Sans argument : aujourd’hui en Haïti.
+ * Avec une date choisie : le jour calendaire de cette date, sans décalage.
+ */
+export function toYYYYMMDD(d?: Date): string {
+  if (!d) return haitiToday();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -49,9 +72,12 @@ export function parseYYYYMMDD(iso: string | null | undefined): Date | null {
 
 export function shiftYYYYMMDD(iso: string, deltaDays: number): string {
   const [y, m, d] = iso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + deltaDays);
-  return toYYYYMMDD(dt);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  utc.setUTCDate(utc.getUTCDate() + deltaDays);
+  const yyyy = utc.getUTCFullYear();
+  const mm = String(utc.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(utc.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export function yyyymmddToJJMMAAAA(iso: string): string {

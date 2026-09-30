@@ -574,6 +574,112 @@ export class TeachersService {
     return { deleted: true };
   }
 
+  /**
+   * Classe + salle du professeur, uniquement là où il est affecté
+   * (pas toutes les salles de la classe).
+   */
+  async getTeacherPlaces(
+    teacherId: number,
+  ): Promise<{ class_name: string; room_name: string | null }[]> {
+    const byKey = new Map<string, { class_name: string; room_name: string | null }>();
+
+    const add = (
+      classId: string | undefined,
+      className: string | undefined,
+      roomId?: string | null,
+      roomName?: string | null,
+    ) => {
+      const name = (className ?? '').trim();
+      if (!name || !classId) return;
+      const room = (roomName ?? '').trim() || null;
+      const key = `${classId}|${roomId ?? room ?? ''}`;
+      const prev = byKey.get(key);
+      if (prev?.room_name && !room) return;
+      byKey.set(key, { class_name: name, room_name: room ?? prev?.room_name ?? null });
+    };
+
+    const read = (row: Record<string, unknown>, key: string): string => {
+      const value = row[key] ?? row[key.toLowerCase()];
+      return value == null ? '' : String(value).trim();
+    };
+
+    const subjects = await this.teacherClassSubjectRepo
+      .createQueryBuilder('a')
+      .leftJoin('a.class', 'class')
+      .leftJoin('a.room', 'room')
+      .where('a.teacher_id = :teacherId', { teacherId })
+      .select('class.id', 'class_id')
+      .addSelect('class.name', 'class_name')
+      .addSelect('a.room_id', 'room_id')
+      .addSelect('room.name', 'room_name')
+      .getRawMany<Record<string, unknown>>();
+    for (const row of subjects) {
+      add(read(row, 'class_id'), read(row, 'class_name'), read(row, 'room_id'), read(row, 'room_name'));
+    }
+
+    const slots = await this.scheduleSlotRepo
+      .createQueryBuilder('slot')
+      .leftJoin('slot.class', 'class')
+      .leftJoin('slot.room', 'room')
+      .where('slot.teacher_id = :teacherId', { teacherId })
+      .select('class.id', 'class_id')
+      .addSelect('class.name', 'class_name')
+      .addSelect('slot.room_id', 'room_id')
+      .addSelect('room.name', 'room_name')
+      .getRawMany<Record<string, unknown>>();
+    for (const row of slots) {
+      add(read(row, 'class_id'), read(row, 'class_name'), read(row, 'room_id'), read(row, 'room_name'));
+    }
+
+    const subjectRows = await this.teacherClassSubjectRepo.find({
+      where: { teacher: { id: teacherId } },
+      relations: ['class', 'room'],
+    });
+    for (const assignment of subjectRows) {
+      add(
+        assignment.class?.id ?? assignment.class_id,
+        assignment.class?.name,
+        assignment.room?.id ?? assignment.room_id,
+        assignment.room?.name,
+      );
+    }
+
+    const slotRows = await this.scheduleSlotRepo.find({
+      where: { teacher: { id: teacherId } },
+      relations: ['class', 'room'],
+    });
+    for (const slot of slotRows) {
+      add(slot.class?.id, slot.class?.name, slot.room?.id, slot.room?.name);
+    }
+
+    const missingIds = [
+      ...new Set(
+        [...byKey.entries()]
+          .filter(([, place]) => !place.room_name)
+          .map(([key]) => key.slice(key.indexOf('|') + 1))
+          .filter(Boolean),
+      ),
+    ];
+    if (missingIds.length) {
+      const rooms = await this.roomRepo.find({ where: { id: In(missingIds) } });
+      const names = new Map(rooms.map((room) => [room.id, room.name?.trim() || '']));
+      for (const [key, place] of [...byKey.entries()]) {
+        if (place.room_name) continue;
+        const roomId = key.slice(key.indexOf('|') + 1);
+        const roomName = names.get(roomId);
+        if (roomName) byKey.set(key, { ...place, room_name: roomName });
+      }
+    }
+
+    return [...byKey.values()]
+      .filter((place) => place.class_name)
+      .sort(
+        (a, b) =>
+          a.class_name.localeCompare(b.class_name, 'fr') ||
+          (a.room_name ?? '').localeCompare(b.room_name ?? '', 'fr'),
+      );
+  }
+
   /** Classes dans lesquelles ce professeur enseigne (au moins une matière). */
   async getTeacherClassesForGrades(teacherId: number) {
     const list = await this.teacherClassSubjectRepo.find({
@@ -801,6 +907,44 @@ export class TeachersService {
       where: { user_id: teacherId, class_id: classId },
     });
     return !!viaClass;
+  }
+
+  async getTeacherRoomIdsForClass(teacherId: number, classId: string): Promise<string[]> {
+    const read = (row: Record<string, unknown>) => {
+      const value = row.room_id ?? row.ROOM_ID;
+      return value == null ? '' : String(value).trim();
+    };
+    const [subjects, slots] = await Promise.all([
+      this.teacherClassSubjectRepo
+        .createQueryBuilder('a')
+        .select('a.room_id', 'room_id')
+        .where('a.teacher_id = :teacherId', { teacherId })
+        .andWhere('a.class_id = :classId', { classId })
+        .andWhere('a.room_id IS NOT NULL')
+        .getRawMany<Record<string, unknown>>(),
+      this.scheduleSlotRepo
+        .createQueryBuilder('slot')
+        .select('slot.room_id', 'room_id')
+        .where('slot.teacher_id = :teacherId', { teacherId })
+        .andWhere('slot.class_id = :classId', { classId })
+        .andWhere('slot.room_id IS NOT NULL')
+        .getRawMany<Record<string, unknown>>(),
+    ]);
+    return [...new Set([...subjects, ...slots].map(read).filter(Boolean))];
+  }
+
+  /** Élèves actifs de la classe qui sont dans les salles de ce professeur. */
+  async findActiveStudentsInTeacherRooms(teacherId: number, classId: string): Promise<Student[]> {
+    const roomIds = await this.getTeacherRoomIdsForClass(teacherId, classId);
+    if (!roomIds.length) return [];
+    return this.studentRepo
+      .createQueryBuilder('s')
+      .where('s.class_id = :classId', { classId })
+      .andWhere('s.active = true')
+      .andWhere('s.room_id IN (:...roomIds)', { roomIds })
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
+      .getMany();
   }
 
   async assertTeacherAssignedToClass(teacherId: number, classId: string): Promise<void> {

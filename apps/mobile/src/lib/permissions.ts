@@ -47,11 +47,22 @@ export const TEACHER_ROLE_NAMES: string[] = [
 ];
 
 export function isTeacherRole(role?: string | null): boolean {
-  return TEACHER_ROLE_NAMES.includes((role ?? '').toUpperCase().trim());
+  const key = (role ?? '').toUpperCase().trim();
+  if (TEACHER_ROLE_NAMES.includes(key)) return true;
+  return key.includes('TEACHER') || key.includes('PROFESSEUR') || key.includes('ENSEIGNANT');
 }
 
 export function isParentRole(role?: string | null): boolean {
   return (role ?? '').toUpperCase().trim() === 'PARENT';
+}
+
+export function isSupervisorRole(role?: string | null): boolean {
+  const key = (role ?? '').toUpperCase().trim();
+  return key === 'SURVEILLANT_GENERAL' || key === 'DISCIPLINE';
+}
+
+export function isEconomeRole(role?: string | null): boolean {
+  return (role ?? '').toUpperCase().trim() === 'ECONOME';
 }
 
 const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
@@ -62,7 +73,7 @@ const ROLES_HORAIRES_SEUL = [
 ];
 const ROLES_ECONOME = ['ECONOME'];
 const ROLES_COMPTABLE = ['COMPTABLE'];
-const ROLES_DISCIPLINE = ['DISCIPLINE'];
+const ROLES_DISCIPLINE = ['DISCIPLINE', 'SURVEILLANT_GENERAL'];
 const ROLES_PHOTOGRAPHY = ['PHOTOGRAPHER'];
 
 type NavItem = {
@@ -105,7 +116,6 @@ const DESKTOP_NAV: NavItem[] = [
       ...ROLES_HORAIRES_SEUL,
       ...ROLES_ECONOME,
       'PARENT',
-      ...TEACHER_ROLE_NAMES,
     ],
   },
   { permissionKey: 'photography', allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY] },
@@ -156,6 +166,12 @@ export function canAccessPermission(
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
   if (isTeacherRole(roleName) && permissionKey === 'teacher-hub') return true;
+  if (
+    isTeacherRole(roleName) &&
+    (permissionKey === 'fiche-eleve' || permissionKey === 'students')
+  ) {
+    return false;
+  }
   if (rolePermissions && rolePermissions.length > 0) {
     return canSeeByPermissions(permissionKey, rolePermissions);
   }
@@ -241,9 +257,10 @@ export function getVisibleTabIds(
     if (hasKids) tabs.push('children');
   }
 
-  // Annuaire professionnel — pas Discipline / Photo / Parent.
+  // Annuaire professionnel — pas Discipline / Photo / Parent / Professeur.
   if (
     roleName !== 'PARENT' &&
+    !isTeacherRole(roleName) &&
     (canAccessPermission(roleName, 'fiche-eleve', rolePermissions) ||
       canAccessPermission(roleName, 'students', rolePermissions) ||
       ROLES_FULL.includes(roleName))
@@ -255,7 +272,7 @@ export function getVisibleTabIds(
     tabs.push('finance');
   }
 
-  tabs.push('more');
+  tabs.push('profile');
   return tabs;
 }
 
@@ -279,6 +296,8 @@ export function screensForFamilyVisible(
     if (s.phase === 'desktop-only') return false;
     // Parent : fiches via onglet Enfants, pas via Menu.
     if (roleName === 'PARENT' && s.id === 'fiche-eleve') return false;
+    // Professeur : pas de fiche élève dans le menu.
+    if (isTeacherRole(roleName) && s.id === 'fiche-eleve') return false;
     return canAccessPermission(roleName, s.permissionKey, rolePermissions);
   });
 }

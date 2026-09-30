@@ -132,12 +132,12 @@ const DEFAULT_ROLES: {
   },
   {
     name: 'SURVEILLANT_GENERAL',
-    description: 'Surveillant / Surveillante général(e) — discipline',
+    description: 'Surveillant général — appel, retards, points et mesures',
     permissions: PERMS_SURVEILLANT,
   },
   {
     name: 'DISCIPLINE',
-    description: 'Alias Surveillant général (rétrocompatibilité)',
+    description: 'Surveillant général — appel, retards, points et mesures',
     permissions: PERMS_SURVEILLANT,
   },
   {
@@ -175,6 +175,9 @@ const LEGACY_ROLE_DESCRIPTIONS = new Set([
   'Directeur / Directrice pédagogique — secondaire',
   'Alias Directeur pédagogique 1er et 2e cycles fondamental',
   'Alias Directeur pédagogique secondaire',
+  'Responsable discipline (présence, retards, pointage)',
+  'Surveillant / Surveillante général(e) — discipline',
+  'Alias Surveillant général (rétrocompatibilité)',
 ]);
 
 @Injectable()
@@ -240,6 +243,13 @@ export class RolesService {
         exists.description = r.description;
         changed = true;
       }
+      if (
+        (r.name === 'DISCIPLINE' || r.name === 'SURVEILLANT_GENERAL') &&
+        JSON.stringify(exists.permissions ?? []) !== JSON.stringify(PERMS_SURVEILLANT)
+      ) {
+        exists.permissions = [...PERMS_SURVEILLANT];
+        changed = true;
+      }
       if (changed) await this.rolesRepo.save(exists);
     }
   }
@@ -301,7 +311,22 @@ export class RolesService {
     if (params.education_levels !== undefined) {
       role.education_levels = normalizeEducationLevels(params.education_levels);
     }
-    return this.rolesRepo.save(role);
+    const saved = await this.rolesRepo.save(role);
+    await this.mirrorDisciplineTwin(saved);
+    return saved;
+  }
+
+  /** DISCIPLINE et SURVEILLANT_GENERAL sont le même poste : mêmes droits. */
+  private async mirrorDisciplineTwin(role: Role): Promise<void> {
+    const name = role.name.toUpperCase();
+    const otherName =
+      name === 'DISCIPLINE' ? 'SURVEILLANT_GENERAL' : name === 'SURVEILLANT_GENERAL' ? 'DISCIPLINE' : null;
+    if (!otherName) return;
+    const other = await this.rolesRepo.findOne({ where: { name: otherName } });
+    if (!other) return;
+    other.permissions = role.permissions ? [...role.permissions] : null;
+    other.education_levels = role.education_levels ? [...role.education_levels] : null;
+    await this.rolesRepo.save(other);
   }
 
   async delete(id: number): Promise<{ deleted: boolean }> {
