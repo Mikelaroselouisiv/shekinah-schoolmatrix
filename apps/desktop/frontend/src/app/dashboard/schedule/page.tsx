@@ -9,9 +9,9 @@ import { ScheduleGridModal } from "@/src/components/ScheduleGridModal";
 import {
   cellKey,
   examCellKey,
-  mondayOf,
-  todayIso,
+  defaultExamRange,
 } from "@/src/lib/scheduleGrid";
+import { periodScopeFromLevel } from "@/src/lib/educationLevels";
 
 type ScheduleSlot = {
   id: string;
@@ -36,6 +36,8 @@ type ExamSchedule = {
   subject_id: string;
   subject_name: string;
   period: string;
+  period_id?: string | null;
+  academic_year_id?: string | null;
   exam_date: string;
   start_time: string;
   end_time: string;
@@ -55,11 +57,11 @@ type ExtracurricularActivity = {
   dress_code: string | null;
 };
 
-type ClassItem = { id: string; name: string };
+type ClassItem = { id: string; name: string; level?: string | null };
 type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
-type Period = { id: string; name: string };
+type Period = { id: string; name: string; scope?: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherItem = { id: number; first_name?: string | null; last_name?: string | null };
 type ClassMoment = {
@@ -126,8 +128,10 @@ export default function SchedulePage() {
   const [gridAssignments, setGridAssignments] = useState<RoomAssignment[]>([]);
   const [gridError, setGridError] = useState("");
   const [savingCell, setSavingCell] = useState<string | null>(null);
-  const [examWeekStart, setExamWeekStart] = useState(mondayOf(todayIso()));
+  const [examRangeStart, setExamRangeStart] = useState(() => defaultExamRange().start);
+  const [examRangeEnd, setExamRangeEnd] = useState(() => defaultExamRange().end);
   const [examGridPeriod, setExamGridPeriod] = useState("");
+  const [examGridYearId, setExamGridYearId] = useState("");
 
   const [teachers, setTeachers] = useState<TeacherItem[]>([]);
   const [moments, setMoments] = useState<ClassMoment[]>([]);
@@ -322,13 +326,37 @@ export default function SchedulePage() {
     loadPeriods(academicYearFilter || defaultYearId);
   }, [academicYearFilter, defaultYearId]);
 
+  async function handleExamYearChange(yearId: string, classId?: string | null) {
+    setExamGridYearId(yearId);
+    if (!yearId) {
+      setExamGridPeriod("");
+      setPeriods([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${yearId}`);
+      const data = await res.json();
+      const loaded: Period[] = data.periods ?? [];
+      setPeriods(loaded);
+      const level = classes.find((c) => c.id === (classId ?? gridRoom?.class_id))?.level;
+      const scoped = loaded.filter(
+        (p) => (p.scope || "ECOLE") === periodScopeFromLevel(level),
+      );
+      setExamGridPeriod(scoped[0]?.id ?? "");
+    } catch {
+      setPeriods([]);
+      setExamGridPeriod("");
+    }
+  }
+
   async function openRoomGrid(room: Room) {
     setGridRoom(room);
     setGridError("");
     setGridSubjects([]);
     setGridAssignments([]);
     if (tab === "examens") {
-      setExamGridPeriod((prev) => prev || defaultPeriodName);
+      const yearId = academicYearFilter || defaultYearId;
+      await handleExamYearChange(yearId, room.class_id);
     }
     if (!room.class_id) return;
     try {
@@ -480,8 +508,9 @@ export default function SchedulePage() {
 
   async function handleExamCell(date: string, start: string, end: string, subjectId: string) {
     if (!gridRoom?.class_id) return;
-    if (!examGridPeriod) {
-      setGridError("Choisissez d’abord une période.");
+    const period = periods.find((p) => p.id === examGridPeriod);
+    if (!period) {
+      setGridError("Choisissez d’abord une année, puis une période.");
       return;
     }
     const key = examCellKey(date, start);
@@ -489,7 +518,8 @@ export default function SchedulePage() {
       (ex) =>
         ex.class_id === gridRoom.class_id &&
         (ex.exam_date || "").slice(0, 10) === date &&
-        examCellKey(ex.exam_date, ex.start_time) === key,
+        examCellKey(ex.exam_date, ex.start_time) === key &&
+        (ex.period_id === period.id || (!ex.period_id && ex.period === period.name)),
     );
     setSavingCell(key);
     setGridError("");
@@ -502,7 +532,11 @@ export default function SchedulePage() {
       } else if (existing) {
         const res = await fetchWithAuth(`${API_BASE}/exam-schedules/${existing.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ subject_id: subjectId, period: examGridPeriod }),
+          body: JSON.stringify({
+            subject_id: subjectId,
+            period_id: period.id,
+            academic_year_id: examGridYearId || undefined,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
@@ -512,7 +546,8 @@ export default function SchedulePage() {
           body: JSON.stringify({
             class_id: gridRoom.class_id,
             subject_id: subjectId,
-            period: examGridPeriod,
+            period_id: period.id,
+            academic_year_id: examGridYearId || undefined,
             exam_date: date,
             start_time: start,
             end_time: end,
@@ -631,11 +666,18 @@ export default function SchedulePage() {
     if (!gridRoom?.class_id) return map;
     for (const ex of exams) {
       if (ex.class_id !== gridRoom.class_id) continue;
+      if (
+        examGridPeriod &&
+        ex.period_id !== examGridPeriod &&
+        ex.period !== periods.find((p) => p.id === examGridPeriod)?.name
+      ) {
+        continue;
+      }
       const date = (ex.exam_date || "").slice(0, 10);
       map[examCellKey(date, ex.start_time)] = { id: ex.id, subject_id: ex.subject_id };
     }
     return map;
-  }, [exams, gridRoom]);
+  }, [exams, gridRoom, examGridPeriod, periods]);
 
   function roomClassName(room: Room) {
     return classes.find((c) => c.id === room.class_id)?.name ?? "";
@@ -976,11 +1018,20 @@ export default function SchedulePage() {
           subjects={gridSubjects}
           courseCells={courseCells}
           examCells={examCells}
-          examWeekStart={examWeekStart}
-          onExamWeekStart={setExamWeekStart}
+          examRangeStart={examRangeStart}
+          examRangeEnd={examRangeEnd}
+          onExamRangeStart={setExamRangeStart}
+          onExamRangeEnd={setExamRangeEnd}
           examPeriod={examGridPeriod}
           onExamPeriod={setExamGridPeriod}
-          periods={periods}
+          academicYears={academicYears}
+          examAcademicYearId={examGridYearId}
+          onExamAcademicYear={(id) => void handleExamYearChange(id)}
+          periods={periods.filter(
+            (p) =>
+              (p.scope || "ECOLE") ===
+              periodScopeFromLevel(classes.find((c) => c.id === gridRoom?.class_id)?.level),
+          )}
           savingKey={savingCell}
           error={gridError}
           onClose={() => {

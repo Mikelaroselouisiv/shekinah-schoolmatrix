@@ -50,3 +50,14 @@ export const MATERIALS_LEVELS: EducationLevelKey[] = [
 export function isMaterialsCycle(level?: string | null): boolean {
   return !!level && (MATERIALS_LEVELS as string[]).includes(level);
 }
+
+export const PERIOD_SCOPES = [
+  { key: "PRESCOLAIRE", label: "Préscolaire" },
+  { key: "ECOLE", label: "École" },
+] as const;
+
+export type PeriodScope = (typeof PERIOD_SCOPES)[number]["key"];
+
+export function periodScopeFromLevel(level?: string | null): PeriodScope {
+  return (level ?? "").toUpperCase().trim() === "PRESCOLAIRE" ? "PRESCOLAIRE" : "ECOLE";
+}

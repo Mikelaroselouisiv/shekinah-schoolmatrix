@@ -1,11 +1,10 @@
-/** Jours affichés dans la grille horaire (lundi → samedi). */
+/** Jours affichés dans la grille horaire (lundi → vendredi). */
 export const SCHEDULE_DAYS = [
   { index: 1, label: "Lundi" },
   { index: 2, label: "Mardi" },
   { index: 3, label: "Mercredi" },
   { index: 4, label: "Jeudi" },
   { index: 5, label: "Vendredi" },
-  { index: 6, label: "Samedi" },
 ] as const;
 
 /** Créneaux d’une heure de 07:00 à 19:00. */
@@ -59,4 +58,59 @@ export function todayIso(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
+}
+
+/** Nombre max de semaines affichées dans la grille d’examens. */
+export const MAX_EXAM_WEEKS = 10;
+
+export type ExamWeekDay = {
+  index: number;
+  label: string;
+  date: string;
+  inRange: boolean;
+};
+
+export type ExamWeekBlock = {
+  weekStart: string;
+  days: ExamWeekDay[];
+};
+
+/** Normalise une plage (début ≤ fin) sans forcer le lundi. */
+export function orderedDateRange(start: string, end: string): { start: string; end: string } {
+  if (!start && !end) return { start: "", end: "" };
+  if (!start) return { start: end, end };
+  if (!end) return { start, end: start };
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
+/** Semaines lundi–vendredi qui recoupent la plage. Les jours hors plage restent visibles mais inactifs. */
+export function examWeeksInRange(startIso: string, endIso: string, maxWeeks = MAX_EXAM_WEEKS): ExamWeekBlock[] {
+  const { start, end } = orderedDateRange(startIso, endIso);
+  if (!start || !end) return [];
+  const weeks: ExamWeekBlock[] = [];
+  let cursor = mondayOf(start);
+  const lastMonday = mondayOf(end);
+  let guard = 0;
+  while (cursor <= lastMonday && guard < maxWeeks) {
+    weeks.push({
+      weekStart: cursor,
+      days: SCHEDULE_DAYS.map((day, i) => {
+        const date = addDays(cursor, i);
+        return {
+          index: day.index,
+          label: day.label,
+          date,
+          inRange: date >= start && date <= end,
+        };
+      }),
+    });
+    cursor = addDays(cursor, 7);
+    guard += 1;
+  }
+  return weeks;
+}
+
+export function defaultExamRange(): { start: string; end: string } {
+  const start = mondayOf(todayIso());
+  return { start, end: addDays(start, 11) };
 }

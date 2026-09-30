@@ -24,11 +24,15 @@ export class ExamScheduleController {
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period') period?: string,
+    @Query('period_id') periodId?: string,
+    @Query('academic_year_id') academicYearId?: string,
   ) {
     const list = await this.examScheduleService.findAll({
       class_id: classId,
       subject_id: subjectId,
       period,
+      period_id: periodId,
+      academic_year_id: academicYearId,
     });
     return { ok: true, exam_schedules: list };
   }
@@ -46,33 +50,26 @@ export class ExamScheduleController {
     body: {
       class_id: string;
       subject_id: string;
-      period: string;
+      period?: string;
+      period_id?: string;
+      academic_year_id?: string;
       exam_date: string;
       start_time: string;
       end_time: string;
     },
   ) {
-    const exam = await this.examScheduleService.create({
+    const saved = await this.examScheduleService.create({
       class_id: body.class_id,
       subject_id: body.subject_id,
       period: body.period,
+      period_id: body.period_id,
+      academic_year_id: body.academic_year_id,
       exam_date: body.exam_date,
       start_time: body.start_time,
       end_time: body.end_time,
     });
-    return {
-      ok: true,
-      exam_schedule: {
-        id: exam.id,
-        class_id: exam.class?.id ?? (exam as any).class_id,
-        subject_id: exam.subject?.id ?? (exam as any).subject_id,
-        period: exam.period,
-        exam_date: exam.exam_date,
-        start_time: exam.start_time,
-        end_time: exam.end_time,
-        created_at: exam.created_at,
-      },
-    };
+    const exam = await this.examScheduleService.findOne(saved.id);
+    return { ok: true, exam_schedule: exam };
   }
 
   @DenyParents()
@@ -84,12 +81,15 @@ export class ExamScheduleController {
       class_id: string;
       subject_id: string;
       period: string;
+      period_id: string;
+      academic_year_id: string;
       exam_date: string;
       start_time: string;
       end_time: string;
     }>,
   ) {
-    const exam = await this.examScheduleService.update(id, body);
+    await this.examScheduleService.update(id, body);
+    const exam = await this.examScheduleService.findOne(id);
     return { ok: true, exam_schedule: exam };
   }
 

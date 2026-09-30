@@ -61,7 +61,10 @@ type Props = {
   onExamRangeStart: (iso: string) => void;
   onExamRangeEnd: (iso: string) => void;
   examPeriod: string;
-  onExamPeriod: (name: string) => void;
+  onExamPeriod: (id: string) => void;
+  academicYears?: { id: string; name: string }[];
+  examAcademicYearId?: string;
+  onExamAcademicYear?: (id: string) => void;
   periods: Period[];
   savingKey: string | null;
   error?: string;
@@ -98,6 +101,9 @@ export function ScheduleGridModal({
   onExamRangeEnd,
   examPeriod,
   onExamPeriod,
+  academicYears = [],
+  examAcademicYearId = "",
+  onExamAcademicYear,
   periods,
   savingKey,
   error,
@@ -121,6 +127,7 @@ export function ScheduleGridModal({
   const [momentLabel, setMomentLabel] = useState("");
   const [momentDays, setMomentDays] = useState<number[]>(SCHEDULE_DAYS.map((d) => d.index));
   const panelRef = useRevealScroll<HTMLDivElement>(true, title);
+  const examPeriodName = periods.find((p) => p.id === examPeriod)?.name || "";
 
   function toggleMomentDay(day: number) {
     setMomentDays((prev) =>
@@ -266,15 +273,37 @@ export function ScheduleGridModal({
           <div className="border-b border-slate-200 bg-amber-50/70 px-5 py-3">
             <div className="flex flex-wrap items-end gap-3">
               <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600">Année académique</label>
+                <select
+                  value={examAcademicYearId}
+                  onChange={(e) => onExamAcademicYear?.(e.target.value)}
+                  className="class-input w-full max-w-[14rem] bg-white"
+                >
+                  <option value="">Sélectionner</option>
+                  {academicYears.map((ay) => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-600">Période</label>
                 <select
                   value={examPeriod}
                   onChange={(e) => onExamPeriod(e.target.value)}
+                  disabled={!examAcademicYearId}
                   className="class-input w-full max-w-[14rem] bg-white"
                 >
-                  <option value="">Sélectionner</option>
+                  <option value="">
+                    {examAcademicYearId
+                      ? periods.length
+                        ? "Sélectionner"
+                        : "Aucune période pour cette année"
+                      : "Choisir l’année d’abord"}
+                  </option>
                   {periods.map((p) => (
-                    <option key={p.id} value={p.name}>
+                    <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
                   ))}
@@ -360,7 +389,7 @@ export function ScheduleGridModal({
                       <th className="px-4 py-2.5">Date</th>
                       <th className="px-4 py-2.5">Horaire</th>
                       <th className="px-4 py-2.5">Matière</th>
-                      {examPeriod ? <th className="px-4 py-2.5">Période</th> : null}
+                      {examPeriodName ? <th className="px-4 py-2.5">Période</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -371,7 +400,7 @@ export function ScheduleGridModal({
                           {row.start} – {row.end.slice(0, 5)}
                         </td>
                         <td className="px-4 py-2.5 text-slate-900">{row.subject}</td>
-                        {examPeriod ? <td className="px-4 py-2.5 text-slate-600">{examPeriod}</td> : null}
+                        {examPeriodName ? <td className="px-4 py-2.5 text-slate-600">{examPeriodName}</td> : null}
                       </tr>
                     ))}
                   </tbody>

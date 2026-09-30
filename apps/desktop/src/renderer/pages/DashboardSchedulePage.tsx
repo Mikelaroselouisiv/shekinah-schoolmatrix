@@ -85,7 +85,7 @@ const LIST_DAY_COLUMNS_NO_MAT: PdfColumn[] = [
 const ACTIVITY_COLUMNS: PdfColumn[] = [
   { header: "Date", key: "date" },
   { header: "Horaire", key: "horaire" },
-  { header: "Classe", key: "classe" },
+  { header: "Classes", key: "classe" },
   { header: "Activité", key: "activite" },
   { header: "Objectif", key: "objectif" },
   { header: "Lieu", key: "lieu" },
@@ -98,7 +98,7 @@ const ACTIVITY_COLUMNS: PdfColumn[] = [
 const MEETING_COLUMNS: PdfColumn[] = [
   { header: "Date", key: "date" },
   { header: "Heure", key: "heure" },
-  { header: "Classe", key: "classe" },
+  { header: "Classes", key: "classe" },
   { header: "Objectif", key: "objectif" },
   { header: "Lieu", key: "lieu" },
 ];
@@ -107,7 +107,7 @@ const EXAM_PERIOD_COLUMNS: PdfColumn[] = [
   { header: "Période", key: "periode" },
   { header: "Du", key: "debut" },
   { header: "Au", key: "fin" },
-  { header: "Classe", key: "classe" },
+  { header: "Classes", key: "classe" },
   { header: "Remise", key: "remise" },
 ];
 
@@ -123,10 +123,16 @@ function handoverTitle(level?: string | null): string {
   return (level ?? "").toUpperCase() === "PRESCOLAIRE" ? "Remise des carnets" : "Remise des bulletins";
 }
 
+function vacationKindLabel(kind?: string | null): string {
+  return kind === "CONGE" ? "Congé" : "Vacance";
+}
+
 const VACATION_COLUMNS: PdfColumn[] = [
+  { header: "Type", key: "type" },
   { header: "Début", key: "debut" },
   { header: "Fin", key: "fin" },
   { header: "Motif", key: "motif" },
+  { header: "Salles", key: "salles" },
 ];
 
 function slugify(value: string): string {
@@ -161,6 +167,8 @@ type ExamSchedule = {
   subject_id: string;
   subject_name: string;
   period: string;
+  period_id?: string | null;
+  academic_year_id?: string | null;
   exam_date: string;
   start_time: string;
   end_time: string;
@@ -220,6 +228,11 @@ type SchoolVacation = {
   start_date: string;
   end_date: string;
   motif: string;
+  kind?: string | null;
+  room_id?: string | null;
+  room_name?: string | null;
+  class_id?: string | null;
+  class_name?: string | null;
 };
 
 type ClassItem = { id: string; name: string; level?: string | null };
@@ -227,6 +240,19 @@ type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string; scope?: string };
+type ExamSchedule = {
+  id: string;
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+  period: string;
+  period_id?: string | null;
+  academic_year_id?: string | null;
+  exam_date: string;
+  start_time: string;
+  end_time: string;
+};
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {
@@ -557,6 +583,7 @@ export function DashboardSchedulePage() {
   const [examRangeStart, setExamRangeStart] = useState(() => defaultExamRange().start);
   const [examRangeEnd, setExamRangeEnd] = useState(() => defaultExamRange().end);
   const [examGridPeriod, setExamGridPeriod] = useState("");
+  const [examGridYearId, setExamGridYearId] = useState("");
 
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
   const [classSubjectsById, setClassSubjectsById] = useState<Record<string, { id: string; name: string }[]>>({});
@@ -604,7 +631,7 @@ export function DashboardSchedulePage() {
     location_text: "",
   };
   const [activityForm, setActivityForm] = useState(emptyActivityForm);
-  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [editingActivityIds, setEditingActivityIds] = useState<string[] | null>(null);
 
   const [showMeetingForm, setShowMeetingForm] = useState(false);
   const meetingFormRef = useRevealScroll<HTMLFormElement>(showMeetingForm);
@@ -618,7 +645,7 @@ export function DashboardSchedulePage() {
     location_text: "",
   };
   const [meetingForm, setMeetingForm] = useState(emptyMeetingForm);
-  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const [editingMeetingIds, setEditingMeetingIds] = useState<string[] | null>(null);
 
   const [showExamPeriodForm, setShowExamPeriodForm] = useState(false);
   const examPeriodFormRef = useRevealScroll<HTMLFormElement>(showExamPeriodForm);
@@ -631,7 +658,7 @@ export function DashboardSchedulePage() {
     class_ids: [] as string[],
   };
   const [examPeriodForm, setExamPeriodForm] = useState(emptyExamPeriodForm);
-  const [editingExamPeriodId, setEditingExamPeriodId] = useState<string | null>(null);
+  const [editingExamPeriodIds, setEditingExamPeriodIds] = useState<string[] | null>(null);
 
   const [showVacationForm, setShowVacationForm] = useState(false);
   const vacationFormRef = useRevealScroll<HTMLFormElement>(showVacationForm);
@@ -640,9 +667,11 @@ export function DashboardSchedulePage() {
     start_date: "",
     end_date: "",
     motif: "",
+    kind: "VACANCE" as "VACANCE" | "CONGE",
+    room_ids: [] as string[],
   };
   const [vacationForm, setVacationForm] = useState(emptyVacationForm);
-  const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
+  const [editingVacationIds, setEditingVacationIds] = useState<string[] | null>(null);
 
   const [saving, setSaving] = useState(false);
 
@@ -742,6 +771,7 @@ export function DashboardSchedulePage() {
     try {
       const params = new URLSearchParams();
       if (classFilter) params.set("class_id", classFilter);
+      if (academicYearFilter) params.set("academic_year_id", academicYearFilter);
       const res = await fetchWithAuth(`${API_BASE}/exam-schedules?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
@@ -908,14 +938,32 @@ export function DashboardSchedulePage() {
     setGridSubjects([]);
     setGridAssignments([]);
     if (tab === "examens") {
+      const yearId = academicYearFilter || defaultYearId;
+      setExamGridYearId(yearId);
+      let loaded = periods;
+      if (yearId) {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${yearId}`);
+          const data = await res.json();
+          loaded = data.periods ?? [];
+          setPeriods(loaded);
+        } catch {
+          loaded = [];
+          setPeriods([]);
+        }
+      }
       const scope = periodScopeFromLevel(level);
-      const scoped = periods.filter((p) => (p.scope || "ECOLE") === scope);
+      const scoped = loaded.filter((p) => (p.scope || "ECOLE") === scope);
       const preferred =
         scope === "PRESCOLAIRE" ? defaultPreschoolPeriodName : defaultPeriodName;
       setExamGridPeriod((prev) => {
-        if (prev && scoped.some((p) => p.name === prev)) return prev;
-        if (preferred && scoped.some((p) => p.name === preferred)) return preferred;
-        return scoped[0]?.name ?? "";
+        if (prev && scoped.some((p) => p.id === prev)) return prev;
+        const byName = scoped.find((p) => p.name === preferred);
+        if (byName) return byName.id;
+        if (prev && scoped.some((p) => p.name === prev)) {
+          return scoped.find((p) => p.name === prev)?.id ?? "";
+        }
+        return scoped[0]?.id ?? "";
       });
     }
     if (!room.class_id) return;
@@ -1173,8 +1221,9 @@ export function DashboardSchedulePage() {
 
   async function handleExamCell(date: string, start: string, end: string, subjectId: string) {
     if (!gridRoom?.class_id) return;
-    if (!examGridPeriod) {
-      setGridError("Choisissez d’abord une période.");
+    const period = periods.find((p) => p.id === examGridPeriod);
+    if (!period) {
+      setGridError("Choisissez d’abord une année, puis une période.");
       return;
     }
     const key = examCellKey(date, start);
@@ -1183,7 +1232,7 @@ export function DashboardSchedulePage() {
         ex.class_id === gridRoom.class_id &&
         (ex.exam_date || "").slice(0, 10) === date &&
         examCellKey(ex.exam_date, ex.start_time) === key &&
-        ex.period === examGridPeriod,
+        (ex.period_id === period.id || (!ex.period_id && ex.period === period.name)),
     );
     setSavingCell(key);
     setGridError("");
@@ -1196,7 +1245,11 @@ export function DashboardSchedulePage() {
       } else if (existing) {
         const res = await fetchWithAuth(`${API_BASE}/exam-schedules/${existing.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ subject_id: subjectId, period: examGridPeriod }),
+          body: JSON.stringify({
+            subject_id: subjectId,
+            period_id: period.id,
+            academic_year_id: examGridYearId || undefined,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
@@ -1206,7 +1259,8 @@ export function DashboardSchedulePage() {
           body: JSON.stringify({
             class_id: gridRoom.class_id,
             subject_id: subjectId,
-            period: examGridPeriod,
+            period_id: period.id,
+            academic_year_id: examGridYearId || undefined,
             exam_date: date,
             start_time: start,
             end_time: end,
@@ -1250,17 +1304,38 @@ export function DashboardSchedulePage() {
         location_kind: activityForm.location_kind,
         location_text: activityForm.location_kind === "OTHER" ? activityForm.location_text : null,
       };
-      const res = editingActivityId
-        ? await fetchWithAuth(`${API_BASE}/extracurricular-activities/${editingActivityId}`, {
-            method: "PATCH",
-            body: JSON.stringify({ ...payload, class_id: activityForm.class_ids[0] }),
-          })
-        : await fetchWithAuth(`${API_BASE}/extracurricular-activities`, {
-            method: "POST",
-            body: JSON.stringify({ ...payload, class_ids: activityForm.class_ids }),
-          });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
+      if (editingActivityIds) {
+        const existing = activities.filter((a) => editingActivityIds.includes(a.id));
+        const byClass = new Map(existing.map((a) => [a.class_id, a]));
+        const kept = new Set(activityForm.class_ids);
+        for (const classId of activityForm.class_ids) {
+          const row = byClass.get(classId);
+          const res = row
+            ? await fetchWithAuth(`${API_BASE}/extracurricular-activities/${row.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              })
+            : await fetchWithAuth(`${API_BASE}/extracurricular-activities`, {
+                method: "POST",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+        for (const row of existing) {
+          if (kept.has(row.class_id)) continue;
+          const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities/${row.id}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities`, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, class_ids: activityForm.class_ids }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
       closeActivityForm();
       loadActivities();
     } catch (e) {
@@ -1272,24 +1347,26 @@ export function DashboardSchedulePage() {
 
   function closeActivityForm() {
     setShowActivityForm(false);
-    setEditingActivityId(null);
+    setEditingActivityIds(null);
     setActivityForm(emptyActivityForm);
   }
 
   function openNewActivity() {
-    setEditingActivityId(null);
+    setEditingActivityIds(null);
     setActivityForm({ ...emptyActivityForm, academic_year_id: defaultYearId });
     setShowActivityForm(true);
   }
 
-  function openEditActivity(a: ExtracurricularActivity) {
-    setEditingActivityId(a.id);
+  function openEditActivity(items: ExtracurricularActivity[]) {
+    const a = items[0];
+    if (!a) return;
+    setEditingActivityIds(items.map((item) => item.id));
     setActivityForm({
       academic_year_id: a.academic_year_id || defaultYearId,
       activity_date: (a.activity_date || "").slice(0, 10),
       start_time: a.start_time || "14:00",
       end_time: a.end_time || "16:00",
-      class_ids: a.class_id ? [a.class_id] : [],
+      class_ids: items.map((item) => item.class_id).filter(Boolean),
       occasion: a.occasion || "",
       objective: a.objective || "",
       parents_concerned: !!a.parents_concerned,
@@ -1303,15 +1380,12 @@ export function DashboardSchedulePage() {
   }
 
   function toggleActivityClass(id: string) {
-    setActivityForm((f) => {
-      if (editingActivityId) return { ...f, class_ids: [id] };
-      return {
-        ...f,
-        class_ids: f.class_ids.includes(id)
-          ? f.class_ids.filter((x) => x !== id)
-          : [...f.class_ids, id],
-      };
-    });
+    setActivityForm((f) => ({
+      ...f,
+      class_ids: f.class_ids.includes(id)
+        ? f.class_ids.filter((x) => x !== id)
+        : [...f.class_ids, id],
+    }));
   }
 
   function toggleAllActivityClasses() {
@@ -1324,23 +1398,25 @@ export function DashboardSchedulePage() {
 
   function closeMeetingForm() {
     setShowMeetingForm(false);
-    setEditingMeetingId(null);
+    setEditingMeetingIds(null);
     setMeetingForm(emptyMeetingForm);
   }
 
   function openNewMeeting() {
-    setEditingMeetingId(null);
+    setEditingMeetingIds(null);
     setMeetingForm({ ...emptyMeetingForm, academic_year_id: defaultYearId });
     setShowMeetingForm(true);
   }
 
-  function openEditMeeting(m: ParentMeeting) {
-    setEditingMeetingId(m.id);
+  function openEditMeeting(items: ParentMeeting[]) {
+    const m = items[0];
+    if (!m) return;
+    setEditingMeetingIds(items.map((item) => item.id));
     setMeetingForm({
       academic_year_id: m.academic_year_id || defaultYearId,
       meeting_date: (m.meeting_date || "").slice(0, 10),
       start_time: m.start_time || "08:00",
-      class_ids: m.class_id ? [m.class_id] : [],
+      class_ids: items.map((item) => item.class_id).filter(Boolean),
       objective: m.objective || "",
       location_kind: m.location_kind === "OTHER" ? "OTHER" : "SCHOOL",
       location_text: m.location_text || "",
@@ -1349,13 +1425,10 @@ export function DashboardSchedulePage() {
   }
 
   function toggleMeetingClass(id: string) {
-    setMeetingForm((f) => {
-      if (editingMeetingId) return { ...f, class_ids: [id] };
-      return {
-        ...f,
-        class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
-      };
-    });
+    setMeetingForm((f) => ({
+      ...f,
+      class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
+    }));
   }
 
   async function handleSaveMeeting(e: React.FormEvent) {
@@ -1374,17 +1447,38 @@ export function DashboardSchedulePage() {
         location_kind: meetingForm.location_kind,
         location_text: meetingForm.location_kind === "OTHER" ? meetingForm.location_text : null,
       };
-      const res = editingMeetingId
-        ? await fetchWithAuth(`${API_BASE}/parent-meetings/${editingMeetingId}`, {
-            method: "PATCH",
-            body: JSON.stringify({ ...payload, class_id: meetingForm.class_ids[0] }),
-          })
-        : await fetchWithAuth(`${API_BASE}/parent-meetings`, {
-            method: "POST",
-            body: JSON.stringify({ ...payload, class_ids: meetingForm.class_ids }),
-          });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
+      if (editingMeetingIds) {
+        const existing = meetings.filter((m) => editingMeetingIds.includes(m.id));
+        const byClass = new Map(existing.map((m) => [m.class_id, m]));
+        const kept = new Set(meetingForm.class_ids);
+        for (const classId of meetingForm.class_ids) {
+          const row = byClass.get(classId);
+          const res = row
+            ? await fetchWithAuth(`${API_BASE}/parent-meetings/${row.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              })
+            : await fetchWithAuth(`${API_BASE}/parent-meetings`, {
+                method: "POST",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+        for (const row of existing) {
+          if (kept.has(row.class_id)) continue;
+          const res = await fetchWithAuth(`${API_BASE}/parent-meetings/${row.id}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/parent-meetings`, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, class_ids: meetingForm.class_ids }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
       closeMeetingForm();
       loadMeetings();
     } catch (err) {
@@ -1394,12 +1488,16 @@ export function DashboardSchedulePage() {
     }
   }
 
-  async function handleDeleteMeeting(id: string) {
-    if (!confirm("Supprimer cette réunion ?")) return;
+  async function handleDeleteMeeting(ids: string[]) {
+    if (!ids.length || !confirm("Supprimer cette réunion ?")) return;
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/parent-meetings/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      for (const id of ids) {
+        const res = await fetchWithAuth(`${API_BASE}/parent-meetings/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      if (editingMeetingIds?.some((id) => ids.includes(id))) closeMeetingForm();
       loadMeetings();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
@@ -1408,12 +1506,12 @@ export function DashboardSchedulePage() {
 
   function closeExamPeriodForm() {
     setShowExamPeriodForm(false);
-    setEditingExamPeriodId(null);
+    setEditingExamPeriodIds(null);
     setExamPeriodForm(emptyExamPeriodForm);
   }
 
   function openNewExamPeriod() {
-    setEditingExamPeriodId(null);
+    setEditingExamPeriodIds(null);
     setExamPeriodForm({
       ...emptyExamPeriodForm,
       academic_year_id: academicYearFilter || defaultYearId,
@@ -1422,27 +1520,26 @@ export function DashboardSchedulePage() {
     setShowExamPeriodForm(true);
   }
 
-  function openEditExamPeriod(p: ExamPeriodItem) {
-    setEditingExamPeriodId(p.id);
+  function openEditExamPeriod(items: ExamPeriodItem[]) {
+    const first = items[0];
+    if (!first) return;
+    setEditingExamPeriodIds(items.map((p) => p.id));
     setExamPeriodForm({
-      academic_year_id: p.academic_year_id || defaultYearId,
-      period_name: p.period_name || "",
-      start_date: (p.start_date || "").slice(0, 10),
-      end_date: (p.end_date || "").slice(0, 10),
-      report_date: (p.report_date || "").slice(0, 10),
-      class_ids: p.class_id ? [p.class_id] : [],
+      academic_year_id: first.academic_year_id || defaultYearId,
+      period_name: first.period_name || "",
+      start_date: (first.start_date || "").slice(0, 10),
+      end_date: (first.end_date || "").slice(0, 10),
+      report_date: (first.report_date || "").slice(0, 10),
+      class_ids: items.map((p) => p.class_id).filter(Boolean),
     });
     setShowExamPeriodForm(true);
   }
 
   function toggleExamPeriodClass(id: string) {
-    setExamPeriodForm((f) => {
-      if (editingExamPeriodId) return { ...f, class_ids: [id] };
-      return {
-        ...f,
-        class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
-      };
-    });
+    setExamPeriodForm((f) => ({
+      ...f,
+      class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
+    }));
   }
 
   async function handleSaveExamPeriod(e: React.FormEvent) {
@@ -1466,17 +1563,38 @@ export function DashboardSchedulePage() {
         end_date: examPeriodForm.end_date,
         report_date: examPeriodForm.report_date || null,
       };
-      const res = editingExamPeriodId
-        ? await fetchWithAuth(`${API_BASE}/exam-periods/${editingExamPeriodId}`, {
-            method: "PATCH",
-            body: JSON.stringify({ ...payload, class_id: examPeriodForm.class_ids[0] }),
-          })
-        : await fetchWithAuth(`${API_BASE}/exam-periods`, {
-            method: "POST",
-            body: JSON.stringify({ ...payload, class_ids: examPeriodForm.class_ids }),
-          });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
+      if (editingExamPeriodIds) {
+        const existing = examPeriods.filter((p) => editingExamPeriodIds.includes(p.id));
+        const byClass = new Map(existing.map((p) => [p.class_id, p]));
+        const kept = new Set(examPeriodForm.class_ids);
+        for (const classId of examPeriodForm.class_ids) {
+          const row = byClass.get(classId);
+          const res = row
+            ? await fetchWithAuth(`${API_BASE}/exam-periods/${row.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              })
+            : await fetchWithAuth(`${API_BASE}/exam-periods`, {
+                method: "POST",
+                body: JSON.stringify({ ...payload, class_id: classId }),
+              });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+        for (const row of existing) {
+          if (kept.has(row.class_id)) continue;
+          const res = await fetchWithAuth(`${API_BASE}/exam-periods/${row.id}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/exam-periods`, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, class_ids: examPeriodForm.class_ids }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
       closeExamPeriodForm();
       loadExamPeriods();
     } catch (err) {
@@ -1486,24 +1604,32 @@ export function DashboardSchedulePage() {
     }
   }
 
-  async function handleDeleteExamPeriod(id: string) {
-    if (!confirm("Supprimer cette période d'examens ?")) return;
+  async function handleDeleteExamPeriod(ids: string[]) {
+    if (!ids.length || !confirm("Supprimer cette période d'examens ?")) return;
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/exam-periods/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      for (const id of ids) {
+        const res = await fetchWithAuth(`${API_BASE}/exam-periods/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      if (editingExamPeriodIds?.some((id) => ids.includes(id))) closeExamPeriodForm();
       loadExamPeriods();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
     }
   }
 
-  async function handleDeleteActivity(id: string) {
-    if (!confirm("Supprimer cette activité ?")) return;
+  async function handleDeleteActivity(ids: string[]) {
+    if (!ids.length || !confirm("Supprimer cette activité ?")) return;
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      for (const id of ids) {
+        const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      if (editingActivityIds?.some((id) => ids.includes(id))) closeActivityForm();
       loadActivities();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -1512,7 +1638,13 @@ export function DashboardSchedulePage() {
 
   async function handleSaveVacation(e: React.FormEvent) {
     e.preventDefault();
-    if (!vacationForm.academic_year_id || !vacationForm.start_date || !vacationForm.end_date || !vacationForm.motif.trim()) {
+    if (
+      !vacationForm.academic_year_id ||
+      !vacationForm.start_date ||
+      !vacationForm.end_date ||
+      !vacationForm.motif.trim() ||
+      !vacationForm.room_ids.length
+    ) {
       return;
     }
     setSaving(true);
@@ -1523,18 +1655,40 @@ export function DashboardSchedulePage() {
         start_date: vacationForm.start_date,
         end_date: vacationForm.end_date,
         motif: vacationForm.motif.trim(),
+        kind: vacationForm.kind,
       };
-      const res = editingVacationId
-        ? await fetchWithAuth(`${API_BASE}/school-vacations/${editingVacationId}`, {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          })
-        : await fetchWithAuth(`${API_BASE}/school-vacations`, {
-            method: "POST",
-            body: JSON.stringify(payload),
-          });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
+      if (editingVacationIds) {
+        const existing = vacations.filter((v) => editingVacationIds.includes(v.id));
+        const byRoom = new Map(existing.filter((v) => v.room_id).map((v) => [v.room_id as string, v]));
+        const kept = new Set(vacationForm.room_ids);
+        for (const roomId of vacationForm.room_ids) {
+          const row = byRoom.get(roomId);
+          const res = row
+            ? await fetchWithAuth(`${API_BASE}/school-vacations/${row.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ ...payload, room_id: roomId }),
+              })
+            : await fetchWithAuth(`${API_BASE}/school-vacations`, {
+                method: "POST",
+                body: JSON.stringify({ ...payload, room_id: roomId }),
+              });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+        for (const row of existing) {
+          if (row.room_id && kept.has(row.room_id)) continue;
+          const res = await fetchWithAuth(`${API_BASE}/school-vacations/${row.id}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "Erreur");
+        }
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/school-vacations`, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, room_ids: vacationForm.room_ids }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
       closeVacationForm();
       loadVacations();
     } catch (e) {
@@ -1546,33 +1700,41 @@ export function DashboardSchedulePage() {
 
   function closeVacationForm() {
     setShowVacationForm(false);
-    setEditingVacationId(null);
+    setEditingVacationIds(null);
     setVacationForm(emptyVacationForm);
   }
 
   function openNewVacation() {
-    setEditingVacationId(null);
+    setEditingVacationIds(null);
     setVacationForm({ ...emptyVacationForm, academic_year_id: academicYearFilter || defaultYearId });
     setShowVacationForm(true);
   }
 
-  function openEditVacation(v: SchoolVacation) {
-    setEditingVacationId(v.id);
+  function openEditVacation(items: SchoolVacation[]) {
+    const v = items[0];
+    if (!v) return;
+    setEditingVacationIds(items.map((item) => item.id));
     setVacationForm({
       academic_year_id: v.academic_year_id || defaultYearId,
       start_date: dateKey(v.start_date),
       end_date: dateKey(v.end_date),
       motif: v.motif || "",
+      kind: v.kind === "CONGE" ? "CONGE" : "VACANCE",
+      room_ids: items.map((item) => item.room_id).filter((id): id is string => !!id),
     });
     setShowVacationForm(true);
   }
 
-  async function handleDeleteVacation(id: string) {
-    if (!confirm("Supprimer cette période de vacances ?")) return;
+  async function handleDeleteVacation(ids: string[]) {
+    if (!ids.length || !confirm("Supprimer cette période ?")) return;
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/school-vacations/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      for (const id of ids) {
+        const res = await fetchWithAuth(`${API_BASE}/school-vacations/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      if (editingVacationIds?.some((id) => ids.includes(id))) closeVacationForm();
       loadVacations();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -1608,18 +1770,51 @@ export function DashboardSchedulePage() {
 
   const examRows = useMemo(() => examPdfRows(exams), [exams]);
 
+  const activityLines = useMemo(() => {
+    const groups = new Map<string, ExtracurricularActivity[]>();
+    for (const a of activities) {
+      const key = [
+        a.academic_year_id,
+        (a.activity_date || "").slice(0, 10),
+        a.start_time,
+        a.end_time,
+        (a.occasion || "").trim().toLowerCase(),
+        (a.objective || "").trim(),
+        a.parents_concerned ? "1" : "0",
+        a.participation_fee || "",
+        (a.contribution_due_date || "").slice(0, 10),
+        a.dress_code || "",
+        a.location_kind || "",
+        (a.location_text || "").trim(),
+      ].join("|");
+      const list = groups.get(key) ?? [];
+      list.push(a);
+      groups.set(key, list);
+    }
+    return [...groups.values()]
+      .map((items) => ({
+        key: items.map((a) => a.id).sort().join(","),
+        items: [...items].sort((a, b) => (a.class_name || "").localeCompare(b.class_name || "", "fr")),
+      }))
+      .sort((a, b) => {
+        const a0 = a.items[0];
+        const b0 = b.items[0];
+        return (
+          a0.activity_date.localeCompare(b0.activity_date) ||
+          a0.start_time.localeCompare(b0.start_time) ||
+          (a0.occasion || "").localeCompare(b0.occasion || "", "fr")
+        );
+      });
+  }, [activities]);
+
   const activityRows = useMemo(
     () =>
-      [...activities]
-        .sort(
-          (a, b) =>
-            a.activity_date.localeCompare(b.activity_date) ||
-            a.start_time.localeCompare(b.start_time),
-        )
-        .map((a) => ({
+      activityLines.map((line) => {
+        const a = line.items[0];
+        return {
           date: formatDateJJMMAAAA(a.activity_date),
           horaire: `${a.start_time} - ${a.end_time}`,
-          classe: a.class_name,
+          classe: line.items.map((item) => item.class_name).filter(Boolean).join(", "),
           activite: a.occasion,
           objectif: a.objective || "—",
           lieu: placeLabel(a.location_kind, a.location_text, a.location_label),
@@ -1627,62 +1822,132 @@ export function DashboardSchedulePage() {
           cotisation: a.participation_fee ?? "—",
           limite: a.contribution_due_date ? formatDateJJMMAAAA(a.contribution_due_date) : "—",
           tenue: a.dress_code ?? "—",
-        })),
-    [activities],
+        };
+      }),
+    [activityLines],
   );
+
+  const meetingLines = useMemo(() => {
+    const groups = new Map<string, ParentMeeting[]>();
+    for (const m of meetings) {
+      const key = [
+        m.academic_year_id,
+        (m.meeting_date || "").slice(0, 10),
+        m.start_time,
+        (m.objective || "").trim(),
+        m.location_kind || "",
+        (m.location_text || "").trim(),
+      ].join("|");
+      const list = groups.get(key) ?? [];
+      list.push(m);
+      groups.set(key, list);
+    }
+    return [...groups.values()]
+      .map((items) => ({
+        key: items.map((m) => m.id).sort().join(","),
+        items: [...items].sort((a, b) => (a.class_name || "").localeCompare(b.class_name || "", "fr")),
+      }))
+      .sort((a, b) => {
+        const a0 = a.items[0];
+        const b0 = b.items[0];
+        return dateKey(a0.meeting_date).localeCompare(dateKey(b0.meeting_date)) || a0.start_time.localeCompare(b0.start_time);
+      });
+  }, [meetings]);
 
   const meetingRows = useMemo(
     () =>
-      [...meetings]
-        .sort(
-          (a, b) =>
-            dateKey(a.meeting_date).localeCompare(dateKey(b.meeting_date)) ||
-            a.start_time.localeCompare(b.start_time),
-        )
-        .map((m) => ({
+      meetingLines.map((line) => {
+        const m = line.items[0];
+        return {
           date: formatDateJJMMAAAA(m.meeting_date),
           heure: m.start_time,
-          classe: m.class_name,
+          classe: line.items.map((item) => item.class_name).filter(Boolean).join(", "),
           objectif: m.objective,
           lieu: placeLabel(m.location_kind, m.location_text, m.location_label),
-        })),
-    [meetings],
+        };
+      }),
+    [meetingLines],
   );
+
+  const examPeriodLines = useMemo(() => {
+    const groups = new Map<string, ExamPeriodItem[]>();
+    for (const p of examPeriods) {
+      const key = [
+        p.academic_year_id,
+        (p.period_name || "").trim().toLowerCase(),
+        (p.start_date || "").slice(0, 10),
+        (p.end_date || "").slice(0, 10),
+        (p.report_date || "").slice(0, 10),
+      ].join("|");
+      const list = groups.get(key) ?? [];
+      list.push(p);
+      groups.set(key, list);
+    }
+    return [...groups.values()]
+      .map((items) => ({
+        key: items.map((p) => p.id).sort().join(","),
+        items: [...items].sort((a, b) => (a.class_name || "").localeCompare(b.class_name || "", "fr")),
+      }))
+      .sort((a, b) => {
+        const a0 = a.items[0];
+        const b0 = b.items[0];
+        return (
+          dateKey(a0.start_date).localeCompare(dateKey(b0.start_date)) ||
+          (a0.period_name || "").localeCompare(b0.period_name || "", "fr")
+        );
+      });
+  }, [examPeriods]);
 
   const examPeriodRows = useMemo(
     () =>
-      [...examPeriods]
-        .sort(
-          (a, b) =>
-            dateKey(a.start_date).localeCompare(dateKey(b.start_date)) ||
-            (a.period_name || "").localeCompare(b.period_name || ""),
-        )
-        .map((p) => ({
+      examPeriodLines.map((line) => {
+        const p = line.items[0];
+        return {
           periode: p.period_name,
           debut: formatDateJJMMAAAA(p.start_date),
           fin: formatDateJJMMAAAA(p.end_date),
-          classe: p.class_name,
-          remise: p.report_date
-            ? `${handoverTitle(p.class_level)} : ${formatDateJJMMAAAA(p.report_date)}`
-            : "—",
-        })),
-    [examPeriods],
+          classe: line.items.map((item) => item.class_name).filter(Boolean).join(", "),
+          remise: p.report_date ? formatDateJJMMAAAA(p.report_date) : "—",
+        };
+      }),
+    [examPeriodLines],
   );
+
+  const vacationLines = useMemo(() => {
+    const groups = new Map<string, SchoolVacation[]>();
+    for (const v of vacations) {
+      const key = [
+        v.academic_year_id,
+        (v.start_date || "").slice(0, 10),
+        (v.end_date || "").slice(0, 10),
+        (v.motif || "").trim().toLowerCase(),
+        v.kind === "CONGE" ? "CONGE" : "VACANCE",
+      ].join("|");
+      const list = groups.get(key) ?? [];
+      list.push(v);
+      groups.set(key, list);
+    }
+    return [...groups.values()]
+      .map((items) => ({
+        key: items.map((v) => v.id).sort().join(","),
+        items: [...items].sort((a, b) => (a.room_name || "").localeCompare(b.room_name || "", "fr")),
+      }))
+      .sort((a, b) => dateKey(a.items[0].start_date).localeCompare(dateKey(b.items[0].start_date)));
+  }, [vacations]);
 
   const vacationRows = useMemo(
     () =>
-      [...vacations]
-        .sort(
-          (a, b) =>
-            dateKey(a.start_date).localeCompare(dateKey(b.start_date)) ||
-            dateKey(a.end_date).localeCompare(dateKey(b.end_date)),
-        )
-        .map((v) => ({
+      vacationLines.map((line) => {
+        const v = line.items[0];
+        return {
+          type: vacationKindLabel(v.kind),
           debut: formatDateJJMMAAAA(v.start_date),
           fin: formatDateJJMMAAAA(v.end_date),
           motif: v.motif,
-        })),
-    [vacations],
+          salles: line.items.map((item) => item.room_name).filter(Boolean).join(", ") || "—",
+        };
+      }),
+    [vacationLines],
   );
 
   const flagClasses = useMemo(
@@ -1921,12 +2186,40 @@ export function DashboardSchedulePage() {
           table: { columns: MEETING_COLUMNS.filter((c) => c.key !== "classe"), rows: classMeetings },
         });
       }
-    }
-    if (vacationRows.length) {
-      sections.push({
-        title: "Vacances",
-        table: { columns: VACATION_COLUMNS, rows: vacationRows },
-      });
+      const classVacations = vacations.filter((v) => v.class_id === cls.id);
+      if (classVacations.length) {
+        const lines = new Map<string, SchoolVacation[]>();
+        for (const v of classVacations) {
+          const key = [
+            (v.start_date || "").slice(0, 10),
+            (v.end_date || "").slice(0, 10),
+            (v.motif || "").trim().toLowerCase(),
+            v.kind === "CONGE" ? "CONGE" : "VACANCE",
+          ].join("|");
+          const list = lines.get(key) ?? [];
+          list.push(v);
+          lines.set(key, list);
+        }
+        sections.push({
+          title: `${cls.name} — Vacances et congés`,
+          table: {
+            columns: [
+              { header: "Type", key: "type" },
+              { header: "Début", key: "debut" },
+              { header: "Fin", key: "fin" },
+              { header: "Motif", key: "motif" },
+              { header: "Salles", key: "salles" },
+            ],
+            rows: [...lines.values()].map((items) => ({
+              type: vacationKindLabel(items[0].kind),
+              debut: formatDateJJMMAAAA(items[0].start_date),
+              fin: formatDateJJMMAAAA(items[0].end_date),
+              motif: items[0].motif,
+              salles: items.map((item) => item.room_name).filter(Boolean).join(", "),
+            })),
+          },
+        });
+      }
     }
     return sections;
   }, [
@@ -1939,7 +2232,7 @@ export function DashboardSchedulePage() {
     exams,
     activities,
     meetings,
-    vacationRows,
+    vacations,
     dayListsByClass,
   ]);
 
@@ -1991,7 +2284,7 @@ export function DashboardSchedulePage() {
     if (!gridRoom?.class_id) return map;
     for (const ex of exams) {
       if (ex.class_id !== gridRoom.class_id) continue;
-      if (examGridPeriod && ex.period !== examGridPeriod) continue;
+      if (examGridPeriod && ex.period_id !== examGridPeriod && ex.period !== periods.find((p) => p.id === examGridPeriod)?.name) continue;
       const date = (ex.exam_date || "").slice(0, 10);
       map[examCellKey(date, ex.start_time)] = { id: ex.id, subject_id: ex.subject_id };
     }
@@ -2071,6 +2364,29 @@ export function DashboardSchedulePage() {
       });
     }
     return sections;
+  }
+
+  async function handleExamYearChange(yearId: string) {
+    setExamGridYearId(yearId);
+    if (!yearId) {
+      setExamGridPeriod("");
+      setPeriods([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${yearId}`);
+      const data = await res.json();
+      const loaded: Period[] = data.periods ?? [];
+      setPeriods(loaded);
+      const level = classes.find((c) => c.id === gridRoom?.class_id)?.level;
+      const scoped = loaded.filter(
+        (p) => (p.scope || "ECOLE") === periodScopeFromLevel(level),
+      );
+      setExamGridPeriod(scoped[0]?.id ?? "");
+    } catch {
+      setPeriods([]);
+      setExamGridPeriod("");
+    }
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -2840,9 +3156,6 @@ export function DashboardSchedulePage() {
               Enregistrer une période
             </button>
           </div>
-          <p className="text-sm text-slate-500">
-            La période se consulte même sans les matières. Les matières se placent ensuite dans la grille de la salle.
-          </p>
           {showExamPeriodForm ? (
             <form
               ref={examPeriodFormRef}
@@ -2851,7 +3164,7 @@ export function DashboardSchedulePage() {
             >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-slate-900">
-                  {editingExamPeriodId ? "Modifier la période" : "Nouvelle période d'examens"}
+                  {editingExamPeriodIds ? "Modifier la période" : "Nouvelle période d'examens"}
                 </h4>
                 <button type="button" onClick={closeExamPeriodForm} className="text-xs font-medium text-slate-500">
                   Fermer
@@ -2921,7 +3234,7 @@ export function DashboardSchedulePage() {
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-slate-600">Classes</span>
-                  {!editingExamPeriodId && classes.length > 0 ? (
+                  {classes.length > 0 ? (
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
                       <input
                         type="checkbox"
@@ -2969,48 +3282,58 @@ export function DashboardSchedulePage() {
               </div>
             </form>
           ) : null}
-          {examPeriods.length === 0 ? (
+          {examPeriodLines.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-10 text-center text-slate-500">
               Aucune période d'examens
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {examPeriods.map((p) => (
-                <article key={p.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex">
-                    <span className="w-1.5 shrink-0 bg-rose-400" />
-                    <div className="min-w-0 flex-1 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">
-                        {formatDateJJMMAAAA(p.start_date)} – {formatDateJJMMAAAA(p.end_date)}
-                      </p>
-                      <h4 className="mt-0.5 font-bold text-slate-900">{p.period_name}</h4>
-                      <p className="mt-1 text-sm text-slate-500">{p.class_name}</p>
-                      {p.report_date ? (
-                        <p className="mt-2 text-sm text-slate-700">
-                          {handoverTitle(p.class_level || classes.find((c) => c.id === p.class_id)?.level)} :{" "}
-                          {formatDateJJMMAAAA(p.report_date)}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditExamPeriod(p)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteExamPeriod(p.id)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Période</th>
+                    <th className="px-3 py-2 font-semibold">Du</th>
+                    <th className="px-3 py-2 font-semibold">Au</th>
+                    <th className="px-3 py-2 font-semibold">Remise</th>
+                    <th className="px-3 py-2 font-semibold">Classes</th>
+                    <th className="px-3 py-2 font-semibold" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {examPeriodLines.map((line) => {
+                    const p = line.items[0];
+                    return (
+                      <tr key={line.key} className="border-b border-slate-100 last:border-b-0">
+                        <td className="px-3 py-2 font-medium text-slate-900">{p.period_name}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(p.start_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(p.end_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                          {p.report_date ? formatDateJJMMAAAA(p.report_date) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {line.items.map((item) => item.class_name).filter(Boolean).join(", ")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditExamPeriod(line.items)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-slate-50"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExamPeriod(line.items.map((item) => item.id))}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-slate-50"
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3081,7 +3404,7 @@ export function DashboardSchedulePage() {
             >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-slate-900">
-                  {editingActivityId ? "Modifier" : "Nouvelle activité"}
+                  {editingActivityIds ? "Modifier" : "Nouvelle activité"}
                 </h4>
                 <button
                   type="button"
@@ -3224,7 +3547,7 @@ export function DashboardSchedulePage() {
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-slate-600">Classes</span>
-                  {!editingActivityId && classes.length > 0 ? (
+                  {classes.length > 0 ? (
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
                       <input
                         type="checkbox"
@@ -3272,68 +3595,67 @@ export function DashboardSchedulePage() {
             </form>
           ) : null}
 
-          {activities.length === 0 ? (
+          {activityLines.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-slate-500">
               Aucune activité
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {activities.map((a) => (
-                <article
-                  key={a.id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-                >
-                  <div className="flex">
-                    <span className="w-1.5 shrink-0 bg-amber-400" />
-                    <div className="min-w-0 flex-1 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">
-                        {formatDateJJMMAAAA(a.activity_date)} · {a.start_time}–{a.end_time}
-                      </p>
-                      <h4 className="mt-0.5 font-bold text-slate-900">{a.occasion}</h4>
-                      {a.objective ? <p className="mt-1 text-sm text-slate-600">{a.objective}</p> : null}
-                      <p className="mt-1 text-sm text-slate-500">
-                        {a.class_name} · {placeLabel(a.location_kind, a.location_text, a.location_label)}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {a.parents_concerned ? (
-                          <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] text-teal-900">
-                            Parents concernés
-                          </span>
-                        ) : null}
-                        {a.participation_fee ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                            Cotisation {a.participation_fee}
-                            {a.contribution_due_date
-                              ? ` · avant le ${formatDateJJMMAAAA(a.contribution_due_date)}`
-                              : ""}
-                          </span>
-                        ) : null}
-                        {a.dress_code ? (
-                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-900">
-                            {a.dress_code}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditActivity(a)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteActivity(a.id)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[48rem] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Date</th>
+                    <th className="px-3 py-2 font-semibold">Horaire</th>
+                    <th className="px-3 py-2 font-semibold">Activité</th>
+                    <th className="px-3 py-2 font-semibold">Lieu</th>
+                    <th className="px-3 py-2 font-semibold">Classes</th>
+                    <th className="px-3 py-2 font-semibold" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {activityLines.map((line) => {
+                    const a = line.items[0];
+                    const details = [
+                      a.parents_concerned ? "Parents concernés" : "",
+                      a.participation_fee
+                        ? `Cotisation ${a.participation_fee}${a.contribution_due_date ? ` · avant le ${formatDateJJMMAAAA(a.contribution_due_date)}` : ""}`
+                        : "",
+                      a.dress_code || "",
+                    ].filter(Boolean);
+                    return (
+                      <tr key={line.key} className="border-b border-slate-100 last:border-b-0">
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(a.activity_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{a.start_time}–{a.end_time}</td>
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-slate-900">{a.occasion}</p>
+                          {a.objective ? <p className="text-xs text-slate-500">{a.objective}</p> : null}
+                          {details.length ? <p className="text-xs text-slate-500">{details.join(" · ")}</p> : null}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">{placeLabel(a.location_kind, a.location_text, a.location_label)}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {line.items.map((item) => item.class_name).filter(Boolean).join(", ")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditActivity(line.items)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-slate-50"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteActivity(line.items.map((item) => item.id))}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-slate-50"
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -3369,7 +3691,7 @@ export function DashboardSchedulePage() {
             >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-slate-900">
-                  {editingMeetingId ? "Modifier" : "Nouvelle réunion"}
+                  {editingMeetingIds ? "Modifier" : "Nouvelle réunion"}
                 </h4>
                 <button type="button" onClick={closeMeetingForm} className="text-xs font-medium text-slate-500">
                   Fermer
@@ -3451,7 +3773,7 @@ export function DashboardSchedulePage() {
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-slate-600">Classes</span>
-                  {!editingMeetingId && classes.length > 0 ? (
+                  {classes.length > 0 ? (
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
                       <input
                         type="checkbox"
@@ -3494,44 +3816,56 @@ export function DashboardSchedulePage() {
               </div>
             </form>
           ) : null}
-          {meetings.length === 0 ? (
+          {meetingLines.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-slate-500">
               Aucune réunion
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {meetings.map((m) => (
-                <article key={m.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex">
-                    <span className="w-1.5 shrink-0 bg-violet-400" />
-                    <div className="min-w-0 flex-1 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800">
-                        {formatDateJJMMAAAA(m.meeting_date)} · {m.start_time}
-                      </p>
-                      <h4 className="mt-0.5 font-bold text-slate-900">{m.objective}</h4>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {m.class_name} · {placeLabel(m.location_kind, m.location_text, m.location_label)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditMeeting(m)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteMeeting(m.id)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Date</th>
+                    <th className="px-3 py-2 font-semibold">Heure</th>
+                    <th className="px-3 py-2 font-semibold">Objectif</th>
+                    <th className="px-3 py-2 font-semibold">Lieu</th>
+                    <th className="px-3 py-2 font-semibold">Classes</th>
+                    <th className="px-3 py-2 font-semibold" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {meetingLines.map((line) => {
+                    const m = line.items[0];
+                    return (
+                      <tr key={line.key} className="border-b border-slate-100 last:border-b-0">
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(m.meeting_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{m.start_time}</td>
+                        <td className="px-3 py-2 font-medium text-slate-900">{m.objective}</td>
+                        <td className="px-3 py-2 text-slate-600">{placeLabel(m.location_kind, m.location_text, m.location_label)}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {line.items.map((item) => item.class_name).filter(Boolean).join(", ")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditMeeting(line.items)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-slate-50"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMeeting(line.items.map((item) => item.id))}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-slate-50"
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -3567,11 +3901,32 @@ export function DashboardSchedulePage() {
             >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-slate-900">
-                  {editingVacationId ? "Modifier" : "Nouvelle période"}
+                  {editingVacationIds ? "Modifier" : "Nouvelle période"}
                 </h4>
                 <button type="button" onClick={closeVacationForm} className="text-xs font-medium text-slate-500">
                   Fermer
                 </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(["VACANCE", "CONGE"] as const).map((kind) => {
+                  const on = vacationForm.kind === kind;
+                  return (
+                    <label
+                      key={kind}
+                      className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                        on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={on}
+                        onChange={() => setVacationForm((f) => ({ ...f, kind }))}
+                      />
+                      {vacationKindLabel(kind)}
+                    </label>
+                  );
+                })}
               </div>
               <div className="flex flex-wrap items-end gap-2">
                 <div>
@@ -3619,6 +3974,66 @@ export function DashboardSchedulePage() {
                   />
                 </div>
               </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-slate-600">Salles</span>
+                  {rooms.some((r) => r.active !== false) ? (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={
+                          rooms.filter((r) => r.active !== false).length > 0 &&
+                          vacationForm.room_ids.length === rooms.filter((r) => r.active !== false).length
+                        }
+                        onChange={() =>
+                          setVacationForm((f) => {
+                            const ids = rooms.filter((r) => r.active !== false).map((r) => r.id);
+                            return { ...f, room_ids: f.room_ids.length === ids.length ? [] : ids };
+                          })
+                        }
+                      />
+                      Tout
+                    </label>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  {classes.map((c) => {
+                    const classRooms = rooms.filter((r) => r.class_id === c.id && r.active !== false);
+                    if (!classRooms.length) return null;
+                    return (
+                      <div key={c.id} className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-medium text-slate-500">{c.name}</span>
+                        {classRooms.map((r) => {
+                          const on = vacationForm.room_ids.includes(r.id);
+                          return (
+                            <label
+                              key={r.id}
+                              className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                                on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={on}
+                                onChange={() =>
+                                  setVacationForm((f) => ({
+                                    ...f,
+                                    room_ids: f.room_ids.includes(r.id)
+                                      ? f.room_ids.filter((id) => id !== r.id)
+                                      : [...f.room_ids, r.id],
+                                  }))
+                                }
+                              />
+                              {r.name}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button type="submit" disabled={saving} className="app-btn-primary text-sm py-2 disabled:opacity-60">
                   {saving ? "Enregistrement…" : "Enregistrer"}
@@ -3630,50 +4045,56 @@ export function DashboardSchedulePage() {
             </form>
           ) : null}
 
-          {vacations.length === 0 ? (
+          {vacationLines.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-slate-500">
-              Aucune période de vacances
+              Aucune période
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {vacations.map((v) => (
-                <article
-                  key={v.id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-                >
-                  <div className="flex">
-                    <span className="w-1.5 shrink-0 bg-sky-400" />
-                    <div className="min-w-0 flex-1 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">
-                        {formatDateJJMMAAAA(v.start_date)}
-                        {dateKey(v.end_date) !== dateKey(v.start_date)
-                          ? ` – ${formatDateJJMMAAAA(v.end_date)}`
-                          : ""}
-                      </p>
-                      <h4 className="mt-0.5 font-bold text-slate-900">{v.motif}</h4>
-                      {v.academic_year_name ? (
-                        <p className="mt-1 text-sm text-slate-500">{v.academic_year_name}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/80 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditVacation(v)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteVacation(v.id)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-white"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Type</th>
+                    <th className="px-3 py-2 font-semibold">Début</th>
+                    <th className="px-3 py-2 font-semibold">Fin</th>
+                    <th className="px-3 py-2 font-semibold">Motif</th>
+                    <th className="px-3 py-2 font-semibold">Salles</th>
+                    <th className="px-3 py-2 font-semibold" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {vacationLines.map((line) => {
+                    const v = line.items[0];
+                    return (
+                      <tr key={line.key} className="border-b border-slate-100 last:border-b-0">
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{vacationKindLabel(v.kind)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(v.start_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(v.end_date)}</td>
+                        <td className="px-3 py-2 font-medium text-slate-900">{v.motif}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {line.items.map((item) => item.room_name).filter(Boolean).join(", ") || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditVacation(line.items)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-slate-50"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteVacation(line.items.map((item) => item.id))}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-slate-50"
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -3839,6 +4260,9 @@ export function DashboardSchedulePage() {
           onExamRangeEnd={setExamRangeEnd}
           examPeriod={examGridPeriod}
           onExamPeriod={setExamGridPeriod}
+          academicYears={academicYears}
+          examAcademicYearId={examGridYearId}
+          onExamAcademicYear={(id) => void handleExamYearChange(id)}
           periods={periods.filter(
             (p) =>
               (p.scope || "ECOLE") ===

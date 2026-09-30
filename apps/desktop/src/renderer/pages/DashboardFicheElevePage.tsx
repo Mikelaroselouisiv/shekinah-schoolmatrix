@@ -284,6 +284,8 @@ type SchoolVacationItem = {
   start_date: string;
   end_date: string;
   motif: string;
+  kind?: string | null;
+  room_id?: string | null;
 };
 
 export function DashboardFicheElevePage() {
@@ -930,18 +932,23 @@ export function DashboardFicheElevePage() {
         },
       });
     }
-    if (schoolVacations.length > 0) {
+    const visibleVacations = schoolVacations.filter(
+      (v) => !v.room_id || !student?.room_id || v.room_id === student.room_id,
+    );
+    if (visibleVacations.length > 0) {
       sections.push({
         title: "Vacances",
         table: {
           columns: [
+            { header: "Type", key: "type" },
             { header: "Début", key: "debut" },
             { header: "Fin", key: "fin" },
             { header: "Motif", key: "motif" },
           ],
-          rows: [...schoolVacations]
+          rows: [...visibleVacations]
             .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
             .map((v) => ({
+              type: v.kind === "CONGE" ? "Congé" : "Vacance",
               debut: formatDateJJMMAAAA(v.start_date),
               fin: formatDateJJMMAAAA(v.end_date),
               motif: v.motif,
@@ -950,7 +957,7 @@ export function DashboardFicheElevePage() {
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, schoolVacations, dayLists, student?.class_level]);
+  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, schoolVacations, dayLists, student?.class_level, student?.room_id]);
 
   const ficheLevel =
     dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
@@ -1688,19 +1695,22 @@ export function DashboardFicheElevePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-[var(--app-border)]">
                       <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Type</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Début</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Fin</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Motif</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {schoolVacations.length === 0 ? (
-                        <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Aucune période de vacances pour cette année.</td></tr>
+                      {schoolVacations.filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id).length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période pour cette salle.</td></tr>
                       ) : (
                         [...schoolVacations]
+                          .filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id)
                           .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
                           .map((v) => (
                           <tr key={v.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-600">{v.kind === "CONGE" ? "Congé" : "Vacance"}</td>
                             <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(v.start_date)}</td>
                             <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(v.end_date)}</td>
                             <td className="px-4 py-2 font-medium text-slate-900">{v.motif}</td>

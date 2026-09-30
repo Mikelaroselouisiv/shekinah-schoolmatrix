@@ -486,6 +486,8 @@ export type ExamScheduleItem = {
   subject_id?: string;
   subject_name?: string;
   period?: string;
+  period_id?: string | null;
+  academic_year_id?: string | null;
   exam_date?: string;
   start_time?: string;
   end_time?: string;
@@ -936,6 +938,8 @@ export async function deleteSchoolMaterial(id: string): Promise<void> {
 
 export async function listExamSchedules(params?: {
   class_id?: string;
+  academic_year_id?: string;
+  period_id?: string;
 }): Promise<ExamScheduleItem[]> {
   const { data } = await api.get('/exam-schedules', { params });
   return unwrapList<ExamScheduleItem>(data);
@@ -945,6 +949,8 @@ export async function createExamSchedule(body: {
   class_id: string;
   subject_id: string;
   period: string;
+  period_id?: string;
+  academic_year_id?: string;
   exam_date: string;
   start_time: string;
   end_time: string;

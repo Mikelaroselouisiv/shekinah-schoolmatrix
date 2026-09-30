@@ -44,7 +44,7 @@ import {
   uniqueTeachersFromAssignments,
   type DayMorningProgram,
 } from '../../lib/morningOpening';
-import { isMaterialsCycle } from '../../lib/educationLevels';
+import { isMaterialsCycle, periodScopeFromLevel } from '../../lib/educationLevels';
 import { colors } from '../../theme/tokens';
 import {
   createExamSchedule,
@@ -56,6 +56,7 @@ import {
   deleteScheduleSlot,
   deleteScheduleMoment,
   getAcademicYears,
+  getPeriods,
   getClassSubjects,
   getClasses,
   getRooms,
@@ -76,6 +77,7 @@ import {
   updateSchoolVacation,
   deleteSchoolVacation,
   type AcademicYear,
+  type PeriodItem,
   type ClassDayMoment,
   type ClassItem,
   type ExamScheduleItem,
@@ -105,6 +107,7 @@ type PickerKind =
   | 'formTeacher'
   | 'formDay'
   | 'formPeriod'
+  | 'formYear'
   | 'formMomentKind'
   | 'flagClass'
   | null;
@@ -206,6 +209,8 @@ export function ScheduleScreen({}: Props) {
   const [formStart, setFormStart] = useState('08:00');
   const [formEnd, setFormEnd] = useState('09:00');
   const [formPeriod, setFormPeriod] = useState('');
+  const [formYearId, setFormYearId] = useState('');
+  const [formPeriods, setFormPeriods] = useState<PeriodItem[]>([]);
   const [formDate, setFormDate] = useState(toYYYYMMDD());
   const [formEndDate, setFormEndDate] = useState(toYYYYMMDD());
   const [formOccasion, setFormOccasion] = useState('');
@@ -287,7 +292,12 @@ export function ScheduleScreen({}: Props) {
           setPreschoolInstructions(opening.preschool_instructions);
           setPrimaryInstructions(opening.primary_instructions);
       } else if (tab === 'examens') {
-        setExams(await listExamSchedules({ class_id: classId || undefined }));
+        setExams(
+          await listExamSchedules({
+            class_id: classId || undefined,
+            academic_year_id: yearId || undefined,
+          }),
+        );
       } else if (tab === 'vacances') {
         setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
       } else {
@@ -443,6 +453,37 @@ export function ScheduleScreen({}: Props) {
     };
   }, [formClassId]);
 
+  useEffect(() => {
+    if (!formYearId) {
+      setFormPeriods([]);
+      setFormPeriod('');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getPeriods(formYearId);
+        if (cancelled) return;
+        setFormPeriods(list);
+        const scope = periodScopeFromLevel(
+          classes.find((c) => c.id === formClassId)?.level,
+        );
+        const scoped = list.filter((p) => (p.scope || 'ECOLE') === scope);
+        setFormPeriod((prev) =>
+          scoped.some((p) => p.id === prev) ? prev : scoped[0]?.id || '',
+        );
+      } catch {
+        if (!cancelled) {
+          setFormPeriods([]);
+          setFormPeriod('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formYearId, formClassId, classes]);
+
   const sortedSlots = useMemo(() => {
     return [...slots].sort((a, b) => {
       const d = (a.day_of_week ?? 0) - (b.day_of_week ?? 0);
@@ -478,6 +519,7 @@ export function ScheduleScreen({}: Props) {
     setFormStart(kind === 'moment' ? '10:00' : '08:00');
     setFormEnd(kind === 'moment' ? '10:15' : '09:00');
     setFormPeriod('');
+    setFormYearId(yearId || years[0]?.id || '');
     setFormDate(toYYYYMMDD());
     setFormEndDate(toYYYYMMDD());
     setFormOccasion('');
@@ -564,13 +606,19 @@ export function ScheduleScreen({}: Props) {
         });
         setSuccess('Créneau ajouté.');
       } else if (tab === 'examens') {
-        if (!formClassId || !formSubjectId || !formPeriod.trim() || !formDate) {
-          throw new Error('Classe, matière, période et date requis.');
+        if (!formYearId || !formClassId || !formSubjectId || !formPeriod || !formDate) {
+          throw new Error('Année, classe, matière, période et date requis.');
+        }
+        const period = formPeriods.find((p) => p.id === formPeriod);
+        if (!period) {
+          throw new Error('Choisissez une période de l’année académique.');
         }
         await createExamSchedule({
           class_id: formClassId,
           subject_id: formSubjectId,
-          period: formPeriod.trim(),
+          period: period.name,
+          period_id: period.id,
+          academic_year_id: formYearId,
           exam_date: formDate,
           start_time: formStart,
           end_time: formEnd,
@@ -705,14 +753,14 @@ export function ScheduleScreen({}: Props) {
       return teachers.map((t) => ({ id: String(t.id), label: teacherLabel(t) }));
     }
     if (picker === 'formPeriod') {
-      return [
-        { id: '1er', label: '1er' },
-        { id: '2e', label: '2e' },
-        { id: '3e', label: '3e' },
-        { id: '4e', label: '4e' },
-        { id: 'Semestriel', label: 'Semestriel' },
-        { id: 'Annuel', label: 'Annuel' },
-      ];
+      const scope = periodScopeFromLevel(
+        classes.find((c) => c.id === formClassId)?.level,
+      );
+      const list = formPeriods.filter((p) => (p.scope || 'ECOLE') === scope);
+      return list.map((p) => ({ id: p.id, label: p.name }));
+    }
+    if (picker === 'formYear') {
+      return years.map((y) => ({ id: y.id, label: y.name }));
     }
     if (picker === 'formMomentKind') {
       return MOMENT_KINDS;
@@ -726,7 +774,7 @@ export function ScheduleScreen({}: Props) {
       ];
     }
     return [];
-  }, [picker, years, classes, rooms, subjects, teachers, formClassId]);
+  }, [picker, years, classes, rooms, subjects, teachers, formClassId, formPeriods]);
 
   function onPick(id: string) {
     switch (picker) {
@@ -769,6 +817,10 @@ export function ScheduleScreen({}: Props) {
         break;
       case 'formPeriod':
         setFormPeriod(id);
+        break;
+      case 'formYear':
+        setFormYearId(id);
+        setFormPeriod('');
         break;
       default:
         break;
@@ -1396,11 +1448,18 @@ export function ScheduleScreen({}: Props) {
           </>
         ) : null}
         {tab === 'examens' ? (
-          <SelectChip
-            label="Période"
-            value={formPeriod || 'Choisir'}
-            onPress={() => setPicker('formPeriod')}
-          />
+          <>
+            <SelectChip
+              label="Année académique"
+              value={years.find((y) => y.id === formYearId)?.name || 'Choisir'}
+              onPress={() => setPicker('formYear')}
+            />
+            <SelectChip
+              label="Période"
+              value={formPeriods.find((p) => p.id === formPeriod)?.name || 'Choisir'}
+              onPress={() => setPicker('formPeriod')}
+            />
+          </>
         ) : null}
         {tab !== 'cours' && tab !== 'vacances' ? (
           <DateField label="Date" value={formDate} onChange={setFormDate} />

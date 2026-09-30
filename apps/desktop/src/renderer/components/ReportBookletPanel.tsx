@@ -353,9 +353,6 @@ export function ReportBookletPanel({ classes }: { classes: ClassItem[] }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600">
-        Un bulletin couvre une période, avec l'en-tête de l'école sur la page de chaque élève. Un carnet reprend toutes les périodes de l'année, en grille paysage, sans en-tête : c'est le verso à imprimer.
-      </p>
       <div className="inline-flex rounded-full bg-slate-100 p-1 ring-1 ring-slate-200">
         {([
           ["bulletin", "Bulletin"],
