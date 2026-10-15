@@ -47,6 +47,27 @@ export class DisciplineController {
     return this.disciplineService.getAttendanceByClassAndDate(classId, date, roomIds);
   }
 
+  /** Historique d'appel d'une classe, jour par jour, bornes incluses. */
+  @DenyParents()
+  @Get('attendance/class/:classId')
+  async getClassAttendance(
+    @Req() req: AuthReq,
+    @Param('classId') classId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('room_id') roomId?: string,
+    @Query('unassigned') unassigned?: string,
+  ) {
+    await this.assertTeacherAttendance(req, classId);
+    return this.disciplineService.getClassAttendanceHistory(
+      classId,
+      from,
+      to,
+      roomId,
+      unassigned === '1' || unassigned === 'true',
+    );
+  }
+
   /**
    * Présences d'UN élève sur une plage de dates (bornes incluses, YYYY-MM-DD).
    * Sans bornes : tout l'historique de l'élève.
@@ -142,8 +163,14 @@ export class DisciplineController {
 
   @ParentScopedStudent(STUDENT_QUERY)
   @Get('measures')
-  async listMeasures(@Query('student_id') studentId?: string) {
-    return this.disciplineService.listMeasures(studentId);
+  async listMeasures(
+    @Query('student_id') studentId?: string,
+    @Query('history') history?: string,
+  ) {
+    return this.disciplineService.listMeasures(
+      studentId,
+      history === '1' || history === 'true',
+    );
   }
 
   @DenyParents()

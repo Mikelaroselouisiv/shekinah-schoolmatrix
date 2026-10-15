@@ -76,6 +76,7 @@ import {
   createSchoolVacation,
   updateSchoolVacation,
   deleteSchoolVacation,
+  uniqueSchoolVacations,
   type AcademicYear,
   type PeriodItem,
   type ClassDayMoment,
@@ -299,7 +300,14 @@ export function ScheduleScreen({}: Props) {
           }),
         );
       } else if (tab === 'vacances') {
-        setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
+        setVacations(
+          uniqueSchoolVacations(
+            await listSchoolVacations({
+              academic_year_id: yearId || undefined,
+              class_id: classId || undefined,
+            }),
+          ),
+        );
       } else {
         setActivities(
           await listExtracurricularActivities({
@@ -560,6 +568,7 @@ export function ScheduleScreen({}: Props) {
     setSuccess('');
     setError('');
     setEditingVacationId(item.id);
+    setFormClassId(item.class_id || classId || '');
     setFormDate((item.start_date || '').slice(0, 10) || toYYYYMMDD());
     setFormEndDate((item.end_date || '').slice(0, 10) || toYYYYMMDD());
     setFormMotif(item.motif || '');
@@ -625,14 +634,15 @@ export function ScheduleScreen({}: Props) {
         });
         setSuccess('Examen ajouté.');
       } else if (tab === 'vacances') {
-        if (!yearId || !formDate || !formEndDate || !formMotif.trim()) {
-          throw new Error('Année, dates et motif requis.');
+        if (!yearId || !formClassId || !formDate || !formEndDate || !formMotif.trim()) {
+          throw new Error('Année, classe, dates et motif requis.');
         }
         const payload = {
           academic_year_id: yearId,
           start_date: formDate,
           end_date: formEndDate,
           motif: formMotif.trim(),
+          class_id: formClassId,
         };
         if (editingVacationId) {
           await updateSchoolVacation(editingVacationId, payload);
@@ -860,9 +870,7 @@ export function ScheduleScreen({}: Props) {
             value={yearName || '—'}
             onPress={() => setPicker('year')}
           />
-          {tab !== 'vacances' ? (
-            <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-          ) : null}
+          <SelectChip label="Classe" value={classLabel} onPress={() => setPicker('class')} />
           {tab === 'cours' ? (
             <>
               <SelectChip label="Salle" value={roomLabel} onPress={() => setPicker('room')} />
@@ -1302,7 +1310,7 @@ export function ScheduleScreen({}: Props) {
                   {[item.start_date, item.end_date].filter(Boolean).join(' – ') || '—'}
                 </Text>
                 <Text style={styles.cardTitle}>{item.motif || 'Vacances'}</Text>
-                {item.academic_year_name ? <Muted>{item.academic_year_name}</Muted> : null}
+                {item.class_name ? <Muted>{item.class_name}</Muted> : null}
                 {canEdit ? (
                   <View style={styles.cardActions}>
                     <Pressable onPress={() => openEditVacation(item)}>
@@ -1373,13 +1381,11 @@ export function ScheduleScreen({}: Props) {
                     ? 'Modifier'
                     : 'Nouvelle activité'}
         </Text>
-        {tab !== 'vacances' ? (
         <SelectChip
           label="Classe"
           value={classes.find((c) => c.id === formClassId)?.name || 'Choisir'}
           onPress={() => setPicker('formClass')}
         />
-        ) : null}
         {tab === 'cours' && formKind === 'moment' ? (
           <>
             <SelectChip

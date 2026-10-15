@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Attendance } from './attendance.entity';
 import { Lateness } from './lateness.entity';
 import { DisciplinaryDeduction } from './disciplinary-deduction.entity';
@@ -51,6 +51,7 @@ export class DisciplineService {
     }
     const qb = this.studentRepo
       .createQueryBuilder('s')
+      .leftJoinAndSelect('s.room', 'room')
       .where('s.class_id = :classId', { classId })
       .andWhere('s.active = true')
       .orderBy('s.last_name', 'ASC')
@@ -69,6 +70,8 @@ export class DisciplineService {
         id: s.id,
         first_name: s.first_name,
         last_name: s.last_name,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
         status: byStudent.get(s.id) ?? null,
       })),
     };
@@ -94,7 +97,33 @@ export class DisciplineService {
       });
       await this.attendanceRepo.save(rec);
     }
-    return { ok: true, attendance: { student_id: studentId, date, status } };
+    const excluded = status === 'ABSENT' ? await this.excludeAfterConsecutiveAbsences(studentId) : false;
+    return { ok: true, excluded, attendance: { student_id: studentId, date, status } };
+  }
+
+  private async excludeAfterConsecutiveAbsences(studentId: string): Promise<boolean> {
+    const student = await this.studentRepo.findOne({ where: { id: studentId }, relations: ['room'] });
+    if (!student || student.archived_at || student.active === false) return false;
+    const qb = this.attendanceRepo
+      .createQueryBuilder('a')
+      .where('a.student_id = :id', { id: studentId })
+      .orderBy('a.date', 'DESC')
+      .limit(10);
+    if (student.absence_reset_on) {
+      qb.andWhere('a.date > :reset', { reset: student.absence_reset_on });
+    }
+    const rows = await qb.getMany();
+    if (rows.length < 10 || rows.some((row) => row.status !== 'ABSENT')) return false;
+    const latest = rows[0]?.date;
+    student.active = false;
+    student.archived_at = new Date();
+    student.archive_reason = 'ABSENCES';
+    student.room = null;
+    student.absence_reset_on = latest
+      ? new Date(latest).toISOString().slice(0, 10)
+      : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Port-au-Prince' });
+    await this.studentRepo.save(student);
+    return true;
   }
 
   async setBulkAttendance(classId: string, date: string, records: { student_id: string; status: string }[]): Promise<{ ok: boolean }> {
@@ -315,7 +344,7 @@ export class DisciplineService {
     return n >= e;
   }
 
-  async listMeasures(studentId?: string): Promise<any> {
+  async listMeasures(studentId?: string, history = false): Promise<any> {
     const qb = this.measureRepo
       .createQueryBuilder('m')
       .leftJoinAndSelect('m.student', 's')
@@ -324,7 +353,7 @@ export class DisciplineService {
     const list = await qb.getMany();
     const now = new Date();
     const retenueExpiryMs = DisciplineService.RETENUE_HOURS * 60 * 60 * 1000;
-    const filtered = list.filter((m) => {
+    const isActive = (m: (typeof list)[number]) => {
       if (m.measure_type === 'EN_RETENUE') {
         const age = now.getTime() - (m.created_at?.getTime() ?? 0);
         return age < retenueExpiryMs;
@@ -333,10 +362,11 @@ export class DisciplineService {
         return !DisciplineService.isDateReachedOrPast(now, m.expires_at);
       }
       return true;
-    });
+    };
+    const visible = history && studentId ? list : list.filter(isActive);
     return {
       ok: true,
-      measures: filtered.map((m) => ({
+      measures: visible.map((m) => ({
         id: m.id,
         student_id: m.student?.id,
         student_name: m.student ? `${m.student.first_name} ${m.student.last_name}` : null,
@@ -346,6 +376,7 @@ export class DisciplineService {
         reason: m.reason,
         created_at: m.created_at,
         expires_at: m.expires_at ?? undefined,
+        active: isActive(m),
       })),
     };
   }
@@ -425,6 +456,103 @@ export class DisciplineService {
         class_name: a.class?.name ?? null,
         created_at: a.created_at,
       })),
+    };
+  }
+
+  /** Jours d'appel d'une classe. Les jours sans aucun appel ne sont pas listés. */
+  async getClassAttendanceHistory(
+    classId: string,
+    from?: string,
+    to?: string,
+    roomId?: string,
+    unassigned = false,
+  ): Promise<any> {
+    for (const [label, value] of [
+      ['from', from],
+      ['to', to],
+    ] as const) {
+      if (value && !DisciplineService.DATE_RE.test(value)) {
+        throw new BadRequestException(
+          `Paramètre « ${label} » invalide : format attendu YYYY-MM-DD.`,
+        );
+      }
+    }
+    if (from && to && from > to) {
+      throw new BadRequestException('La borne « from » doit précéder la borne « to ».');
+    }
+
+    const cls = await this.classRepo.findOne({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Class not found');
+
+    const rosterWhere: {
+      class: { id: string };
+      active: true;
+      room?: { id: string } | ReturnType<typeof IsNull>;
+    } = { class: { id: classId }, active: true };
+    if (roomId) rosterWhere.room = { id: roomId };
+    else if (unassigned) rosterWhere.room = IsNull();
+    const roster = await this.studentRepo.count({ where: rosterWhere });
+
+    const qb = this.attendanceRepo
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.student', 's')
+      .where('a.class_id = :classId', { classId })
+      .orderBy('a.date', 'DESC')
+      .addOrderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC');
+    if (from) qb.andWhere('a.date >= :from', { from });
+    if (to) qb.andWhere('a.date <= :to', { to });
+    if (roomId) qb.andWhere('s.room_id = :roomId', { roomId });
+    else if (unassigned) qb.andWhere('s.room_id IS NULL');
+    const list = await qb.getMany();
+
+    const byDate = new Map<string, {
+      present: number;
+      absent: number;
+      late: number;
+      excused: number;
+      called: number;
+      absents: string[];
+    }>();
+    for (const row of list) {
+      const date = DisciplineService.toDateString(row.date);
+      const bucket = byDate.get(date) ?? {
+        present: 0,
+        absent: 0,
+        late: 0,
+        excused: 0,
+        called: 0,
+        absents: [],
+      };
+      bucket.called += 1;
+      if (row.status === 'PRESENT') bucket.present += 1;
+      else if (row.status === 'ABSENT') {
+        bucket.absent += 1;
+        const name = [row.student?.last_name, row.student?.first_name].filter(Boolean).join(', ');
+        if (name) bucket.absents.push(name);
+      } else if (row.status === 'LATE') bucket.late += 1;
+      else if (row.status === 'EXCUSED') bucket.excused += 1;
+      byDate.set(date, bucket);
+    }
+
+    const days = [...byDate.entries()].map(([date, bucket]) => ({
+      date,
+      present: bucket.present,
+      absent: bucket.absent,
+      late: bucket.late,
+      excused: bucket.excused,
+      missing: Math.max(0, roster - bucket.called),
+      absents: bucket.absents,
+    }));
+
+    return {
+      ok: true,
+      class_id: classId,
+      class_name: cls.name,
+      from: from ?? null,
+      to: to ?? null,
+      roster,
+      days,
     };
   }
 

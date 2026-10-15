@@ -4,6 +4,7 @@ import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
 import { ClassConfigModal, type ClassListItem } from "@/components/ClassConfigModal";
 import { buildBadgesPdfBlob, fetchStudentsForClassBadges } from "@/lib/badgeProduction";
+import { agendaFilename, buildClassAgendaPdfBlob } from "@/lib/classAgendaPdf";
 import { EDUCATION_LEVELS, educationLevelLabel, learnerNoun } from "@/lib/educationLevels";
 
 type Assignment = {
@@ -236,6 +237,27 @@ export function DashboardClassesPage() {
                           const studentsList = await fetchStudentsForClassBadges(c.id);
                           return buildBadgesPdfBlob({ school, students: studentsList });
                         }}
+                      />
+                      <ExportBadgePdfButton
+                        label="Agenda"
+                        filename={agendaFilename(c.name)}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-white disabled:opacity-40"
+                        getBlob={() =>
+                          buildClassAgendaPdfBlob({
+                            classId: c.id,
+                            className: c.name,
+                            classLevel: c.level,
+                            school: school
+                              ? {
+                                  name: school.name,
+                                  email: school.email,
+                                  phone: school.phone,
+                                  address: school.address,
+                                  logo_url: getImageUrl(school.logo_url) ?? school.logo_url,
+                                }
+                              : null,
+                          })
+                        }
                       />
                       <button
                         type="button"

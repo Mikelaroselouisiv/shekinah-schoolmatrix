@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Class } from '../classes/class.entity';
+import { Period } from '../period/period.entity';
 
 /** Période d'examens d'une classe, sans les matières. */
 @Entity('exam_period')
@@ -25,6 +26,10 @@ export class ExamPeriod {
   @ManyToOne(() => Class, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'class_id' })
   class: Class;
+
+  @ManyToOne(() => Period, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'period_id' })
+  period_ref: Period | null;
 
   @Column({ type: 'varchar', length: 80 })
   period_name: string;

@@ -99,9 +99,13 @@ export class Student {
   @Column({ type: 'timestamp', nullable: true })
   archived_at: Date | null;
 
-  /** REMOVED = retiré d’une classe ; GRADUATED = fin de cycle (secondaire / supérieur). */
+  /** REMOVED = retiré ; GRADUATED = fin de cycle ; ABSENCES = 10 absences consécutives. */
   @Column({ type: 'varchar', length: 20, nullable: true })
-  archive_reason: 'REMOVED' | 'GRADUATED' | null;
+  archive_reason: 'REMOVED' | 'GRADUATED' | 'ABSENCES' | null;
+
+  /** Les absences à cette date ou avant ne comptent plus pour le retrait automatique. */
+  @Column({ type: 'date', nullable: true })
+  absence_reset_on: string | null;
 
   @CreateDateColumn()
   created_at: Date;

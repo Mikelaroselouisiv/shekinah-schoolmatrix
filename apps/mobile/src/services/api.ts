@@ -250,7 +250,7 @@ export async function getCurrentContext(): Promise<SchoolContext | null> {
 }
 
 const GCS_PUBLIC_UPLOADS =
-  'https://storage.googleapis.com/shekinah-schoolmatrix-assets/schoolmatrix/uploads';
+  'https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads';
 
 function extractUploadFilename(stored: string): string | null {
   const s = stored.trim();
@@ -520,7 +520,25 @@ export type SchoolVacationItem = {
   start_date?: string;
   end_date?: string;
   motif?: string;
+  kind?: string | null;
+  class_id?: string | null;
+  class_name?: string | null;
 };
+
+export function uniqueSchoolVacations(list: SchoolVacationItem[]): SchoolVacationItem[] {
+  const seen = new Map<string, SchoolVacationItem>();
+  for (const v of list) {
+    const key = [
+      v.class_id || '',
+      (v.start_date || '').slice(0, 10),
+      (v.end_date || '').slice(0, 10),
+      (v.motif || '').trim().toLowerCase(),
+      v.kind === 'CONGE' ? 'CONGE' : 'VACANCE',
+    ].join('|');
+    if (!seen.has(key)) seen.set(key, v);
+  }
+  return [...seen.values()].sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+}
 
 export type RoomItem = {
   id: string;
@@ -1015,6 +1033,7 @@ export async function deleteExtracurricularActivity(id: string): Promise<void> {
 
 export async function listSchoolVacations(params?: {
   academic_year_id?: string;
+  class_id?: string;
 }): Promise<SchoolVacationItem[]> {
   const { data } = await api.get('/school-vacations', { params });
   return unwrapList<SchoolVacationItem>(data);
@@ -1025,6 +1044,9 @@ export async function createSchoolVacation(body: {
   start_date: string;
   end_date: string;
   motif: string;
+  kind?: string | null;
+  class_id?: string;
+  class_ids?: string[];
 }): Promise<void> {
   await api.post('/school-vacations', body);
 }
@@ -1036,6 +1058,8 @@ export async function updateSchoolVacation(
     start_date?: string;
     end_date?: string;
     motif?: string;
+    kind?: string | null;
+    class_id?: string | null;
   },
 ): Promise<void> {
   await api.patch(`/school-vacations/${id}`, body);

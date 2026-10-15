@@ -293,6 +293,24 @@ export class StudentsController {
   }
 
   @DenyParents()
+  @Post(':id/reinstate')
+  async reinstate(
+    @Param('id') id: string,
+    @Req() req: { user?: RequestActor },
+    @Body() body: { academic_year_id?: string; class_id?: string },
+  ) {
+    const current = await this.studentsService.findOne(id);
+    await this.levelScope.assertClassAccess(req.user, current.class?.id);
+    const s = await this.studentsService.reinstate(
+      id,
+      body.academic_year_id ?? '',
+      body.class_id ?? '',
+    );
+    await this.levelScope.assertClassAccess(req.user, s.class?.id);
+    return { ok: true, student: serializeStudent(s) };
+  }
+
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string, @Req() req: { user?: RequestActor }) {
     const current = await this.studentsService.findOne(id);

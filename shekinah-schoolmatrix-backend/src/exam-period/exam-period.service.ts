@@ -4,16 +4,23 @@ import { Repository } from 'typeorm';
 import { ExamPeriod } from './exam-period.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Class } from '../classes/class.entity';
+import { Period } from '../period/period.entity';
 import { isoDate } from '../agenda/location';
+import { periodScopeFromLevel } from '../roles/education-levels';
 
 @Injectable()
 export class ExamPeriodService {
   constructor(
     @InjectRepository(ExamPeriod)
     private readonly repo: Repository<ExamPeriod>,
+    @InjectRepository(Period)
+    private readonly periodRepo: Repository<Period>,
+    @InjectRepository(Class)
+    private readonly classRepo: Repository<Class>,
   ) {}
 
   private toDto(p: ExamPeriod) {
+    const period = p.period_ref;
     return {
       id: p.id,
       academic_year_id: p.academic_year?.id,
@@ -21,7 +28,8 @@ export class ExamPeriodService {
       class_id: p.class?.id,
       class_name: p.class?.name,
       class_level: p.class?.level ?? null,
-      period_name: p.period_name,
+      period_id: period?.id ?? null,
+      period_name: period?.name ?? p.period_name,
       start_date: p.start_date,
       end_date: p.end_date,
       report_date: p.report_date,
@@ -30,11 +38,64 @@ export class ExamPeriodService {
     };
   }
 
+  private async resolvePeriodForClass(params: {
+    academic_year_id: string;
+    class_id: string;
+    period_id?: string;
+    period_name?: string;
+  }): Promise<Period> {
+    const yearId = params.academic_year_id?.trim();
+    if (!yearId) throw new BadRequestException('Année académique requise');
+    const klass = await this.classRepo.findOne({ where: { id: params.class_id } });
+    const scope = periodScopeFromLevel(klass?.level);
+
+    let name = (params.period_name ?? '').trim();
+    if (params.period_id?.trim()) {
+      const chosen = await this.periodRepo.findOne({
+        where: { id: params.period_id.trim() },
+        relations: ['academic_year'],
+      });
+      if (!chosen) throw new BadRequestException('Période introuvable');
+      if (chosen.academic_year?.id && chosen.academic_year.id !== yearId) {
+        throw new BadRequestException(
+          'Cette période n’appartient pas à l’année académique choisie',
+        );
+      }
+      name = chosen.name;
+    }
+    if (!name) {
+      throw new BadRequestException(
+        'Choisissez une période de l’année académique',
+      );
+    }
+
+    const scoped = await this.periodRepo.findOne({
+      where: {
+        name,
+        scope,
+        academic_year: { id: yearId },
+      },
+      relations: ['academic_year'],
+    });
+    if (scoped) return scoped;
+
+    const any = await this.periodRepo.findOne({
+      where: { name, academic_year: { id: yearId } },
+      relations: ['academic_year'],
+    });
+    if (any) return any;
+
+    throw new BadRequestException(
+      'Cette période n’existe pas. Créez-la d’abord pour l’année académique.',
+    );
+  }
+
   async findAll(filters: { academic_year_id?: string; class_id?: string } = {}) {
     const qb = this.repo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.academic_year', 'year')
       .leftJoinAndSelect('p.class', 'class')
+      .leftJoinAndSelect('p.period_ref', 'period')
       .orderBy('p.start_date', 'ASC')
       .addOrderBy('p.period_name', 'ASC');
     if (filters.academic_year_id) {
@@ -50,7 +111,7 @@ export class ExamPeriodService {
   async findOne(id: string) {
     const p = await this.repo.findOne({
       where: { id },
-      relations: ['academic_year', 'class'],
+      relations: ['academic_year', 'class', 'period_ref'],
     });
     if (!p) throw new NotFoundException('Période d’examens introuvable');
     return this.toDto(p);
@@ -59,13 +120,13 @@ export class ExamPeriodService {
   async create(params: {
     academic_year_id: string;
     class_id: string;
-    period_name: string;
+    period_id?: string;
+    period_name?: string;
     start_date: string;
     end_date: string;
     report_date?: string | null;
   }) {
-    const period_name = (params.period_name ?? '').trim();
-    if (!period_name) throw new BadRequestException('Période requise');
+    const period = await this.resolvePeriodForClass(params);
     const start = isoDate(params.start_date)!;
     const end = isoDate(params.end_date)!;
     if (end < start) {
@@ -75,7 +136,8 @@ export class ExamPeriodService {
       this.repo.create({
         academic_year: { id: params.academic_year_id },
         class: { id: params.class_id },
-        period_name: period_name.slice(0, 80),
+        period_ref: period,
+        period_name: period.name.slice(0, 80),
         start_date: start,
         end_date: end,
         report_date: isoDate(params.report_date, false),
@@ -87,7 +149,8 @@ export class ExamPeriodService {
   async createForClasses(params: {
     academic_year_id: string;
     class_ids: string[];
-    period_name: string;
+    period_id?: string;
+    period_name?: string;
     start_date: string;
     end_date: string;
     report_date?: string | null;
@@ -105,6 +168,7 @@ export class ExamPeriodService {
     params: Partial<{
       academic_year_id: string;
       class_id: string;
+      period_id: string;
       period_name: string;
       start_date: string;
       end_date: string;
@@ -113,17 +177,27 @@ export class ExamPeriodService {
   ) {
     const p = await this.repo.findOne({
       where: { id },
-      relations: ['academic_year', 'class'],
+      relations: ['academic_year', 'class', 'period_ref'],
     });
     if (!p) throw new NotFoundException('Période d’examens introuvable');
     if (params.academic_year_id !== undefined) {
       p.academic_year = { id: params.academic_year_id } as AcademicYear;
     }
     if (params.class_id !== undefined) p.class = { id: params.class_id } as Class;
-    if (params.period_name !== undefined) {
-      const name = params.period_name.trim();
-      if (!name) throw new BadRequestException('Période requise');
-      p.period_name = name.slice(0, 80);
+    if (
+      params.period_id !== undefined ||
+      params.period_name !== undefined ||
+      params.academic_year_id !== undefined ||
+      params.class_id !== undefined
+    ) {
+      const period = await this.resolvePeriodForClass({
+        academic_year_id: p.academic_year.id,
+        class_id: p.class.id,
+        period_id: params.period_id,
+        period_name: params.period_name ?? p.period_name,
+      });
+      p.period_ref = period;
+      p.period_name = period.name.slice(0, 80);
     }
     if (params.start_date !== undefined) p.start_date = isoDate(params.start_date)!;
     if (params.end_date !== undefined) p.end_date = isoDate(params.end_date)!;

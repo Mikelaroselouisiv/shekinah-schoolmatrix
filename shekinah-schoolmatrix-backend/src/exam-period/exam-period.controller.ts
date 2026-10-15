@@ -46,7 +46,8 @@ export class ExamPeriodController {
       academic_year_id: string;
       class_id?: string;
       class_ids?: string[];
-      period_name: string;
+      period_id?: string;
+      period_name?: string;
       start_date: string;
       end_date: string;
       report_date?: string | null;
@@ -57,6 +58,7 @@ export class ExamPeriodController {
       const created = await this.examPeriodService.createForClasses({
         academic_year_id: body.academic_year_id,
         class_ids: classIds,
+        period_id: body.period_id,
         period_name: body.period_name,
         start_date: body.start_date,
         end_date: body.end_date,
@@ -68,6 +70,7 @@ export class ExamPeriodController {
       const created = await this.examPeriodService.create({
         academic_year_id: body.academic_year_id,
         class_id: body.class_id,
+        period_id: body.period_id,
         period_name: body.period_name,
         start_date: body.start_date,
         end_date: body.end_date,
@@ -86,6 +89,7 @@ export class ExamPeriodController {
     body: Partial<{
       academic_year_id: string;
       class_id: string;
+      period_id: string;
       period_name: string;
       start_date: string;
       end_date: string;

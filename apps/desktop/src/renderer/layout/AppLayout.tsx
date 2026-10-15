@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolProfileOptional } from '../context/SchoolProfileContext';
@@ -86,39 +86,20 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
   return { config, management, finance, statistics, fiche, special };
 }
 
-function NavItemLink({ href, label, strong = false }: { href: string; label: string; strong?: boolean }) {
-  return (
-    <NavLink
-      to={href}
-      className={({ isActive }) =>
-        `
-        relative px-3 py-3.5 text-sm whitespace-nowrap transition-all duration-200
-        ${strong ? 'font-semibold px-4 rounded-lg' : 'font-medium'}
-        ${isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'}
-        ${strong && isActive ? 'bg-slate-100' : ''}
-        ${strong && !isActive ? 'text-slate-700 hover:bg-slate-50' : ''}
-      `
-      }
-    >
-      {({ isActive }) => (
-        <>
-          {label}
-          {isActive && (
-            <span
-              className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-              style={{ backgroundColor: 'var(--school-accent-1)' }}
-            />
-          )}
-        </>
-      )}
-    </NavLink>
-  );
-}
+const MENU_GROUPS: { key: string; label: string }[] = [
+  { key: 'config', label: 'Organisation' },
+  { key: 'management', label: 'Vie scolaire' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'statistics', label: 'Statistiques' },
+  { key: 'fiche', label: 'Élèves' },
+  { key: 'special', label: 'Administration' },
+];
 
 export function AppLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const ctx = useSchoolProfileOptional();
   const school = ctx?.school ?? null;
   const user = ctx?.user ?? null;
@@ -146,71 +127,100 @@ export function AppLayout() {
     }
   }, [ctx?.loading, roleName, pathname, rolePermissions, navigate]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
+  const groups: { key: string; items: { href: string; label: string }[] }[] = [
+    { key: 'config', items: config },
+    { key: 'management', items: management },
+    { key: 'finance', items: finance },
+    { key: 'statistics', items: statistics },
+    { key: 'fiche', items: fiche },
+    { key: 'special', items: special },
+  ];
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--app-bg-gradient)' }}>
       <header
         className="app-shell-header border-b border-[var(--app-border)] shadow-sm"
         style={{ background: 'var(--app-bg-gradient)' }}
       >
-        <div className="app-container flex items-center justify-between gap-4 py-4">
+        <div className="app-container flex items-center gap-3 py-2.5">
+          <button
+            type="button"
+            className="app-menu-btn"
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
           <Link
             to="/dashboard"
-            className="flex items-center gap-5 hover:opacity-90 transition-opacity min-w-0"
-            aria-label="Retour à l'accueil"
+            className="flex items-center gap-3 hover:opacity-90 transition-opacity min-w-0"
+            aria-label="Accueil"
           >
-            <div className="app-header-logo flex-shrink-0">
+            <div className="flex-shrink-0">
               {getImageUrl(school?.logo_url ?? undefined) ? (
                 <img
                   src={getImageUrl(school?.logo_url ?? undefined)!}
                   alt=""
-                  className="h-20 w-20 sm:h-24 sm:w-24 object-contain"
+                  className="h-9 w-9 object-contain"
                 />
               ) : (
-                <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-xl text-3xl sm:text-4xl font-bold text-slate-500 bg-slate-100/80">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold text-slate-500 bg-slate-100">
                   {school?.name?.charAt(0) ?? 'É'}
                 </div>
               )}
             </div>
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase truncate">
-                {school?.name ?? 'Shekinah SchoolMatrix'}
-              </h1>
-            </div>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
+              {school?.name ?? 'Shekinah SchoolMatrix'}
+            </h1>
           </Link>
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="ml-auto flex items-center gap-3 flex-shrink-0">
             <AppUpdateControls variant="header" />
             {user ? (
-              <div className="flex flex-col items-center gap-2">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden flex-shrink-0 border-2 border-slate-200 bg-slate-100 flex items-center justify-center">
-                    {getImageUrl(user.profile_photo_url ?? undefined) ? (
-                      <img
-                        src={getImageUrl(user.profile_photo_url ?? undefined)!}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-lg sm:text-xl font-semibold text-slate-500">
-                        {(user.first_name?.trim() || user.last_name?.trim() || '?')
-                          .charAt(0)
-                          .toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm font-medium text-slate-900 leading-tight mt-1.5 whitespace-nowrap max-w-[140px] sm:max-w-[180px] truncate">
-                    {[
-                      user.first_name?.trim() || '—',
-                      (user.last_name?.trim() || '—').toUpperCase(),
-                    ].join(' ')}
-                  </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-slate-200 bg-slate-100 flex items-center justify-center">
+                  {getImageUrl(user.profile_photo_url ?? undefined) ? (
+                    <img
+                      src={getImageUrl(user.profile_photo_url ?? undefined)!}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-500">
+                      {(user.first_name?.trim() || user.last_name?.trim() || '?')
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+                  )}
                 </div>
+                <span className="hidden sm:block text-sm font-medium text-slate-900 whitespace-nowrap max-w-[11rem] truncate">
+                  {[
+                    user.first_name?.trim() || '—',
+                    (user.last_name?.trim() || '—').toUpperCase(),
+                  ].join(' ')}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     logout();
                     navigate('/login', { replace: true });
                   }}
-                  className="text-xs py-1.5 px-2.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                  className="text-xs py-1.5 px-2.5 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 >
                   Déconnexion
                 </button>
@@ -220,80 +230,54 @@ export function AppLayout() {
         </div>
       </header>
 
-      <nav className="app-shell-nav border-b border-[var(--app-border)] bg-[var(--app-surface)]">
-        <div className="app-container flex items-stretch gap-0">
-          <div className="flex gap-0.5 overflow-x-auto scrollbar-thin py-0 min-w-0 flex-1">
-            {config.map((item) => (
-              <NavItemLink key={item.href} href={item.href} label={item.label} />
-            ))}
-            {config.length > 0 && management.length > 0 && (
-              <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
-            )}
-            {management.map((item) => (
-              <NavItemLink key={item.href} href={item.href} label={item.label} />
-            ))}
-            {finance.length > 0 && (
-              <>
-                <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
-                {finance.map((item) => (
-                  <NavItemLink key={item.href} href={item.href} label={item.label} />
-                ))}
-              </>
-            )}
-            {statistics.length > 0 && (
-              <>
-                <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
-                {statistics.map((item) => (
-                  <NavItemLink key={item.href} href={item.href} label={item.label} />
-                ))}
-              </>
-            )}
-            {(config.length > 0 ||
-              management.length > 0 ||
-              finance.length > 0 ||
-              statistics.length > 0) &&
-              fiche.length > 0 && (
-                <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
-              )}
-            {fiche.map((item) => (
-              <NavItemLink key={item.href} href={item.href} label={item.label} strong />
-            ))}
-          </div>
-          {special.length > 0 && (
-            <div
-              className="flex items-center gap-1 border-l-2 border-[var(--app-border)] pl-4 ml-2 flex-shrink-0 bg-slate-50/80 rounded-r-lg pr-2"
-              style={{ borderLeftColor: 'var(--school-accent-1)' }}
-            >
-              {special.map((item) => (
-                <NavLink
-                  key={item.href}
-                  to={item.href}
-                  className={({ isActive }) =>
-                    `
-                      relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-all duration-200 rounded-lg
-                      ${isActive ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-700 hover:text-slate-900 hover:bg-white/80'}
-                    `
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      {item.label}
-                      {isActive && (
-                        <span
-                          className="absolute bottom-1.5 left-2 right-2 h-0.5 rounded-full"
-                          style={{ backgroundColor: 'var(--school-accent-1)' }}
-                        />
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+      {menuOpen && (
+        <div className="app-menu-back" onClick={() => setMenuOpen(false)}>
+          <nav
+            className="app-menu"
+            aria-label="Menu"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-menu-head">
+              <p className="app-menu-title">Menu</p>
+              <button
+                type="button"
+                className="app-menu-close"
+                aria-label="Fermer"
+                onClick={() => setMenuOpen(false)}
+              >
+                Fermer
+              </button>
             </div>
-          )}
+            <NavLink
+              to="/dashboard"
+              end
+              className={({ isActive }) => `app-menu-link${isActive ? ' is-on' : ''}`}
+            >
+              Accueil
+            </NavLink>
+            {groups.map((group) =>
+              group.items.length === 0 ? null : (
+                <div key={group.key} className="app-menu-group">
+                  <p className="app-menu-label">
+                    {MENU_GROUPS.find((item) => item.key === group.key)?.label}
+                  </p>
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.href}
+                      to={item.href}
+                      className={({ isActive }) => `app-menu-link${isActive ? ' is-on' : ''}`}
+                    >
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              ),
+            )}
+          </nav>
         </div>
-      </nav>
+      )}
 
-      {segments.length > 0 && (
+      {segments.length > 1 && (
         <div className="app-breadcrumb border-b border-[var(--app-border)] bg-[var(--app-surface)]/80">
           <div className="app-container py-2.5">
             <ol className="flex flex-wrap items-center gap-1.5 text-sm text-slate-600">
@@ -318,7 +302,7 @@ export function AppLayout() {
         </div>
       )}
 
-      <main className="flex-1 app-container py-6 sm:py-8">
+      <main className="flex-1 app-container py-5">
         <Outlet />
       </main>
     </div>

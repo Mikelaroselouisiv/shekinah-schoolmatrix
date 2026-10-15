@@ -34,6 +34,7 @@ import {
   getStudentDossierHomework,
   getStudentSchedule,
   listSchoolVacations,
+  uniqueSchoolVacations,
   type ClassDayList,
   type DisciplineSummary,
   type ExamResults,
@@ -51,7 +52,6 @@ import { colors } from '../../theme/tokens';
 import { isMaterialsCycle, learnerNoun } from '../../lib/educationLevels';
 import { isListScheduleLevel } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
-import { listBottomPadding } from '../../lib/layout';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -153,7 +153,15 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         setHomework([]);
       }
       try {
-        setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
+        const rows = await listSchoolVacations({
+          academic_year_id: yearId || undefined,
+          class_id: s?.class_id || undefined,
+        });
+        setVacations(
+          uniqueSchoolVacations(
+            rows.filter((v) => !v.class_id || !s?.class_id || v.class_id === s.class_id),
+          ),
+        );
       } catch {
         setVacations([]);
       }
@@ -577,7 +585,7 @@ function Info({ label, value }: { label: string; value?: string | null }) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
+  content: { paddingHorizontal: 20, paddingBottom: 40 },
   hero: {
     alignItems: 'center',
     paddingTop: 8,

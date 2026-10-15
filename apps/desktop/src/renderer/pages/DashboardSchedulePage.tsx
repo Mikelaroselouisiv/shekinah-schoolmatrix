@@ -32,7 +32,7 @@ import {
   examCellKey,
   defaultExamRange,
 } from "@/lib/scheduleGrid";
-import { isMaterialsCycle, periodScopeFromLevel } from "@/lib/educationLevels";
+import { isMaterialsCycle, periodScopeFromLevel, periodScopeLabel } from "@/lib/educationLevels";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 /** Semaine de classe : lundi → vendredi. */
@@ -132,7 +132,7 @@ const VACATION_COLUMNS: PdfColumn[] = [
   { header: "Début", key: "debut" },
   { header: "Fin", key: "fin" },
   { header: "Motif", key: "motif" },
-  { header: "Salles", key: "salles" },
+  { header: "Classes", key: "classes" },
 ];
 
 function slugify(value: string): string {
@@ -215,6 +215,7 @@ type ExamPeriodItem = {
   class_id: string;
   class_name: string;
   class_level?: string | null;
+  period_id?: string | null;
   period_name: string;
   start_date: string;
   end_date: string;
@@ -229,8 +230,6 @@ type SchoolVacation = {
   end_date: string;
   motif: string;
   kind?: string | null;
-  room_id?: string | null;
-  room_name?: string | null;
   class_id?: string | null;
   class_name?: string | null;
 };
@@ -240,19 +239,6 @@ type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string; scope?: string };
-type ExamSchedule = {
-  id: string;
-  class_id: string;
-  class_name: string;
-  subject_id: string;
-  subject_name: string;
-  period: string;
-  period_id?: string | null;
-  academic_year_id?: string | null;
-  exam_date: string;
-  start_time: string;
-  end_time: string;
-};
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {
@@ -651,6 +637,7 @@ export function DashboardSchedulePage() {
   const examPeriodFormRef = useRevealScroll<HTMLFormElement>(showExamPeriodForm);
   const emptyExamPeriodForm = {
     academic_year_id: "",
+    period_id: "",
     period_name: "",
     start_date: "",
     end_date: "",
@@ -658,6 +645,7 @@ export function DashboardSchedulePage() {
     class_ids: [] as string[],
   };
   const [examPeriodForm, setExamPeriodForm] = useState(emptyExamPeriodForm);
+  const [examPeriodFormPeriods, setExamPeriodFormPeriods] = useState<Period[]>([]);
   const [editingExamPeriodIds, setEditingExamPeriodIds] = useState<string[] | null>(null);
 
   const [showVacationForm, setShowVacationForm] = useState(false);
@@ -668,7 +656,7 @@ export function DashboardSchedulePage() {
     end_date: "",
     motif: "",
     kind: "VACANCE" as "VACANCE" | "CONGE",
-    room_ids: [] as string[],
+    class_ids: [] as string[],
   };
   const [vacationForm, setVacationForm] = useState(emptyVacationForm);
   const [editingVacationIds, setEditingVacationIds] = useState<string[] | null>(null);
@@ -833,6 +821,7 @@ export function DashboardSchedulePage() {
       const params = new URLSearchParams();
       const yearId = overrideYearId ?? academicYearFilter;
       if (yearId) params.set("academic_year_id", yearId);
+      if (classFilter) params.set("class_id", classFilter);
       const res = await fetchWithAuth(`${API_BASE}/school-vacations?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
@@ -891,6 +880,41 @@ export function DashboardSchedulePage() {
   useEffect(() => {
     loadPeriods(academicYearFilter || defaultYearId);
   }, [academicYearFilter, defaultYearId]);
+
+  useEffect(() => {
+    if (!showExamPeriodForm) {
+      setExamPeriodFormPeriods([]);
+      return;
+    }
+    const yearId = examPeriodForm.academic_year_id;
+    if (!yearId) {
+      setExamPeriodFormPeriods([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${yearId}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const loaded: Period[] = data.periods ?? [];
+        setExamPeriodFormPeriods(loaded);
+        setExamPeriodForm((f) => {
+          if (f.period_id && loaded.some((p) => p.id === f.period_id)) return f;
+          const byName = f.period_name
+            ? loaded.find((p) => p.name === f.period_name)
+            : undefined;
+          if (byName) return { ...f, period_id: byName.id };
+          return f.period_id ? { ...f, period_id: "" } : f;
+        });
+      } catch {
+        if (!cancelled) setExamPeriodFormPeriods([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showExamPeriodForm, examPeriodForm.academic_year_id]);
 
   useEffect(() => {
     const list = classes.filter((c) => isListScheduleLevel(c.level));
@@ -1515,7 +1539,6 @@ export function DashboardSchedulePage() {
     setExamPeriodForm({
       ...emptyExamPeriodForm,
       academic_year_id: academicYearFilter || defaultYearId,
-      period_name: defaultPeriodName || "",
     });
     setShowExamPeriodForm(true);
   }
@@ -1526,6 +1549,7 @@ export function DashboardSchedulePage() {
     setEditingExamPeriodIds(items.map((p) => p.id));
     setExamPeriodForm({
       academic_year_id: first.academic_year_id || defaultYearId,
+      period_id: first.period_id || "",
       period_name: first.period_name || "",
       start_date: (first.start_date || "").slice(0, 10),
       end_date: (first.end_date || "").slice(0, 10),
@@ -1547,7 +1571,7 @@ export function DashboardSchedulePage() {
     if (
       !examPeriodForm.academic_year_id ||
       !examPeriodForm.class_ids.length ||
-      !examPeriodForm.period_name.trim() ||
+      !examPeriodForm.period_id ||
       !examPeriodForm.start_date ||
       !examPeriodForm.end_date
     ) {
@@ -1558,7 +1582,7 @@ export function DashboardSchedulePage() {
     try {
       const payload = {
         academic_year_id: examPeriodForm.academic_year_id,
-        period_name: examPeriodForm.period_name.trim(),
+        period_id: examPeriodForm.period_id,
         start_date: examPeriodForm.start_date,
         end_date: examPeriodForm.end_date,
         report_date: examPeriodForm.report_date || null,
@@ -1643,7 +1667,7 @@ export function DashboardSchedulePage() {
       !vacationForm.start_date ||
       !vacationForm.end_date ||
       !vacationForm.motif.trim() ||
-      !vacationForm.room_ids.length
+      !vacationForm.class_ids.length
     ) {
       return;
     }
@@ -1659,24 +1683,24 @@ export function DashboardSchedulePage() {
       };
       if (editingVacationIds) {
         const existing = vacations.filter((v) => editingVacationIds.includes(v.id));
-        const byRoom = new Map(existing.filter((v) => v.room_id).map((v) => [v.room_id as string, v]));
-        const kept = new Set(vacationForm.room_ids);
-        for (const roomId of vacationForm.room_ids) {
-          const row = byRoom.get(roomId);
+        const byClass = new Map(existing.filter((v) => v.class_id).map((v) => [v.class_id as string, v]));
+        const kept = new Set(vacationForm.class_ids);
+        for (const classId of vacationForm.class_ids) {
+          const row = byClass.get(classId);
           const res = row
             ? await fetchWithAuth(`${API_BASE}/school-vacations/${row.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ ...payload, room_id: roomId }),
+                body: JSON.stringify({ ...payload, class_id: classId }),
               })
             : await fetchWithAuth(`${API_BASE}/school-vacations`, {
                 method: "POST",
-                body: JSON.stringify({ ...payload, room_id: roomId }),
+                body: JSON.stringify({ ...payload, class_id: classId }),
               });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.message || "Erreur");
         }
         for (const row of existing) {
-          if (row.room_id && kept.has(row.room_id)) continue;
+          if (row.class_id && kept.has(row.class_id)) continue;
           const res = await fetchWithAuth(`${API_BASE}/school-vacations/${row.id}`, { method: "DELETE" });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.message || "Erreur");
@@ -1684,7 +1708,7 @@ export function DashboardSchedulePage() {
       } else {
         const res = await fetchWithAuth(`${API_BASE}/school-vacations`, {
           method: "POST",
-          body: JSON.stringify({ ...payload, room_ids: vacationForm.room_ids }),
+          body: JSON.stringify({ ...payload, class_ids: vacationForm.class_ids }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
@@ -1720,7 +1744,7 @@ export function DashboardSchedulePage() {
       end_date: dateKey(v.end_date),
       motif: v.motif || "",
       kind: v.kind === "CONGE" ? "CONGE" : "VACANCE",
-      room_ids: items.map((item) => item.room_id).filter((id): id is string => !!id),
+      class_ids: [...new Set(items.map((item) => item.class_id).filter((id): id is string => !!id))],
     });
     setShowVacationForm(true);
   }
@@ -1930,7 +1954,7 @@ export function DashboardSchedulePage() {
     return [...groups.values()]
       .map((items) => ({
         key: items.map((v) => v.id).sort().join(","),
-        items: [...items].sort((a, b) => (a.room_name || "").localeCompare(b.room_name || "", "fr")),
+        items: [...items].sort((a, b) => (a.class_name || "").localeCompare(b.class_name || "", "fr")),
       }))
       .sort((a, b) => dateKey(a.items[0].start_date).localeCompare(dateKey(b.items[0].start_date)));
   }, [vacations]);
@@ -1944,7 +1968,7 @@ export function DashboardSchedulePage() {
           debut: formatDateJJMMAAAA(v.start_date),
           fin: formatDateJJMMAAAA(v.end_date),
           motif: v.motif,
-          salles: line.items.map((item) => item.room_name).filter(Boolean).join(", ") || "—",
+          classes: [...new Set(line.items.map((item) => item.class_name).filter(Boolean))].join(", ") || "—",
         };
       }),
     [vacationLines],
@@ -2208,14 +2232,14 @@ export function DashboardSchedulePage() {
               { header: "Début", key: "debut" },
               { header: "Fin", key: "fin" },
               { header: "Motif", key: "motif" },
-              { header: "Salles", key: "salles" },
+              { header: "Classes", key: "classes" },
             ],
             rows: [...lines.values()].map((items) => ({
               type: vacationKindLabel(items[0].kind),
               debut: formatDateJJMMAAAA(items[0].start_date),
               fin: formatDateJJMMAAAA(items[0].end_date),
               motif: items[0].motif,
-              salles: items.map((item) => item.room_name).filter(Boolean).join(", "),
+              classes: [...new Set(items.map((item) => item.class_name).filter(Boolean))].join(", "),
             })),
           },
         });
@@ -2388,6 +2412,9 @@ export function DashboardSchedulePage() {
       setExamGridPeriod("");
     }
   }
+
+  const examPeriodFormMixedScopes =
+    new Set(examPeriodFormPeriods.map((x) => x.scope || "ECOLE")).size > 1;
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
@@ -2612,8 +2639,6 @@ export function DashboardSchedulePage() {
               ))}
             </select>
           </div>
-          {tab !== "vacances" ? (
-            <>
           <div>
             <label className="mb-1 block text-[11px] font-medium text-slate-500">Classe</label>
             <select
@@ -2632,6 +2657,7 @@ export function DashboardSchedulePage() {
               ))}
             </select>
           </div>
+          {tab !== "vacances" ? (
           <div>
             <label className="mb-1 block text-[11px] font-medium text-slate-500">Salle</label>
             <select
@@ -2650,7 +2676,6 @@ export function DashboardSchedulePage() {
                 ))}
             </select>
           </div>
-            </>
           ) : null}
         </div>
       </div>
@@ -3175,7 +3200,14 @@ export function DashboardSchedulePage() {
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Année</label>
                   <select
                     value={examPeriodForm.academic_year_id}
-                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, academic_year_id: e.target.value }))}
+                    onChange={(e) =>
+                      setExamPeriodForm((f) => ({
+                        ...f,
+                        academic_year_id: e.target.value,
+                        period_id: "",
+                        period_name: "",
+                      }))
+                    }
                     className="class-input max-w-[12rem] bg-white"
                     required
                   >
@@ -3189,18 +3221,36 @@ export function DashboardSchedulePage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Période</label>
-                  <input
-                    list="exam-period-names"
-                    value={examPeriodForm.period_name}
-                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, period_name: e.target.value }))}
+                  <select
+                    value={examPeriodForm.period_id}
+                    onChange={(e) => {
+                      const period_id = e.target.value;
+                      const chosen = examPeriodFormPeriods.find((p) => p.id === period_id);
+                      setExamPeriodForm((f) => ({
+                        ...f,
+                        period_id,
+                        period_name: chosen?.name || "",
+                      }));
+                    }}
+                    disabled={!examPeriodForm.academic_year_id}
                     className="class-input w-full max-w-[14rem] bg-white"
                     required
-                  />
-                  <datalist id="exam-period-names">
-                    {periods.map((p) => (
-                      <option key={p.id} value={p.name} />
+                  >
+                    <option value="">
+                      {examPeriodForm.academic_year_id
+                        ? examPeriodFormPeriods.length
+                          ? "Sélectionner"
+                          : "Aucune période pour cette année"
+                        : "Choisir l’année d’abord"}
+                    </option>
+                    {examPeriodFormPeriods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {examPeriodFormMixedScopes
+                          ? `${p.name} — ${periodScopeLabel(p.scope || "ECOLE")}`
+                          : p.name}
+                      </option>
                     ))}
-                  </datalist>
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Du</label>
@@ -3976,60 +4026,48 @@ export function DashboardSchedulePage() {
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-slate-600">Salles</span>
-                  {rooms.some((r) => r.active !== false) ? (
+                  <span className="text-[11px] font-medium text-slate-600">Classes</span>
+                  {classes.length > 0 ? (
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
                       <input
                         type="checkbox"
-                        checked={
-                          rooms.filter((r) => r.active !== false).length > 0 &&
-                          vacationForm.room_ids.length === rooms.filter((r) => r.active !== false).length
-                        }
+                        checked={classes.length > 0 && vacationForm.class_ids.length === classes.length}
                         onChange={() =>
-                          setVacationForm((f) => {
-                            const ids = rooms.filter((r) => r.active !== false).map((r) => r.id);
-                            return { ...f, room_ids: f.room_ids.length === ids.length ? [] : ids };
-                          })
+                          setVacationForm((f) => ({
+                            ...f,
+                            class_ids: f.class_ids.length === classes.length ? [] : classes.map((c) => c.id),
+                          }))
                         }
                       />
                       Tout
                     </label>
                   ) : null}
                 </div>
-                <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
                   {classes.map((c) => {
-                    const classRooms = rooms.filter((r) => r.class_id === c.id && r.active !== false);
-                    if (!classRooms.length) return null;
+                    const on = vacationForm.class_ids.includes(c.id);
                     return (
-                      <div key={c.id} className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-medium text-slate-500">{c.name}</span>
-                        {classRooms.map((r) => {
-                          const on = vacationForm.room_ids.includes(r.id);
-                          return (
-                            <label
-                              key={r.id}
-                              className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
-                                on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={on}
-                                onChange={() =>
-                                  setVacationForm((f) => ({
-                                    ...f,
-                                    room_ids: f.room_ids.includes(r.id)
-                                      ? f.room_ids.filter((id) => id !== r.id)
-                                      : [...f.room_ids, r.id],
-                                  }))
-                                }
-                              />
-                              {r.name}
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <label
+                        key={c.id}
+                        className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                          on ? "bg-teal-600 text-white ring-teal-600" : "bg-white text-slate-600 ring-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={on}
+                          onChange={() =>
+                            setVacationForm((f) => ({
+                              ...f,
+                              class_ids: f.class_ids.includes(c.id)
+                                ? f.class_ids.filter((id) => id !== c.id)
+                                : [...f.class_ids, c.id],
+                            }))
+                          }
+                        />
+                        {c.name}
+                      </label>
                     );
                   })}
                 </div>
@@ -4058,7 +4096,7 @@ export function DashboardSchedulePage() {
                     <th className="px-3 py-2 font-semibold">Début</th>
                     <th className="px-3 py-2 font-semibold">Fin</th>
                     <th className="px-3 py-2 font-semibold">Motif</th>
-                    <th className="px-3 py-2 font-semibold">Salles</th>
+                    <th className="px-3 py-2 font-semibold">Classes</th>
                     <th className="px-3 py-2 font-semibold" />
                   </tr>
                 </thead>
@@ -4072,7 +4110,7 @@ export function DashboardSchedulePage() {
                         <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDateJJMMAAAA(v.end_date)}</td>
                         <td className="px-3 py-2 font-medium text-slate-900">{v.motif}</td>
                         <td className="px-3 py-2 text-slate-600">
-                          {line.items.map((item) => item.room_name).filter(Boolean).join(", ") || "—"}
+                          {[...new Set(line.items.map((item) => item.class_name).filter(Boolean))].join(", ") || "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right">
                           <button

@@ -15,6 +15,7 @@ import {
   listScheduleMoments,
   listScheduleSlots,
   listSchoolVacations,
+  uniqueSchoolVacations,
   listSchoolWeekDuties,
   type ClassDayMoment,
   type ClassItem,
@@ -154,7 +155,11 @@ export function AgendaScreen({ navigation }: Props) {
       setPeriods(periodRows.filter((item) => item.class_id && allowed.has(item.class_id)));
       setMeetings(meetingRows.filter((item) => item.class_id && allowed.has(item.class_id)));
       setActivities(activityRows.filter((item) => item.class_id && allowed.has(item.class_id)));
-      setVacations(vacationRows);
+      setVacations(
+        uniqueSchoolVacations(
+          vacationRows.filter((item) => !item.class_id || allowed.has(item.class_id)),
+        ),
+      );
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Agenda indisponible');

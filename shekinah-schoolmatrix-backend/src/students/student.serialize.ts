@@ -1,6 +1,6 @@
 import { Student } from './student.entity';
 
-export type ArchiveReason = 'REMOVED' | 'GRADUATED';
+export type ArchiveReason = 'REMOVED' | 'GRADUATED' | 'ABSENCES';
 
 export function isAlumniStudent(s: Pick<Student, 'active' | 'archived_at'>): boolean {
   return s.active === false || s.archived_at != null;

@@ -23,11 +23,11 @@ export class SchoolVacationController {
   @Get()
   async list(
     @Query('academic_year_id') academicYearId?: string,
-    @Query('room_id') roomId?: string,
+    @Query('class_id') classId?: string,
   ) {
     const list = await this.schoolVacationService.findAll({
       academic_year_id: academicYearId,
-      room_id: roomId,
+      class_id: classId,
     });
     return { ok: true, school_vacations: list };
   }
@@ -48,8 +48,8 @@ export class SchoolVacationController {
       end_date?: string;
       motif?: string;
       kind?: string | null;
-      room_id?: string | null;
-      room_ids?: string[];
+      class_id?: string | null;
+      class_ids?: string[];
     },
   ) {
     if (!body.academic_year_id || !body.start_date || !body.end_date || !body.motif) {
@@ -57,17 +57,20 @@ export class SchoolVacationController {
         'academic_year_id, start_date, end_date et motif requis',
       );
     }
-    const roomIds = body.room_ids?.filter(Boolean) ?? [];
-    if (roomIds.length > 0) {
-      const created = await this.schoolVacationService.createForRooms({
+    const classIds = body.class_ids?.filter(Boolean) ?? [];
+    if (classIds.length > 0) {
+      const created = await this.schoolVacationService.createForClasses({
         academic_year_id: body.academic_year_id,
         start_date: body.start_date,
         end_date: body.end_date,
         motif: body.motif,
         kind: body.kind ?? null,
-        room_ids: roomIds,
+        class_ids: classIds,
       });
       return { ok: true, school_vacations: created, count: created.length };
+    }
+    if (!body.class_id) {
+      throw new BadRequestException('class_id or class_ids (array) required');
     }
     const vacation = await this.schoolVacationService.create({
       academic_year_id: body.academic_year_id,
@@ -75,7 +78,7 @@ export class SchoolVacationController {
       end_date: body.end_date,
       motif: body.motif,
       kind: body.kind ?? null,
-      room_id: body.room_id ?? null,
+      class_id: body.class_id,
     });
     return { ok: true, school_vacation: vacation };
   }
@@ -91,7 +94,7 @@ export class SchoolVacationController {
       end_date: string;
       motif: string;
       kind: string | null;
-      room_id: string | null;
+      class_id: string | null;
     }>,
   ) {
     const vacation = await this.schoolVacationService.updateAndReturn(id, body);

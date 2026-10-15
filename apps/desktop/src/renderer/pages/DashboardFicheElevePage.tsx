@@ -285,8 +285,23 @@ type SchoolVacationItem = {
   end_date: string;
   motif: string;
   kind?: string | null;
-  room_id?: string | null;
+  class_id?: string | null;
 };
+
+function uniqueClassVacations(list: SchoolVacationItem[], classId?: string | null): SchoolVacationItem[] {
+  const filtered = list.filter((v) => !v.class_id || !classId || v.class_id === classId);
+  const seen = new Map<string, SchoolVacationItem>();
+  for (const v of filtered) {
+    const key = [
+      (v.start_date || "").slice(0, 10),
+      (v.end_date || "").slice(0, 10),
+      (v.motif || "").trim().toLowerCase(),
+      v.kind === "CONGE" ? "CONGE" : "VACANCE",
+    ].join("|");
+    if (!seen.has(key)) seen.set(key, v);
+  }
+  return [...seen.values()].sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
+}
 
 export function DashboardFicheElevePage() {
   const [searchParams] = useSearchParams();
@@ -340,6 +355,11 @@ export function DashboardFicheElevePage() {
     }[]
   >([]);
   const [error, setError] = useState("");
+  const [reinstateOpen, setReinstateOpen] = useState(false);
+  const [reinstateYearId, setReinstateYearId] = useState("");
+  const [reinstateClassId, setReinstateClassId] = useState("");
+  const [reinstateSaving, setReinstateSaving] = useState(false);
+  const [reinstateError, setReinstateError] = useState("");
   const [rosterMode, setRosterMode] = useState<"active" | "alumni">("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
@@ -713,8 +733,10 @@ export function DashboardFicheElevePage() {
         }
       }
       try {
-        const vacQs = selectedYearId ? `?academic_year_id=${selectedYearId}` : "";
-        const vacRes = await fetchWithAuth(`${API_BASE}/school-vacations${vacQs}`);
+        const vacParams = new URLSearchParams();
+        if (selectedYearId) vacParams.set("academic_year_id", selectedYearId);
+        if (yearClassId) vacParams.set("class_id", yearClassId);
+        const vacRes = await fetchWithAuth(`${API_BASE}/school-vacations?${vacParams}`);
         const vacData = await vacRes.json();
         setSchoolVacations(vacRes.ok ? (vacData.school_vacations ?? []) : []);
       } catch {
@@ -773,6 +795,11 @@ export function DashboardFicheElevePage() {
         .then((d) => setPayment({ academic_year: d.academic_year ?? yearName, by_service: d.by_service ?? [], transactions: d.transactions }));
     }
   };
+
+  const visibleFicheVacations = useMemo(
+    () => uniqueClassVacations(schoolVacations, student?.class_id),
+    [schoolVacations, student?.class_id],
+  );
 
   const schedulePdfSections = useMemo<PdfSection[]>(() => {
     const sections: PdfSection[] = [];
@@ -932,9 +959,7 @@ export function DashboardFicheElevePage() {
         },
       });
     }
-    const visibleVacations = schoolVacations.filter(
-      (v) => !v.room_id || !student?.room_id || v.room_id === student.room_id,
-    );
+    const visibleVacations = visibleFicheVacations;
     if (visibleVacations.length > 0) {
       sections.push({
         title: "Vacances",
@@ -957,7 +982,7 @@ export function DashboardFicheElevePage() {
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, schoolVacations, dayLists, student?.class_level, student?.room_id]);
+  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, visibleFicheVacations, dayLists, student?.class_level]);
 
   const ficheLevel =
     dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
@@ -1166,7 +1191,9 @@ export function DashboardFicheElevePage() {
                       ? " — fin de cycle"
                       : student.archive_reason === "REMOVED"
                         ? " — retiré de l’année"
-                        : ""}
+                        : student.archive_reason === "ABSENCES"
+                          ? " — 10 absences"
+                          : ""}
                   </p>
                 )}
               </div>
@@ -1203,6 +1230,20 @@ export function DashboardFicheElevePage() {
                   });
                 }}
               />
+              {ROLES_FULL.includes(roleName) && student.is_alumni && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReinstateYearId(currentAcademicYearId || academicYears[0]?.id || "");
+                    setReinstateClassId(student.class_id);
+                    setReinstateError("");
+                    setReinstateOpen((open) => !open);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--school-accent-1)] text-white hover:opacity-90 font-medium text-sm transition-colors"
+                >
+                  Réintégrer
+                </button>
+              )}
               {ROLES_FULL.includes(roleName) && (
                 <Link
                   to={`/dashboard/students?edit_id=${student.id}`}
@@ -1213,6 +1254,78 @@ export function DashboardFicheElevePage() {
               )}
             </div>
           </div>
+
+          {reinstateOpen && student.is_alumni && ROLES_FULL.includes(roleName) && (
+            <form
+              className="rounded-xl border border-[var(--app-border)] bg-white p-4 flex flex-wrap items-end gap-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const sameYear = reinstateYearId === currentAcademicYearId;
+                const classId = sameYear ? student.class_id : reinstateClassId;
+                if (!reinstateYearId || !classId) return;
+                setReinstateSaving(true);
+                setReinstateError("");
+                try {
+                  const res = await fetchWithAuth(`${API_BASE}/students/${student.id}/reinstate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ academic_year_id: reinstateYearId, class_id: classId }),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(data.message || "Erreur");
+                  setReinstateOpen(false);
+                  await loadStudentData(student.id);
+                } catch (e) {
+                  setReinstateError(e instanceof Error ? e.message : "Erreur");
+                } finally {
+                  setReinstateSaving(false);
+                }
+              }}
+            >
+              <label className="flex flex-col gap-1 text-sm text-slate-700">
+                Année
+                <select
+                  value={reinstateYearId}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setReinstateYearId(next);
+                    if (next === currentAcademicYearId) setReinstateClassId(student.class_id);
+                  }}
+                  className="rounded-lg border border-[var(--app-border)] px-3 py-2 min-w-[12rem] bg-white"
+                >
+                  {academicYears.map((year) => (
+                    <option key={year.id} value={year.id}>{year.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-700">
+                Classe
+                <select
+                  value={reinstateYearId === currentAcademicYearId ? student.class_id : reinstateClassId}
+                  disabled={reinstateYearId === currentAcademicYearId}
+                  onChange={(event) => setReinstateClassId(event.target.value)}
+                  className="rounded-lg border border-[var(--app-border)] px-3 py-2 min-w-[12rem] bg-white disabled:bg-slate-50"
+                >
+                  {(reinstateYearId === currentAcademicYearId
+                    ? classes.some((item) => item.id === student.class_id)
+                      ? classes.filter((item) => item.id === student.class_id)
+                      : [{ id: student.class_id, name: student.class_name }]
+                    : classes
+                  ).map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={reinstateSaving || !reinstateYearId}
+                className="px-4 py-2 rounded-lg bg-[var(--school-accent-1)] text-white text-sm font-medium disabled:opacity-60"
+              >
+                {reinstateSaving ? "…" : "Enregistrer"}
+              </button>
+              {reinstateError && <p className="w-full text-sm text-rose-700">{reinstateError}</p>}
+            </form>
+          )}
 
           {canDossier && dossierYears.length > 0 && (
             <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
@@ -1702,12 +1815,10 @@ export function DashboardFicheElevePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {schoolVacations.filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id).length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période pour cette salle.</td></tr>
+                      {visibleFicheVacations.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période pour cette classe.</td></tr>
                       ) : (
-                        [...schoolVacations]
-                          .filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id)
-                          .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+                        visibleFicheVacations
                           .map((v) => (
                           <tr key={v.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-4 py-2 text-slate-600">{v.kind === "CONGE" ? "Congé" : "Vacance"}</td>

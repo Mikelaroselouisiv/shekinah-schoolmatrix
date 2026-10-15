@@ -429,7 +429,11 @@ export class StudentsService {
    * Retire l’élève de l’année en cours. Le dossier (notes, paiements, parcours) reste.
    * Ne jamais hard-delete : un élève « supprimé » devient un ancien élève.
    */
-  async archive(id: string, reason: ArchiveReason = 'REMOVED'): Promise<Student> {
+  async archive(
+    id: string,
+    reason: ArchiveReason = 'REMOVED',
+    options?: { keepYear?: boolean },
+  ): Promise<Student> {
     const student = await this.findOne(id);
     if (student.archived_at) return student;
     student.active = false;
@@ -440,7 +444,7 @@ export class StudentsService {
 
     const profiles = await this.schoolProfileRepo.find({ take: 1 });
     const yearId = profiles[0]?.current_academic_year_id;
-    if (yearId) {
+    if (yearId && !options?.keepYear) {
       const previous = await this.assignmentRepo.find({
         where: {
           student: { id },
@@ -450,6 +454,64 @@ export class StudentsService {
       if (previous.length) await this.assignmentRepo.remove(previous);
     }
     this.syncKick.kick('student-archive');
+    return this.findOne(id);
+  }
+
+  async reinstate(
+    id: string,
+    academicYearId: string,
+    classId: string,
+  ): Promise<Student> {
+    const student = await this.findOne(id);
+    if (!student.archived_at && student.active !== false) {
+      throw new BadRequestException('Élève déjà inscrit');
+    }
+    const yearId = academicYearId?.trim();
+    if (!yearId) throw new BadRequestException('Année requise');
+    const profiles = await this.schoolProfileRepo.find({ take: 1 });
+    const currentYearId = profiles[0]?.current_academic_year_id ?? null;
+    const sameYear = !!currentYearId && yearId === currentYearId;
+    const targetClassId = sameYear ? student.class?.id : classId?.trim();
+    if (!targetClassId) throw new BadRequestException('Classe requise');
+    const targetClass = await this.classesService.findOne(targetClassId);
+
+    student.active = true;
+    student.archived_at = null;
+    student.archive_reason = null;
+    student.class = targetClass;
+    if (!student.absence_reset_on) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Port-au-Prince' });
+      const noon = new Date(`${today}T12:00:00Z`);
+      noon.setUTCDate(noon.getUTCDate() - 1);
+      student.absence_reset_on = noon.toISOString().slice(0, 10);
+    }
+    await this.studentRepo.save(student);
+
+    if (sameYear) {
+      await this.formationClasseService.alignStudentCurrentYear(id);
+    } else {
+      const existing = await this.assignmentRepo.findOne({
+        where: { student: { id }, academic_year: { id: yearId } },
+        relations: ['class'],
+      });
+      if (existing) {
+        if (existing.class?.id !== targetClassId) {
+          existing.class = targetClass;
+          await this.assignmentRepo.save(existing);
+        }
+      } else {
+        await this.assignmentRepo.save(
+          this.assignmentRepo.create({
+            student: { id } as Student,
+            academic_year: { id: yearId } as StudentClassAssignment['academic_year'],
+            class: targetClass,
+            decision: null,
+            average: null,
+          }),
+        );
+      }
+    }
+    this.syncKick.kick('student-reinstate');
     return this.findOne(id);
   }
 

@@ -325,3 +325,23 @@ export function canSeeStudentNisu(
 export function isMonitorOnlyRole(roleName: string): boolean {
   return roleName === "PARENT";
 }
+
+/** Accueil monitoring : direction et direction pédagogique. */
+export function canSeeSchoolMonitoring(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  return ROLES_FULL.includes(role) || ROLES_PEDAGOGIQUE.includes(role);
+}
+
+/** Argent sur l'accueil : direction générale et administration, pas la pédagogie. */
+export function canSeeMonitoringFinance(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  return ROLES_FULL.includes(role);
+}

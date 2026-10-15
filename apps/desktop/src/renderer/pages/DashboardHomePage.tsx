@@ -6,7 +6,9 @@ import { API_BASE, getImageUrl, fetchWithAuth } from "@/services/api";
 import {
   getNavItemsForRole,
   canSeeSensitiveDashboardStats,
+  canSeeSchoolMonitoring,
 } from "@/lib/dashboardRoles";
+import { MonitoringHome } from "@/pages/MonitoringHome";
 
 const JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juill.", "août", "sept.", "oct.", "nov.", "déc."];
@@ -164,6 +166,14 @@ type CurrentContext = {
 };
 
 export function DashboardHomePage() {
+  const { loading, user, roleName, rolePermissions } = useSchoolProfile();
+  if (!loading && user && canSeeSchoolMonitoring(roleName, rolePermissions)) {
+    return <MonitoringHome />;
+  }
+  return <ShortcutHome />;
+}
+
+function ShortcutHome() {
   const { school, user, loading, roleName, rolePermissions } = useSchoolProfile();
   const navigate = useNavigate();
   const [now, setNow] = useState<Date>(() => new Date());

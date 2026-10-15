@@ -9,7 +9,7 @@ import {
   Index,
 } from 'typeorm';
 import { AcademicYear } from '../academic-year/academic-year.entity';
-import { Room } from '../rooms/room.entity';
+import { Class } from '../classes/class.entity';
 
 @Entity('school_vacation')
 @Index(['academic_year', 'start_date'])
@@ -34,9 +34,9 @@ export class SchoolVacation {
   @Column({ type: 'varchar', length: 20, default: 'VACANCE' })
   kind: string;
 
-  @ManyToOne(() => Room, { nullable: true, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'room_id' })
-  room: Room | null;
+  @ManyToOne(() => Class, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'class_id' })
+  class: Class | null;
 
   @CreateDateColumn()
   created_at: Date;

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SchoolVacation } from './school-vacation.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
-import { Room } from '../rooms/room.entity';
+import { Class } from '../classes/class.entity';
 
 function isoDate(value?: string | null): string {
   const s = String(value ?? '').trim().slice(0, 10);
@@ -33,10 +33,8 @@ export class SchoolVacationService {
       end_date: v.end_date,
       motif: v.motif,
       kind: vacationKind(v.kind),
-      room_id: v.room?.id ?? null,
-      room_name: v.room?.name ?? null,
-      class_id: v.room?.class?.id ?? null,
-      class_name: v.room?.class?.name ?? null,
+      class_id: v.class?.id ?? null,
+      class_name: v.class?.name ?? null,
       created_at: v.created_at,
       updated_at: v.updated_at,
     };
@@ -46,19 +44,20 @@ export class SchoolVacationService {
     return this.repo
       .createQueryBuilder('v')
       .leftJoinAndSelect('v.academic_year', 'year')
-      .leftJoinAndSelect('v.room', 'room')
-      .leftJoinAndSelect('room.class', 'roomClass');
+      .leftJoinAndSelect('v.class', 'klass');
   }
 
-  async findAll(filters: { academic_year_id?: string; room_id?: string } = {}) {
+  async findAll(filters: { academic_year_id?: string; class_id?: string } = {}) {
     const qb = this.withRelations()
       .orderBy('v.start_date', 'ASC')
       .addOrderBy('v.end_date', 'ASC');
     if (filters.academic_year_id) {
       qb.andWhere('v.academic_year_id = :aid', { aid: filters.academic_year_id });
     }
-    if (filters.room_id) {
-      qb.andWhere('v.room_id = :rid', { rid: filters.room_id });
+    if (filters.class_id) {
+      qb.andWhere('(v.class_id = :cid OR v.class_id IS NULL)', {
+        cid: filters.class_id,
+      });
     }
     const list = await qb.getMany();
     return list.map((v) => this.toDto(v));
@@ -76,7 +75,7 @@ export class SchoolVacationService {
     end_date: string;
     motif: string;
     kind?: string | null;
-    room_id?: string | null;
+    class_id?: string | null;
   }) {
     const start = isoDate(params.start_date);
     const end = isoDate(params.end_date);
@@ -92,24 +91,25 @@ export class SchoolVacationService {
         end_date: end,
         motif: motif.slice(0, 200),
         kind: vacationKind(params.kind),
-        room: params.room_id ? ({ id: params.room_id } as Room) : null,
+        class: params.class_id ? ({ id: params.class_id } as Class) : null,
       }),
     );
     return this.findOne(saved.id);
   }
 
-  async createForRooms(params: {
+  async createForClasses(params: {
     academic_year_id: string;
     start_date: string;
     end_date: string;
     motif: string;
     kind?: string | null;
-    room_ids: string[];
+    class_ids: string[];
   }) {
-    if (!params.room_ids?.length) return [];
+    const ids = [...new Set((params.class_ids ?? []).filter(Boolean))];
+    if (!ids.length) return [];
     const created = [];
-    for (const room_id of params.room_ids) {
-      created.push(await this.create({ ...params, room_id }));
+    for (const class_id of ids) {
+      created.push(await this.create({ ...params, class_id }));
     }
     return created;
   }
@@ -122,12 +122,12 @@ export class SchoolVacationService {
       end_date: string;
       motif: string;
       kind: string | null;
-      room_id: string | null;
+      class_id: string | null;
     }>,
   ) {
     const v = await this.repo.findOne({
       where: { id },
-      relations: ['academic_year', 'room', 'room.class'],
+      relations: ['academic_year', 'class'],
     });
     if (!v) throw new NotFoundException('Période de vacances introuvable');
     if (params.academic_year_id !== undefined) {
@@ -144,8 +144,8 @@ export class SchoolVacationService {
       v.motif = motif.slice(0, 200);
     }
     if (params.kind !== undefined) v.kind = vacationKind(params.kind);
-    if (params.room_id !== undefined) {
-      v.room = params.room_id ? ({ id: params.room_id } as Room) : null;
+    if (params.class_id !== undefined) {
+      v.class = params.class_id ? ({ id: params.class_id } as Class) : null;
     }
     await this.repo.save(v);
     return this.findOne(id);
