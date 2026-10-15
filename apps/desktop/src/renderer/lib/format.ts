@@ -13,7 +13,8 @@ export function getTodayLocalYYYYMMDD(): string {
 /**
  * Format montant en gourdes (format comptable : espaces milliers, 2 décimales, suffixe Gdes).
  */
-export function formatGdes(amount: number | string): string {
+export function formatGdes(amount: number | string | null | undefined): string {
+  if (amount == null || amount === "") return "— Gdes";
   const n = typeof amount === "string" ? parseFloat(amount) : amount;
   if (Number.isNaN(n)) return "— Gdes";
   return `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Gdes`;

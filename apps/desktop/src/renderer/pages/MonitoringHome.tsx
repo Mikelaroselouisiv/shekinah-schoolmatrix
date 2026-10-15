@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { getImageUrl, useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { canSeeMonitoringFinance } from "@/lib/dashboardRoles";
+import { ProgramBoard } from "@/pages/ProgramBoard";
 import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+import { formatGdes } from "@/lib/format";
 import { getSectionsPdfBlob, type PdfSection } from "@/lib/pdfExport";
 import {
   countStatus,
@@ -53,20 +55,23 @@ const SECTIONS: { id: MonitorSection; label: string; money?: boolean }[] = [
   { id: "discipline", label: "Discipline" },
   { id: "moyennes", label: "Moyennes" },
   { id: "travaux", label: "Leçons et devoirs" },
+  { id: "programmation", label: "Programmation" },
 ];
 
 function Stat({
   value,
   label,
   tone = "ink",
+  money = false,
 }: {
   value: string;
   label: string;
   tone?: "ink" | "good" | "alert" | "wait";
+  money?: boolean;
 }) {
   return (
     <div className={`monitor-stat monitor-stat-${tone}`}>
-      <p className="monitor-stat-value">{value}</p>
+      <p className={money ? "monitor-stat-value monitor-money" : "monitor-stat-value"}>{value}</p>
       <p className="monitor-stat-label">{label}</p>
     </div>
   );
@@ -118,16 +123,18 @@ function StatButton({
   value,
   label,
   tone = "ink",
+  money = false,
   onClick,
 }: {
   value: string;
   label: string;
   tone?: "ink" | "good" | "alert" | "wait";
+  money?: boolean;
   onClick: () => void;
 }) {
   return (
     <button type="button" onClick={onClick} className={`monitor-stat monitor-card monitor-stat-${tone}`}>
-      <p className="monitor-stat-value">{value}</p>
+      <p className={money ? "monitor-stat-value monitor-money" : "monitor-stat-value"}>{value}</p>
       <p className="monitor-stat-label">{label}</p>
     </button>
   );
@@ -382,7 +389,7 @@ export function MonitoringHome() {
   }, [dossier, roomPick]);
 
   const pdf = useMemo(() => {
-    if (!data) return null;
+    if (!data || section === "programmation") return null;
     return monitoringPdf(section, data, showMoney);
   }, [data, section, showMoney]);
 
@@ -488,7 +495,7 @@ export function MonitoringHome() {
       ];
     } else if (dossier === "economat") {
       sections = [
-        { lines: [klass, `À verser : ${formatNumber(owedNow)}`] },
+        { lines: [klass, `À verser : ${formatGdes(owedNow)}`] },
         pdfRows("Économat", [
           { header: "Service", key: "service" },
           { header: "Échéance", key: "echeance" },
@@ -498,9 +505,9 @@ export function MonitoringHome() {
         ], dueFees.filter((row) => row.balance > 0.01).map((row) => ({
           service: row.service_name,
           echeance: row.due_date ? formatShortDate(row.due_date) : "—",
-          du: formatNumber(row.amount_due),
-          paye: formatNumber(row.total_paid),
-          solde: formatNumber(row.balance),
+          du: formatGdes(row.amount_due),
+          paye: formatGdes(row.total_paid),
+          solde: formatGdes(row.balance),
         }))),
       ];
     } else {
@@ -638,7 +645,7 @@ export function MonitoringHome() {
         </div>
       )}
 
-      {section !== "jour" && (
+      {section !== "jour" && section !== "programmation" && (
       <div className="monitor-search">
         <input
           value={query}
@@ -700,8 +707,9 @@ export function MonitoringHome() {
             />
             {showMoney && (
               <StatButton
-                value={avgLoading || feeLoading ? "…" : formatNumber(owedNow)}
+                value={avgLoading || feeLoading ? "…" : formatGdes(owedNow)}
                 label="À verser"
+                money
                 tone={!avgLoading && !feeLoading && owedNow > 0 ? "alert" : "good"}
                 onClick={() => setDossier("economat")}
               />
@@ -798,7 +806,7 @@ export function MonitoringHome() {
               ) : (
                 <>
                   <div className="monitor-kpis cols-3">
-                    <Stat value={formatNumber(owedNow)} label="À verser" tone={owedNow > 0 ? "alert" : "good"} />
+                    <Stat value={formatGdes(owedNow)} label="À verser" tone={owedNow > 0 ? "alert" : "good"} money />
                   </div>
                   <DataTable
                     headers={["Service", "Échéance", "Dû", "Payé", "Solde"]}
@@ -808,9 +816,9 @@ export function MonitoringHome() {
                       .map((row) => [
                         row.service_name,
                         row.due_date ? formatShortDate(row.due_date) : "—",
-                        formatNumber(row.amount_due),
-                        formatNumber(row.total_paid),
-                        formatNumber(row.balance),
+                        formatGdes(row.amount_due),
+                        formatGdes(row.total_paid),
+                        formatGdes(row.balance),
                       ])}
                   />
                 </>
@@ -865,7 +873,7 @@ export function MonitoringHome() {
             {showMoney && (
               <button type="button" className="monitor-metric" onClick={() => setSection("argent")}>
                 <span className="monitor-metric-label">Finance</span>
-                <span className="monitor-metric-value">{detailsReady ? formatNumber(data.collectedToday) : "…"}</span>
+                <span className="monitor-metric-value monitor-money">{detailsReady ? formatGdes(data.collectedToday) : "…"}</span>
                 <span className="monitor-metric-hint">Encaissé</span>
               </button>
             )}
@@ -911,6 +919,7 @@ export function MonitoringHome() {
               )}
             </section>
             <section className="monitor-panel monitor-journal">
+              <ProgramBoard mode="school" preview onOpen={() => setSection("programmation")} />
               <div className="monitor-journal-block">
                 <div className="monitor-panel-head">
                   <h2 className="monitor-title">Sanctions</h2>
@@ -947,7 +956,7 @@ export function MonitoringHome() {
                     data.paymentsToday.slice(0, 4).map((row) => (
                       <div key={row.id} className="monitor-line">
                         <span>{row.student_name || "—"}</span>
-                        <span>{formatNumber(row.amount_paid)}</span>
+                        <span>{formatGdes(row.amount_paid)}</span>
                       </div>
                     ))
                   )}
@@ -1102,10 +1111,10 @@ export function MonitoringHome() {
       {data && section === "argent" && showMoney && detailsReady && (
         <div className="monitor-block">
           <div className="monitor-kpis">
-            <Stat value={formatNumber(data.collectedToday)} label="Encaissé" tone="good" />
+            <Stat value={formatGdes(data.collectedToday)} label="Encaissé" tone="good" money />
             <Stat value={formatPercent(data.collectionRate)} label="Recouvrement" />
             <Stat value={formatNumber(data.studentsWithBalance)} label="Débiteurs" tone="wait" />
-            <Stat value={formatNumber(data.balance)} label="Reste à recouvrer" tone="alert" />
+            <Stat value={formatGdes(data.balance)} label="Reste à recouvrer" tone="alert" money />
           </div>
           <h2 className="monitor-title">Paiements du jour</h2>
           <DataTable
@@ -1133,7 +1142,7 @@ export function MonitoringHome() {
               ),
               row.class_name || "—",
               row.service_name || "—",
-              formatNumber(row.amount_paid),
+              formatGdes(row.amount_paid),
             ])}
           />
           <h2 className="monitor-title">Soldes</h2>
@@ -1157,7 +1166,7 @@ export function MonitoringHome() {
                 {row.student_name}
               </NameButton>,
               row.class_name || "—",
-              formatNumber(row.balance),
+              formatGdes(row.balance),
             ])}
           />
         </div>
@@ -1237,6 +1246,10 @@ export function MonitoringHome() {
 
       {data && section === "travaux" && !detailsReady && (
         <p className="monitor-note">Chargement...</p>
+      )}
+
+      {section === "programmation" && (
+        <ProgramBoard mode="school" reloadKey={reloadKey} />
       )}
 
       {data && section === "travaux" && detailsReady && (

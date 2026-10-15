@@ -1,4 +1,5 @@
 import { API_BASE, fetchWithAuth } from "@/services/api";
+import { formatGdes } from "@/lib/format";
 import type { PdfSection } from "@/lib/pdfExport";
 
 const HAITI = "America/Port-au-Prince";
@@ -9,7 +10,8 @@ export type MonitorSection =
   | "argent"
   | "discipline"
   | "moyennes"
-  | "travaux";
+  | "travaux"
+  | "programmation";
 
 export type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" | null;
 
@@ -458,6 +460,22 @@ export async function loadPresenceBoard(): Promise<PresenceBoard> {
     };
   });
 
+  const directory = await getJson<{
+    students?: Array<{ id: string; room_id?: string | null; room_name?: string | null }>;
+  }>("/students");
+  const roomByStudent = new Map(
+    (directory?.students ?? [])
+      .filter((student) => student.room_id)
+      .map((student) => [student.id, { room_id: student.room_id as string, room_name: student.room_name ?? null }]),
+  );
+  for (const roll of rolls) {
+    roll.students = roll.students.map((student) => {
+      if (student.room_id) return student;
+      const room = roomByStudent.get(student.id);
+      return room ? { ...student, room_id: room.room_id, room_name: room.room_name } : student;
+    });
+  }
+
   return { today, context, rolls };
 }
 
@@ -590,7 +608,7 @@ export async function loadPaymentStanding(studentId: string, yearName: string | 
   const balance = rows.reduce((sum, row) => sum + Number(row.balance ?? 0), 0);
   const rounded = Math.round(balance * 100) / 100;
   if (rounded <= 0.01) return { label: "Payé", balance: 0 };
-  return { label: formatNumber(rounded), balance: rounded };
+  return { label: formatGdes(rounded), balance: rounded };
 }
 
 function line(text: string): PdfSection {
@@ -657,10 +675,10 @@ export function monitoringPdf(
       filename: `finance-${data.today}`,
       sections: [
         line(subtitle),
-        line(`Encaissé aujourd'hui : ${formatNumber(data.collectedToday)}`),
+        line(`Encaissé aujourd'hui : ${formatGdes(data.collectedToday)}`),
         line(`Recouvrement : ${formatPercent(data.collectionRate)}`),
         line(`Élèves débiteurs : ${formatNumber(data.studentsWithBalance)}`),
-        line(`Reste à recouvrer : ${formatNumber(data.balance)}`),
+        line(`Reste à recouvrer : ${formatGdes(data.balance)}`),
         table("Paiements du jour", [
           { header: "Élève", key: "eleve" },
           { header: "Classe", key: "classe" },
@@ -670,7 +688,7 @@ export function monitoringPdf(
           eleve: p.student_name || "—",
           classe: p.class_name || "—",
           service: p.service_name || "—",
-          montant: formatNumber(p.amount_paid),
+          montant: formatGdes(p.amount_paid),
         }))),
         table("Soldes", [
           { header: "Élève", key: "eleve" },
@@ -679,7 +697,7 @@ export function monitoringPdf(
         ], data.debtors.map((d) => ({
           eleve: d.student_name,
           classe: d.class_name || "—",
-          solde: formatNumber(d.balance),
+          solde: formatGdes(d.balance),
         }))),
       ],
     };
@@ -815,7 +833,7 @@ export function monitoringPdf(
     line(`Moyenne : ${formatAverage(data.schoolAverage)}`),
     line(`Travaux : ${data.works.length}`),
   ];
-  if (showMoney) sections.push(line(`Encaissé aujourd'hui : ${formatNumber(data.collectedToday)}`));
+  if (showMoney) sections.push(line(`Encaissé aujourd'hui : ${formatGdes(data.collectedToday)}`));
   sections.push(
     presenceTable,
     table("Absents", [
@@ -863,7 +881,7 @@ export function monitoringPdf(
     ], data.paymentsToday.map((p) => ({
       eleve: p.student_name || "—",
       classe: p.class_name || "—",
-      montant: formatNumber(p.amount_paid),
+      montant: formatGdes(p.amount_paid),
     }))));
   }
   return { title: "Aujourd'hui", filename: `aujourdhui-${data.today}`, sections };
@@ -1113,7 +1131,7 @@ export function studentPdf(input: {
   ];
   if (input.fees) {
     sections.push(
-      line(`À verser : ${formatNumber(dueNowTotal(input.fees))}`),
+      line(`À verser : ${formatGdes(dueNowTotal(input.fees))}`),
       table("Économat", [
         { header: "Service", key: "service" },
         { header: "Échéance", key: "echeance" },
@@ -1123,9 +1141,9 @@ export function studentPdf(input: {
       ], input.fees.filter((row) => row.balance > 0.01).map((row) => ({
         service: row.service_name,
         echeance: row.due_date ? formatShortDate(row.due_date) : "—",
-        du: formatNumber(row.amount_due),
-        paye: formatNumber(row.total_paid),
-        solde: formatNumber(row.balance),
+        du: formatGdes(row.amount_due),
+        paye: formatGdes(row.total_paid),
+        solde: formatGdes(row.balance),
       }))),
     );
   }

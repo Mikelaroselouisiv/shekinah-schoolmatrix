@@ -7,8 +7,10 @@ import {
   getNavItemsForRole,
   canSeeSensitiveDashboardStats,
   canSeeSchoolMonitoring,
+  isTeacherRole,
 } from "@/lib/dashboardRoles";
 import { MonitoringHome } from "@/pages/MonitoringHome";
+import { ProgramBoard } from "@/pages/ProgramBoard";
 
 const JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juill.", "août", "sept.", "oct.", "nov.", "déc."];
@@ -343,6 +345,11 @@ function ShortcutHome() {
         </div>
       </div>
 
+      <ProgramBoard
+        mode={roleName === "PARENT" ? "parent" : isTeacherRole(roleName) ? "teacher" : "school"}
+        userId={user.id ?? user.userId}
+      />
+
       {/* Carte prioritaire : Fiche élève — uniquement pour les utilisateurs qui ont un élève attaché à leur compte */}
       {hasLinkedStudents && (
         <Link
@@ -363,11 +370,6 @@ function ShortcutHome() {
               <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 group-hover:underline underline-offset-2">
                 Fiche élève
               </h2>
-              <p className="text-white/90 text-sm sm:text-base">
-                {linkedStudentsCount > 1
-                  ? "Consulter les dossiers de mes élèves."
-                  : "Consulter le dossier de mon élève."}
-              </p>
             </div>
             <div className="flex-shrink-0 flex items-center">
               <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/25 text-white group-hover:bg-white/35 transition-colors">

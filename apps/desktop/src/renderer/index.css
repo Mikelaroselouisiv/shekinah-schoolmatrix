@@ -504,6 +504,13 @@ button.monitor-metric {
   color: #14312e;
 }
 
+.monitor-money {
+  font-size: 1.15rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
 .monitor-metric-hint {
   margin-top: auto;
   padding-top: 0.45rem;
