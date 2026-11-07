@@ -27,6 +27,30 @@ import {
   DECISION_EXPELLED,
 } from './student-class-assignment.entity';
 
+function studentListFields(s: Student | null | undefined) {
+  const birth = s?.birth_date ? String(s.birth_date).slice(0, 10) : null;
+  return {
+    id: s?.id,
+    first_name: s?.first_name,
+    last_name: s?.last_name,
+    order_number: s?.order_number ?? null,
+    management_code: s?.management_code ?? null,
+    email: s?.email ?? null,
+    phone: s?.phone ?? null,
+    address: s?.address ?? null,
+    birth_date: birth,
+    birth_place: s?.birth_place ?? null,
+    gender: s?.gender ?? null,
+    photo_identity_student: s?.photo_identity_student ?? null,
+    mother_name: s?.mother_name ?? null,
+    mother_phone: s?.mother_phone ?? null,
+    father_name: s?.father_name ?? null,
+    father_phone: s?.father_phone ?? null,
+    responsible_name: s?.responsible_name ?? null,
+    responsible_phone: s?.responsible_phone ?? null,
+  };
+}
+
 @Injectable()
 export class FormationClasseService {
   constructor(
@@ -103,11 +127,7 @@ export class FormationClasseService {
       return assignments
         .filter((a) => a.student && a.student.active !== false && !a.student.archived_at)
         .map((a) => ({
-        id: a.student?.id,
-        first_name: a.student?.first_name,
-        last_name: a.student?.last_name,
-        order_number: (a.student as Student)?.order_number,
-        management_code: (a.student as Student)?.management_code ?? null,
+        ...studentListFields(a.student as Student),
         room_id: a.student?.room?.id ?? null,
         room_name: a.student?.room?.name ?? null,
         decision: a.decision,
@@ -122,11 +142,7 @@ export class FormationClasseService {
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
     return students.map((s) => ({
-      id: s.id,
-      first_name: s.first_name,
-      last_name: s.last_name,
-      order_number: s.order_number,
-      management_code: s.management_code ?? null,
+      ...studentListFields(s),
       room_id: s.room?.id ?? null,
       room_name: s.room?.name ?? null,
       decision: null,

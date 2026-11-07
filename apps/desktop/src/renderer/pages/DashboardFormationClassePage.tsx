@@ -1,16 +1,19 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { API_BASE, fetchWithAuth } from "@/services/api";
+import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
-import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
+import { PdfFieldPickerModal, type PdfFieldGroup } from "@/components/PdfFieldPickerModal";
+import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import {
   buildBadgesPdfBlob,
   fetchStudentsForClassBadges,
   fetchStudentsForRoomBadges,
 } from "@/lib/badgeProduction";
-import { getPrintableClassListPdfBlob } from "@/lib/classListPdf";
+import { CLASS_LIST_FIELDS, getPrintableClassListPdfBlob } from "@/lib/classListPdf";
 import { EDUCATION_LEVELS, educationLevelLabel, learnerNoun } from "@/lib/educationLevels";
+import { formatDateJJMMAAAA } from "@/lib/format";
+import { canSeeStudentNisu } from "@/lib/dashboardRoles";
 
 type TabKey = "annee-actuelle" | "nouvelle-annee";
 
@@ -55,6 +58,19 @@ type StudentInClass = {
   order_number?: string | null;
   management_code?: string | null;
   student_code?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  birth_date?: string | null;
+  birth_place?: string | null;
+  gender?: string | null;
+  photo_identity_student?: string | null;
+  mother_name?: string | null;
+  mother_phone?: string | null;
+  father_name?: string | null;
+  father_phone?: string | null;
+  responsible_name?: string | null;
+  responsible_phone?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   decision: string | null;
@@ -65,6 +81,52 @@ type StudentInClass = {
 const UNASSIGNED_ROOM_ID = "__sans_salle__";
 const PDF_BTN =
   "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium";
+
+function classListGroups(includeNisu: boolean): PdfFieldGroup[] {
+  const labels: Record<string, string> = {
+    photo: "Photo",
+    last_name: "Nom",
+    first_name: "Prénom",
+    room: "Salle",
+    code: "Code",
+    nisu: "NISU",
+    birth_date: "Date de naissance",
+    birth_place: "Lieu de naissance",
+    gender: "Sexe",
+    phone: "Téléphone",
+    parent_phone: "Téléphone parent",
+    parents: "Parents",
+    address: "Adresse",
+    average: "Moyenne",
+    decision: "Décision",
+  };
+  return [
+    {
+      label: "Élève",
+      options: ["photo", "last_name", "first_name", "room", "code", ...(includeNisu ? ["nisu"] : []), "birth_date", "birth_place", "gender", "phone", "address"].map(
+        (id) => ({ id, label: labels[id] }),
+      ),
+    },
+    {
+      label: "Famille",
+      options: ["parent_phone", "parents"].map((id) => ({ id, label: labels[id] })),
+    },
+    {
+      label: "Année",
+      options: ["average", "decision"].map((id) => ({ id, label: labels[id] })),
+    },
+  ];
+}
+
+function genderLabel(value?: string | null): string {
+  if (value === "M") return "Masculin";
+  if (value === "F") return "Féminin";
+  return value?.trim() || "";
+}
+
+function joinFilled(values: Array<string | null | undefined>): string {
+  return values.map((v) => v?.trim()).filter(Boolean).join(" · ");
+}
 
 function schoolCode(s: StudentInClass): string {
   return (s.management_code || s.student_code || "").trim() || "—";
@@ -102,7 +164,8 @@ function nextYearPreview(name: string): string {
 }
 
 export function DashboardFormationClassePage() {
-  const { school, refetch: refetchSchool } = useSchoolProfile();
+  const { school, refetch: refetchSchool, roleName, rolePermissions } = useSchoolProfile();
+  const includeNisu = canSeeStudentNisu(roleName, rolePermissions);
   const [tab, setTab] = useState<TabKey>("annee-actuelle");
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -112,6 +175,16 @@ export function DashboardFormationClassePage() {
   const [openClass, setOpenClass] = useState<ClassItem | null>(null);
   const [openRoomId, setOpenRoomId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [listExport, setListExport] = useState<{
+    students: StudentInClass[];
+    roomName?: string | null;
+    filename: string;
+  } | null>(null);
+  const [listFields, setListFields] = useState<Set<string>>(
+    () => new Set(["last_name", "first_name", "room"]),
+  );
+  const [listBusy, setListBusy] = useState(false);
+  const [listPdf, setListPdf] = useState<{ blob: Blob; filename: string } | null>(null);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [error, setError] = useState("");
   const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
@@ -437,18 +510,42 @@ export function DashboardFormationClassePage() {
     }
   }
 
-  function printableListBlob(list: StudentInClass[], roomName?: string | null) {
-    return getPrintableClassListPdfBlob({
-      school: { name: school?.name, email: school?.email, phone: school?.phone },
-      className: openClass?.name ?? "Classe",
-      roomName: roomName ?? null,
-      yearName: selectedYear?.name,
-      students: list.map((s) => ({
-        last_name: s.last_name,
-        first_name: s.first_name,
-        room_name: s.room_name,
-      })),
-    });
+  async function confirmListPdf() {
+    if (!listExport) return;
+    setListBusy(true);
+    try {
+      const fields = [...CLASS_LIST_FIELDS].filter((id) => listFields.has(id) && (id !== "nisu" || includeNisu));
+      const blob = await getPrintableClassListPdfBlob({
+        school: { name: school?.name, email: school?.email, phone: school?.phone },
+        className: openClass?.name ?? "Classe",
+        roomName: listExport.roomName ?? null,
+        yearName: selectedYear?.name,
+        fields,
+        students: listExport.students.map((s) => ({
+          last_name: s.last_name,
+          first_name: s.first_name,
+          room_name: s.room_name,
+          code: schoolCode(s),
+          nisu: s.order_number,
+          birth_date: s.birth_date ? formatDateJJMMAAAA(s.birth_date) : "",
+          birth_place: s.birth_place,
+          gender: genderLabel(s.gender),
+          phone: s.phone,
+          parent_phone: joinFilled([s.mother_phone, s.father_phone, s.responsible_phone]),
+          parents: joinFilled([s.mother_name, s.father_name, s.responsible_name]),
+          address: s.address,
+          average: s.average != null ? Number(s.average).toFixed(2) : "",
+          decision: decisionLabel(s.decision),
+          photo_url: getImageUrl(s.photo_identity_student),
+        })),
+      });
+      setListPdf({ blob, filename: listExport.filename });
+      setListExport(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setListBusy(false);
+    }
   }
 
   function studentTable(list: StudentInClass[]) {
@@ -769,12 +866,18 @@ export function DashboardFormationClassePage() {
             </div>
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {classStudents.length > 0 && (
-                <ExportPdfButton
-                  filename={`liste-classe-${openClass.name}-${selectedYear?.name ?? "annee"}.pdf`}
-                  label="Exporter la liste complète de la classe"
+                <button
+                  type="button"
                   className={PDF_BTN}
-                  getBlob={async () => printableListBlob(classStudents)}
-                />
+                  onClick={() =>
+                    setListExport({
+                      students: classStudents,
+                      filename: `liste-classe-${openClass.name}-${selectedYear?.name ?? "annee"}.pdf`,
+                    })
+                  }
+                >
+                  Exporter la liste complète de la classe
+                </button>
               )}
               {isCurrentYearTab && classStudents.length > 0 && (
                 <ExportBadgePdfButton
@@ -875,12 +978,19 @@ export function DashboardFormationClassePage() {
             </div>
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {openRoomStudents.length > 0 && (
-                <ExportPdfButton
-                  filename={`liste-salle-${openClass.name}-${openRoomName}-${selectedYear?.name ?? "annee"}.pdf`}
-                  label="Exporter en PDF"
+                <button
+                  type="button"
                   className={PDF_BTN}
-                  getBlob={async () => printableListBlob(openRoomStudents, openRoomName)}
-                />
+                  onClick={() =>
+                    setListExport({
+                      students: openRoomStudents,
+                      roomName: openRoomName,
+                      filename: `liste-salle-${openClass.name}-${openRoomName}-${selectedYear?.name ?? "annee"}.pdf`,
+                    })
+                  }
+                >
+                  Exporter en PDF
+                </button>
               )}
               {isCurrentYearTab && openRoomId !== UNASSIGNED_ROOM_ID && (
                 <ExportBadgePdfButton
@@ -959,6 +1069,24 @@ export function DashboardFormationClassePage() {
           </div>
         </div>
       )}
+      {listExport ? (
+        <PdfFieldPickerModal
+          title="Liste"
+          groups={classListGroups(includeNisu)}
+          selected={listFields}
+          busy={listBusy}
+          onChange={setListFields}
+          onCancel={() => !listBusy && setListExport(null)}
+          onConfirm={() => void confirmListPdf()}
+        />
+      ) : null}
+      {listPdf ? (
+        <PdfPreviewModal
+          blob={listPdf.blob}
+          filename={listPdf.filename}
+          onClose={() => setListPdf(null)}
+        />
+      ) : null}
     </div>
   );
 }

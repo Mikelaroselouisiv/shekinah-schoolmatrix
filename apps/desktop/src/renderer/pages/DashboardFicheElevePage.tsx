@@ -12,7 +12,10 @@ import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
 import { learnerNoun, learnerNounCap, isMaterialsCycle } from "@/lib/educationLevels";
 import { isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
+import { PdfFieldPickerModal, type PdfFieldGroup } from "@/components/PdfFieldPickerModal";
+import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import {
+  DOSSIER_PDF_FIELDS,
   getStudentDossierPdfBlob,
   type StudentDossier,
   type StudentDossierYear,
@@ -303,6 +306,54 @@ function uniqueClassVacations(list: SchoolVacationItem[], classId?: string | nul
   return [...seen.values()].sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
 }
 
+function dossierFieldGroups(includeNisu: boolean): PdfFieldGroup[] {
+  return [
+    {
+      label: "Identité",
+      options: [
+        { id: "code", label: "Code" },
+        ...(includeNisu ? [{ id: "nisu", label: "NISU" }] : []),
+        { id: "classe", label: "Classe" },
+        { id: "salle", label: "Salle" },
+        { id: "birth_date", label: "Date de naissance" },
+        { id: "birth_place", label: "Lieu de naissance" },
+        { id: "gender", label: "Sexe" },
+        { id: "phone", label: "Téléphone" },
+        { id: "address", label: "Adresse" },
+        { id: "status", label: "Statut" },
+      ],
+    },
+    {
+      label: "Parents",
+      options: [
+        { id: "mother", label: "Mère" },
+        { id: "mother_phone", label: "Tél. mère" },
+        { id: "father", label: "Père" },
+        { id: "father_phone", label: "Tél. père" },
+        { id: "responsible", label: "Responsable" },
+        { id: "responsible_phone", label: "Tél. responsable" },
+      ],
+    },
+    {
+      label: "Scolarité",
+      options: [
+        { id: "parcours", label: "Parcours" },
+        { id: "average", label: "Moyennes" },
+        { id: "decision", label: "Décisions de fin d'année" },
+        { id: "grades", label: "Notes" },
+        { id: "preschool", label: "Préscolaire" },
+      ],
+    },
+    {
+      label: "Autres",
+      options: [
+        { id: "discipline", label: "Discipline" },
+        { id: "economat", label: "Économat" },
+      ],
+    },
+  ];
+}
+
 export function DashboardFicheElevePage() {
   const [searchParams] = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
@@ -370,6 +421,10 @@ export function DashboardFicheElevePage() {
   const [searchError, setSearchError] = useState("");
   const [withoutNisuFilter, setWithoutNisuFilter] = useState(false);
   const [dossierYears, setDossierYears] = useState<StudentDossierYear[]>([]);
+  const [dossierPickerOpen, setDossierPickerOpen] = useState(false);
+  const [dossierFields, setDossierFields] = useState<Set<string>>(() => new Set(DOSSIER_PDF_FIELDS));
+  const [dossierBusy, setDossierBusy] = useState(false);
+  const [dossierPdf, setDossierPdf] = useState<Blob | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pickedStudentIdRef = useRef<string | null>(null);
 
@@ -991,6 +1046,24 @@ export function DashboardFicheElevePage() {
   const ficheLearner = learnerNoun(ficheLevel);
   const listSchedule = isListScheduleLevel(ficheLevel);
 
+  async function confirmDossierPdf() {
+    if (!student) return;
+    setDossierBusy(true);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${student.id}/dossier`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Impossible de charger le dossier");
+      const fields = new Set(dossierFields);
+      if (!canSeeNisu) fields.delete("nisu");
+      setDossierPdf(await getStudentDossierPdfBlob(data as StudentDossier, fields));
+      setDossierPickerOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setDossierBusy(false);
+    }
+  }
+
   if (loading) {
     return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
   }
@@ -1200,16 +1273,13 @@ export function DashboardFicheElevePage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {canDossier && (
-                <ExportPdfButton
-                  label="Dossier scolaire (PDF)"
-                  filename={`dossier-${student.last_name}-${student.first_name}`}
-                  getBlob={async () => {
-                    const res = await fetchWithAuth(`${API_BASE}/students/${student.id}/dossier`);
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.message || "Impossible de charger le dossier");
-                    return getStudentDossierPdfBlob(data as StudentDossier);
-                  }}
-                />
+                <button
+                  type="button"
+                  onClick={() => setDossierPickerOpen(true)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                >
+                  Dossier scolaire (PDF)
+                </button>
               )}
               <ExportBadgePdfButton
                 label="Produire le badge"
@@ -2116,6 +2186,24 @@ export function DashboardFicheElevePage() {
           </div>
         </>
       )}
+      {dossierPickerOpen && student ? (
+        <PdfFieldPickerModal
+          title="Dossier scolaire"
+          groups={dossierFieldGroups(canSeeNisu)}
+          selected={dossierFields}
+          busy={dossierBusy}
+          onChange={setDossierFields}
+          onCancel={() => !dossierBusy && setDossierPickerOpen(false)}
+          onConfirm={() => void confirmDossierPdf()}
+        />
+      ) : null}
+      {dossierPdf ? (
+        <PdfPreviewModal
+          blob={dossierPdf}
+          filename={`dossier-${student?.last_name ?? "eleve"}-${student?.first_name ?? ""}.pdf`}
+          onClose={() => setDossierPdf(null)}
+        />
+      ) : null}
     </div>
   );
 }

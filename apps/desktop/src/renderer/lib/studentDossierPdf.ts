@@ -59,11 +59,18 @@ export type StudentDossier = {
     management_code?: string | null;
     order_number?: string | null;
     class_name?: string | null;
+    room_name?: string | null;
     birth_date?: string | Date | null;
+    birth_place?: string | null;
     gender?: string | null;
+    phone?: string | null;
+    address?: string | null;
     mother_name?: string | null;
+    mother_phone?: string | null;
     father_name?: string | null;
+    father_phone?: string | null;
     responsible_name?: string | null;
+    responsible_phone?: string | null;
     archived_at?: string | Date | null;
     archive_reason?: string | null;
     is_alumni?: boolean;
@@ -77,35 +84,89 @@ export type StudentDossier = {
   } | null;
 };
 
-export function buildStudentDossierSections(dossier: StudentDossier): PdfSection[] {
+export const DOSSIER_PDF_FIELDS = [
+  "code",
+  "nisu",
+  "classe",
+  "salle",
+  "birth_date",
+  "birth_place",
+  "gender",
+  "phone",
+  "address",
+  "status",
+  "mother",
+  "mother_phone",
+  "father",
+  "father_phone",
+  "responsible",
+  "responsible_phone",
+  "parcours",
+  "average",
+  "decision",
+  "grades",
+  "preschool",
+  "discipline",
+  "economat",
+] as const;
+
+export type DossierPdfField = (typeof DOSSIER_PDF_FIELDS)[number];
+
+function genderLabel(value?: string | null): string {
+  if (value === "M") return "Masculin";
+  if (value === "F") return "Féminin";
+  return value?.trim() || "—";
+}
+
+function has(fields: Set<string> | undefined, id: string): boolean {
+  return !fields || fields.has(id);
+}
+
+export function buildStudentDossierSections(
+  dossier: StudentDossier,
+  fields?: Set<string>,
+): PdfSection[] {
   const s = dossier.student;
-  const sections: PdfSection[] = [
-    {
-      title: "Identité",
-      lines: [
-        `Nom : ${s.last_name} ${s.first_name}`,
-        `Code de gestion : ${s.management_code ?? "—"}`,
-        ...(s.order_number ? [`NISU : ${s.order_number}`] : []),
-        `Dernière classe : ${s.class_name ?? "—"}`,
-        `Date de naissance : ${s.birth_date ? formatDateJJMMAAAA(String(s.birth_date)) : "—"}`,
-        `Genre : ${s.gender ?? "—"}`,
-        `Mère : ${s.mother_name ?? "—"}`,
-        `Père : ${s.father_name ?? "—"}`,
-        `Responsable : ${s.responsible_name ?? "—"}`,
-        s.is_alumni
-          ? `Statut : ancien élève${s.archive_reason ? ` (${ARCHIVE_LABELS[s.archive_reason] ?? s.archive_reason})` : ""}`
-          : "Statut : élève en cours",
-      ],
-    },
-    {
+  const sections: PdfSection[] = [];
+  const identity = [
+    `Nom : ${s.last_name} ${s.first_name}`,
+    has(fields, "code") ? `Code de gestion : ${s.management_code ?? "—"}` : "",
+    has(fields, "nisu") ? `NISU : ${s.order_number ?? "—"}` : "",
+    has(fields, "classe") ? `Classe : ${s.class_name ?? "—"}` : "",
+    has(fields, "salle") ? `Salle : ${s.room_name ?? "—"}` : "",
+    has(fields, "birth_date")
+      ? `Date de naissance : ${s.birth_date ? formatDateJJMMAAAA(String(s.birth_date)) : "—"}`
+      : "",
+    has(fields, "birth_place") ? `Lieu de naissance : ${s.birth_place ?? "—"}` : "",
+    has(fields, "gender") ? `Sexe : ${genderLabel(s.gender)}` : "",
+    has(fields, "phone") ? `Téléphone : ${s.phone ?? "—"}` : "",
+    has(fields, "address") ? `Adresse : ${s.address ?? "—"}` : "",
+    has(fields, "mother") ? `Mère : ${s.mother_name ?? "—"}` : "",
+    has(fields, "mother_phone") ? `Téléphone mère : ${s.mother_phone ?? "—"}` : "",
+    has(fields, "father") ? `Père : ${s.father_name ?? "—"}` : "",
+    has(fields, "father_phone") ? `Téléphone père : ${s.father_phone ?? "—"}` : "",
+    has(fields, "responsible") ? `Responsable : ${s.responsible_name ?? "—"}` : "",
+    has(fields, "responsible_phone") ? `Téléphone responsable : ${s.responsible_phone ?? "—"}` : "",
+    has(fields, "status")
+      ? s.is_alumni
+        ? `Statut : ancien élève${s.archive_reason ? ` (${ARCHIVE_LABELS[s.archive_reason] ?? s.archive_reason})` : ""}`
+        : "Statut : élève en cours"
+      : "",
+  ].filter(Boolean);
+  if (identity.length) sections.push({ title: "Identité", lines: identity });
+
+  const showYear = has(fields, "parcours") || has(fields, "average") || has(fields, "decision");
+  if (showYear) {
+    const columns = [
+      { header: "Année", key: "year" },
+      ...(has(fields, "parcours") ? [{ header: "Classe", key: "class_name" }] : []),
+      ...(has(fields, "average") ? [{ header: "Moyenne", key: "average" }] : []),
+      ...(has(fields, "decision") ? [{ header: "Décision", key: "decision" }] : []),
+    ];
+    sections.push({
       title: "Parcours scolaire",
       table: {
-        columns: [
-          { header: "Année", key: "year" },
-          { header: "Classe", key: "class_name" },
-          { header: "Moyenne", key: "average" },
-          { header: "Décision", key: "decision" },
-        ],
+        columns,
         rows: (dossier.years ?? []).map((y) => ({
           year: y.academic_year_name,
           class_name: y.class_name ?? "—",
@@ -113,10 +174,10 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
           decision: y.decision ? (DECISION_LABELS[y.decision] ?? y.decision) : "—",
         })),
       },
-    },
-  ];
+    });
+  }
 
-  if (dossier.discipline) {
+  if (has(fields, "discipline") && dossier.discipline) {
     const d = dossier.discipline;
     sections.push({
       title: "Situation disciplinaire",
@@ -133,7 +194,7 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
   for (const year of dossier.years ?? []) {
     const yearTitle = `${year.academic_year_name}${year.class_name ? ` — ${year.class_name}` : ""}`;
 
-    if (year.payment?.by_service?.length) {
+    if (has(fields, "economat") && year.payment?.by_service?.length) {
       sections.push({
         title: `Paiements — ${yearTitle}`,
         table: {
@@ -156,12 +217,20 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
     }
 
     const exam = year.exam_results;
-    if (exam?.subjects?.length && exam.periods?.length) {
+    if (has(fields, "grades") && exam?.subjects?.length && exam.periods?.length) {
       sections.push({
-        title: `Moyennes — ${yearTitle}`,
+        title: `Notes — ${yearTitle}`,
         lines: [
-          year.average != null ? `Moyenne générale : ${year.average.toFixed(2)} / 10` : "Moyenne générale : —",
-          year.decision ? `Décision : ${DECISION_LABELS[year.decision] ?? year.decision}` : "",
+          has(fields, "average")
+            ? year.average != null
+              ? `Moyenne générale : ${year.average.toFixed(2)} / 10`
+              : "Moyenne générale : —"
+            : "",
+          has(fields, "decision")
+            ? year.decision
+              ? `Décision : ${DECISION_LABELS[year.decision] ?? year.decision}`
+              : "Décision : —"
+            : "",
         ].filter(Boolean),
         table: {
           columns: [
@@ -183,7 +252,7 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
     }
 
     const pre = year.preschool_results;
-    if (pre?.subjects?.length && pre.periods?.length) {
+    if (has(fields, "preschool") && pre?.subjects?.length && pre.periods?.length) {
       sections.push({
         title: `Évaluations préscolaires — ${yearTitle}`,
         table: {
@@ -213,10 +282,13 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
   return sections;
 }
 
-export async function getStudentDossierPdfBlob(dossier: StudentDossier): Promise<Blob> {
+export async function getStudentDossierPdfBlob(
+  dossier: StudentDossier,
+  fields?: Set<string>,
+): Promise<Blob> {
   const s = dossier.student;
   return getSectionsPdfBlob(
-    buildStudentDossierSections(dossier),
+    buildStudentDossierSections(dossier, fields),
     `Dossier scolaire — ${s.last_name} ${s.first_name}`,
   );
 }
