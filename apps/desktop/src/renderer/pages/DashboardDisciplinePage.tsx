@@ -5,6 +5,11 @@ import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 
 type ClassItem = { id: string; name: string };
 type StudentRow = { id: string; first_name: string; last_name: string; status: string | null };
+
+function dossierLabel(s: { management_code?: string | null; first_name: string; last_name: string }) {
+  const code = s.management_code?.trim();
+  return code ? `${code} — ${s.first_name} ${s.last_name}` : `${s.first_name} ${s.last_name}`;
+}
 type LatenessItem = {
   id: string;
   student_id: string;
@@ -69,7 +74,7 @@ export function DashboardDisciplinePage() {
     date: getTodayLocalYYYYMMDD(),
     arrival_time: "08:00",
   });
-  const [studentsForLateness, setStudentsForLateness] = useState<{ id: string; first_name: string; last_name: string; order_number: string | null }[]>([]);
+  const [studentsForLateness, setStudentsForLateness] = useState<{ id: string; first_name: string; last_name: string; management_code?: string | null }[]>([]);
   const [latenessSaving, setLatenessSaving] = useState(false);
 
   const [deductions, setDeductions] = useState<DeductionItem[]>([]);
@@ -82,7 +87,7 @@ export function DashboardDisciplinePage() {
     points: "10",
     reason: "",
   });
-  const [allStudents, setAllStudents] = useState<{ id: string; first_name: string; last_name: string; class_id: string; class_name: string }[]>([]);
+  const [allStudents, setAllStudents] = useState<{ id: string; first_name: string; last_name: string; class_id: string; class_name: string; management_code: string | null }[]>([]);
   const [deductionSaving, setDeductionSaving] = useState(false);
 
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
@@ -175,12 +180,13 @@ export function DashboardDisciplinePage() {
       const res = await fetchWithAuth(`${API_BASE}/students`);
       const data = await res.json();
       if (!res.ok) return;
-      const list = (data.students ?? []).map((s: { id: string; first_name: string; last_name: string; class_id?: string; class_name?: string }) => ({
+      const list = (data.students ?? []).map((s: { id: string; first_name: string; last_name: string; class_id?: string; class_name?: string; management_code?: string | null }) => ({
         id: s.id,
         first_name: s.first_name,
         last_name: s.last_name,
         class_id: s.class_id ?? "",
         class_name: s.class_name ?? "—",
+        management_code: s.management_code ?? null,
       }));
       setAllStudents(list);
     } catch {
@@ -570,7 +576,7 @@ export function DashboardDisciplinePage() {
                 >
                   <option value="">Sélectionner</option>
                   {studentsForLateness.map((s) => (
-                    <option key={s.id} value={s.id}>{s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}</option>
+                    <option key={s.id} value={s.id}>{dossierLabel(s)}</option>
                   ))}
                 </select>
               </div>
@@ -681,7 +687,7 @@ export function DashboardDisciplinePage() {
               >
                 <option value="">Sélectionner</option>
                 {filteredStudentsForDeduction.map((s) => (
-                  <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>
+                  <option key={s.id} value={s.id}>{dossierLabel(s)}</option>
                 ))}
               </select>
             </div>
@@ -749,7 +755,7 @@ export function DashboardDisciplinePage() {
                 >
                   <option value="">Tous les élèves</option>
                   {filteredStudentsForDeductionFilter.map((s) => (
-                    <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>
+                    <option key={s.id} value={s.id}>{dossierLabel(s)}</option>
                   ))}
                 </select>
               </div>
@@ -820,7 +826,7 @@ export function DashboardDisciplinePage() {
               >
                 <option value="">Sélectionner</option>
                 {filteredStudentsForMeasure.map((s) => (
-                  <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>
+                  <option key={s.id} value={s.id}>{dossierLabel(s)}</option>
                 ))}
               </select>
             </div>
@@ -889,7 +895,7 @@ export function DashboardDisciplinePage() {
                 >
                   <option value="">Tous les élèves</option>
                   {filteredStudentsForMeasureFilter.map((s) => (
-                    <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>
+                    <option key={s.id} value={s.id}>{dossierLabel(s)}</option>
                   ))}
                 </select>
               </div>

@@ -65,6 +65,29 @@ export function isEconomeRole(role?: string | null): boolean {
   return (role ?? '').toUpperCase().trim() === 'ECONOME';
 }
 
+/** Direction, secrétariat, censeurs et discipline : ajuster les listes de classe. */
+export function canManageRosters(
+  roleName?: string | null,
+  rolePermissions?: string[],
+): boolean {
+  if (isTeacherRole(roleName) || isParentRole(roleName) || isEconomeRole(roleName)) return false;
+  const role = (roleName ?? '').toUpperCase().trim();
+  if (role === 'COMPTABLE' || role === 'PHOTOGRAPHER') return false;
+  if (rolePermissions?.includes('full_access')) return true;
+  if (ROLES_FULL.includes(role) || ROLES_STUDENT_EDIT.includes(role) || isSupervisorRole(role)) {
+    return true;
+  }
+  if (
+    role.startsWith('SECRETAIRE') ||
+    role.startsWith('DIRECTEUR') ||
+    role === 'ADMINISTRATEUR' ||
+    role === 'CENSEUR'
+  ) {
+    return true;
+  }
+  return !!rolePermissions?.includes('students') || !!rolePermissions?.includes('formation-classe');
+}
+
 const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
 const ROLES_HORAIRES_SEUL = [
   'ADMIN_PRESCOLAIRE',
@@ -227,7 +250,7 @@ export function canSeeStudentNisu(
   ) {
     return true;
   }
-  return !!rolePermissions?.includes('students') || !!rolePermissions?.includes('formation-classe');
+  return false;
 }
 
 export function canSeeFinanceTab(

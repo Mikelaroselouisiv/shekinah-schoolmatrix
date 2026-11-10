@@ -10,7 +10,14 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { ROLES_FULL, canAccessPermission, isEconomeRole, isSupervisorRole, isTeacherRole } from '../../lib/permissions';
+import {
+  ROLES_FULL,
+  canAccessPermission,
+  canManageRosters,
+  isEconomeRole,
+  isSupervisorRole,
+  isTeacherRole,
+} from '../../lib/permissions';
 import { getImageUrl } from '../../services/api';
 import { WORK_TAB_BY_ROLE, getScreen } from '../../../spec/productMap';
 import { colors, softTint } from '../../theme/tokens';
@@ -58,11 +65,17 @@ const TEACHER_OPS: {
 ];
 
 const SUPERVISOR_OPS: {
-  id: 'appel' | 'retards' | 'points' | 'mesures';
+  id: 'listes' | 'appel' | 'retards' | 'points' | 'mesures';
   label: string;
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
 }[] = [
+  {
+    id: 'listes',
+    label: 'Listes des classes',
+    hint: 'Présents par salle, déplacer ou retirer un élève',
+    icon: 'people-outline',
+  },
   {
     id: 'appel',
     label: 'Appel',
@@ -116,8 +129,12 @@ const FULL_OPS: {
   tab?: 'Students' | 'Finance' | 'Work';
 }[] = [
   { screenId: 'students', label: 'Inscription', icon: 'person-add-outline', tab: 'Students' },
+  { screenId: 'class-roster', label: 'Listes', icon: 'people-outline' },
+  { screenId: 'attendance', label: 'Appel', icon: 'checkmark-done-outline' },
   { screenId: 'discipline', label: 'Discipline', icon: 'shield-checkmark-outline' },
   { screenId: 'grades', label: 'Notes', icon: 'create-outline' },
+  { screenId: 'photography', label: 'Photos', icon: 'camera-outline' },
+  { screenId: 'schedule', label: 'Horaires', icon: 'calendar-outline' },
   { screenId: 'economat', label: 'Paiements', icon: 'wallet-outline', tab: 'Finance' },
 ];
 
@@ -128,6 +145,7 @@ export function WorkScreen({ navigation }: Props) {
   const isFull = ROLES_FULL.includes(roleName) || rolePermissions.includes('full_access');
   const supervisor = isSupervisorRole(roleName);
   const econome = isEconomeRole(roleName);
+  const roster = canManageRosters(roleName, rolePermissions);
   const primary = mapping ? getScreen(mapping.screenId) : null;
   const logoUri = getImageUrl(context?.school?.logo_url || home?.logo_url);
 
@@ -151,19 +169,86 @@ export function WorkScreen({ navigation }: Props) {
       .filter(Boolean) as { id: string; label: string }[];
   }, [mapping, roleName, rolePermissions, isFull]);
 
+  const leadOps = useMemo(() => {
+    const allow = (key: string) =>
+      canAccessPermission(roleName, key, rolePermissions) || isFull;
+    const ops: {
+      id: string;
+      label: string;
+      hint: string;
+      icon: keyof typeof Ionicons.glyphMap;
+    }[] = [
+      {
+        id: 'roster',
+        label: 'Listes des classes',
+        hint: 'Présents par salle, déplacer ou retirer un élève',
+        icon: 'people-outline',
+      },
+    ];
+    if (allow('discipline')) {
+      ops.push({
+        id: 'appel',
+        label: 'Appel',
+        hint: 'Choisir la classe, puis la salle',
+        icon: 'checkmark-done-outline',
+      });
+    }
+    if (allow('grades')) {
+      ops.push({
+        id: 'grades',
+        label: 'Saisie des notes',
+        hint: 'Enregistrer les résultats',
+        icon: 'create-outline',
+      });
+    }
+    if (allow('photography')) {
+      ops.push({
+        id: 'photos',
+        label: 'Photos',
+        hint: 'Profil et photos de la classe',
+        icon: 'camera-outline',
+      });
+    }
+    if (allow('schedule')) {
+      ops.push({
+        id: 'schedule',
+        label: 'Horaires',
+        hint: 'Emploi du temps',
+        icon: 'calendar-outline',
+      });
+    }
+    if (allow('discipline')) {
+      ops.push({
+        id: 'discipline',
+        label: 'Discipline',
+        hint: 'Retards, points et mesures',
+        icon: 'shield-checkmark-outline',
+      });
+    }
+    if (allow('stats-academiques')) {
+      ops.push({
+        id: 'stats',
+        label: 'Statistiques',
+        hint: 'Suivi académique',
+        icon: 'stats-chart-outline',
+      });
+    }
+    return ops;
+  }, [roleName, rolePermissions, isFull]);
+
   const [selected, setSelected] = useState(mapping?.screenId || secondaryOptions[0]?.id || '');
   const wash = softTint(theme.accent, 0.78);
   const washSoft = softTint(theme.accent, 0.9);
   const todayLabel = formatDay(new Date());
 
   useLayoutEffect(() => {
-    if (!isTeacherRole(roleName) && !supervisor && !econome) return;
+    if (!isTeacherRole(roleName) && !supervisor && !econome && !(roster && !isFull)) return;
     navigation.setOptions({
       title: '',
       headerShadowVisible: false,
       headerStyle: { backgroundColor: colors.bg },
     });
-  }, [navigation, roleName, supervisor, econome]);
+  }, [navigation, roleName, supervisor, econome, roster, isFull]);
 
   function goHome() {
     tabNavigate(navigation, 'Home');
@@ -305,7 +390,8 @@ export function WorkScreen({ navigation }: Props) {
               <Pressable
                 key={op.id}
                 onPress={() => {
-                  if (op.id === 'appel') navigation.navigate('Attendance');
+                  if (op.id === 'listes') navigation.navigate('ClassRoster');
+                  else if (op.id === 'appel') navigation.navigate('Attendance');
                   else navigation.navigate('Discipline', { tab: op.id });
                 }}
                 accessibilityRole="button"
@@ -413,12 +499,28 @@ export function WorkScreen({ navigation }: Props) {
                     });
                     return;
                   }
+                  if (op.screenId === 'class-roster') {
+                    navigation.navigate('ClassRoster');
+                    return;
+                  }
+                  if (op.screenId === 'attendance') {
+                    navigation.navigate('Attendance');
+                    return;
+                  }
                   if (op.screenId === 'discipline') {
                     navigation.navigate('Discipline');
                     return;
                   }
                   if (op.screenId === 'grades') {
                     navigation.navigate('Grades');
+                    return;
+                  }
+                  if (op.screenId === 'photography') {
+                    navigation.navigate('Photography');
+                    return;
+                  }
+                  if (op.screenId === 'schedule') {
+                    navigation.navigate('Schedule');
                     return;
                   }
                   openModule(op.screenId);
@@ -440,6 +542,55 @@ export function WorkScreen({ navigation }: Props) {
                   <Ionicons name={op.icon} size={30} color={theme.accent} />
                 </View>
                 <Text style={styles.tileLabel}>{op.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </Screen>
+    );
+  }
+
+  if (roster && !isFull) {
+    return (
+      <Screen style={styles.teacherScreen}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <View style={[styles.teacherOrb, styles.teacherOrbTop, { backgroundColor: washSoft }]} />
+          <View style={[styles.teacherOrb, styles.teacherOrbMid, { backgroundColor: wash }]} />
+        </View>
+        <ScrollView
+          contentContainerStyle={[styles.teacherContent, { paddingBottom: listBottomPadding(24) }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.teacherHead}>
+            <Text style={styles.teacherKicker}>Aujourd’hui</Text>
+            <Text style={styles.teacherTitle}>Tableau de bord</Text>
+            <Text style={styles.teacherDate}>{todayLabel}</Text>
+          </View>
+          <View style={styles.teacherList}>
+            {leadOps.map((op) => (
+              <Pressable
+                key={op.id}
+                onPress={() => {
+                  if (op.id === 'roster') navigation.navigate('ClassRoster');
+                  else if (op.id === 'appel') navigation.navigate('Attendance');
+                  else if (op.id === 'grades') navigation.navigate('Grades');
+                  else if (op.id === 'photos') navigation.navigate('Photography');
+                  else if (op.id === 'schedule') navigation.navigate('Schedule');
+                  else if (op.id === 'discipline') navigation.navigate('Discipline');
+                  else if (op.id === 'stats') navigation.navigate('AcademicStats');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={op.label}
+                style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: theme.accentTint }]}>
+                  <Ionicons name={op.icon} size={22} color={theme.accent} />
+                </View>
+                <View style={styles.actionCopy}>
+                  <Text style={styles.actionTitle}>{op.label}</Text>
+                  <Text style={styles.actionHint}>{op.hint}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
               </Pressable>
             ))}
           </View>

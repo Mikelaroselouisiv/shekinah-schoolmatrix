@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, EmptyState, ErrorBanner } from '../../components/ui';
 import { useNetwork } from '../../context/NetworkContext';
 import { shiftYYYYMMDD, toYYYYMMDD } from '../../lib/format';
+import { useLatestRequest } from '../../lib/latestRequest';
 import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
 import {
   getAttendance,
@@ -72,6 +73,7 @@ export function AttendanceBoard({
   mode?: 'teacher' | 'room';
 }) {
   const roomMode = mode === 'room';
+  const latest = useLatestRequest();
   const { online } = useNetwork();
   const today = toYYYYMMDD();
   const activeId = classes.some((item) => item.id === classId) ? classId : classes[0]?.id || '';
@@ -138,15 +140,19 @@ export function AttendanceBoard({
   }, [roomMode, pickedClassId, rooms]);
 
   const load = useCallback(async () => {
+    const still = latest();
     if (roomMode) {
-      if (!roomId) {
-        setStudents([]);
+      if (!roomId || !rooms.some((room) => room.id === roomId && room.class_id === pickedClassId)) {
+        if (!roomId) setStudents([]);
         return;
       }
       try {
         const roomStudents = (await getStudents({ room_id: roomId })).filter(
-          (student) => student.active !== false,
+          (student) =>
+            student.active !== false &&
+            (!student.class_id || student.class_id === pickedClassId),
         );
+        if (!still()) return;
         const classIds = [
           ...new Set(roomStudents.map((student) => student.class_id).filter(Boolean)),
         ] as string[];
@@ -155,6 +161,7 @@ export function AttendanceBoard({
         for (const sheet of sheets) {
           for (const student of sheet.students || []) statusById.set(student.id, student.status);
         }
+        if (!still()) return;
         setStudents(
           roomStudents
             .map((student) => ({
@@ -168,6 +175,7 @@ export function AttendanceBoard({
         );
         setError('');
       } catch (err) {
+        if (!still()) return;
         setError(err instanceof Error ? err.message : 'Chargement appel impossible');
       }
       return;
@@ -181,15 +189,17 @@ export function AttendanceBoard({
         getAttendance(activeId, date),
         listStudentsInTeacherRoom(activeId, teacherId),
       ]);
+      if (!still()) return;
       const allowed = new Set(mine.map((student) => student.id));
       setStudents(
         (data.students || []).filter((student) => allowed.has(student.id)).sort(byLastName),
       );
       setError('');
     } catch (err) {
+      if (!still()) return;
       setError(err instanceof Error ? err.message : 'Chargement appel impossible');
     }
-  }, [roomMode, roomId, activeId, date, teacherId]);
+  }, [roomMode, roomId, rooms, pickedClassId, activeId, date, teacherId, latest]);
 
   useEffect(() => {
     setSaved(false);

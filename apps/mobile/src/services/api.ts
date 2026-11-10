@@ -370,6 +370,11 @@ export type ClassItem = {
   level?: string | null;
   can_take_attendance?: boolean;
   can_set_materials?: boolean;
+  room_id?: string | null;
+  room_name?: string | null;
+  room_count?: number;
+  student_count?: number;
+  rooms?: { id: string; name: string; capacity?: number | null }[];
 };
 
 
@@ -1934,6 +1939,14 @@ export async function createStudent(
   }
 }
 
+export async function archiveStudent(id: string): Promise<void> {
+  try {
+    await api.delete(`/students/${id}`);
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de retirer l’élève'));
+  }
+}
+
 export async function updateStudent(
   id: string,
   body: Partial<StudentWriteBody>,
@@ -1952,6 +1965,7 @@ export type FormationStudent = {
   first_name: string;
   last_name: string;
   order_number?: string | null;
+  management_code?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   decision?: string | null;

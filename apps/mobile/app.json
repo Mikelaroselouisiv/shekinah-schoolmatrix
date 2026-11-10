@@ -2,7 +2,7 @@
   "expo": {
     "name": "Shekinah",
     "slug": "shekinah-schoolmatrix-mobile",
-    "version": "1.0.5",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shekinah.schoolmatrix",
-      "buildNumber": "5",
+      "buildNumber": "9",
       "appleTeamId": "P227YQ54ZL",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -40,7 +40,7 @@
         "foregroundImage": "./assets/logo.png"
       },
       "package": "com.shekinah.schoolmatrix",
-      "versionCode": 5,
+      "versionCode": 9,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
@@ -74,7 +74,8 @@
           "defaultChannel": "birthdays"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withAndroidTextMetrics"
     ],
     "extra": {
       "eas": {

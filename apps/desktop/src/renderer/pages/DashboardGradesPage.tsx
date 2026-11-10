@@ -1,5 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
+import { useSchoolProfile } from "@/context/SchoolProfileContext";
+import { useGradeEntryDraft, type GradeDraftScope } from "@/lib/gradeDraft";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { AppAccordion } from "@/components/AppAccordion";
 import { ReportBookletPanel } from "@/components/ReportBookletPanel";
@@ -66,6 +68,7 @@ type ThresholdItem = {
 const FIELD = "class-input w-full";
 
 export function DashboardGradesPage() {
+  const { user } = useSchoolProfile();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -119,6 +122,23 @@ export function DashboardGradesPage() {
   const [teacherSubjectsInClass, setTeacherSubjectsInClass] = useState<Subject[]>([]);
   const [classSubjectsForSaisie, setClassSubjectsForSaisie] = useState<Subject[]>([]);
   const [canEditGrades, setCanEditGrades] = useState(true);
+  const draftUserId = String(user?.id ?? user?.userId ?? "");
+  const gradeDraft = useGradeEntryDraft({
+    scope:
+      draftUserId && academicYearId && classId && subjectId && periodId
+        ? {
+            userId: draftUserId,
+            academicYearId,
+            classId,
+            subjectId,
+            periodId,
+          }
+        : null,
+    canEdit: canEditGrades,
+    isPreschool: selectedClass?.is_preschool ?? false,
+    rows,
+    preschoolRows,
+  });
 
   async function loadAcademicYearsAndClasses() {
     setError("");
@@ -432,6 +452,7 @@ export function DashboardGradesPage() {
   }, [classId]);
 
   useEffect(() => {
+    gradeDraft.hold();
     if (!academicYearId || !classId || !roomId || !subjectId || !periodId) {
       setTeacher(null);
       setDefaultCoefficient(null);
@@ -441,6 +462,10 @@ export function DashboardGradesPage() {
       return;
     }
     const isPreschool = selectedClass?.is_preschool ?? false;
+    const scope: GradeDraftScope | null = draftUserId
+      ? { userId: draftUserId, academicYearId, classId, subjectId, periodId }
+      : null;
+    let cancelled = false;
     setFormLoading(true);
     setError("");
     const room = `&room_id=${encodeURIComponent(roomId)}`;
@@ -450,43 +475,69 @@ export function DashboardGradesPage() {
     fetchWithAuth(url)
       .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return;
         if (data.message && !data.teacher && !data.rows) throw new Error(data.message);
         setTeacher(data.teacher ?? null);
-        setCanEditGrades(data.can_edit !== false);
+        const editable = data.can_edit !== false;
+        setCanEditGrades(editable);
         if (!isPreschool) {
           setDefaultCoefficient(data.default_coefficient ?? null);
-          setRows(data.rows ?? []);
+          const merged = gradeDraft.capture(scope, data.rows ?? [], "standard", editable, () => !cancelled);
+          if (cancelled) return;
+          setRows(merged);
           setPreschoolRows([]);
           setIsLastPeriod(false);
         } else {
           setDefaultCoefficient(null);
+          const serverRows = (data.rows ?? []).map((r: PreschoolFormDataRow) => ({
+            ...r,
+            assignment_id: r.assignment_id ?? null,
+            decision: r.decision ?? null,
+          }));
+          const merged = gradeDraft.capture(scope, serverRows, "preschool", editable, () => !cancelled);
+          if (cancelled) return;
           setRows([]);
-          setPreschoolRows(
-            (data.rows ?? []).map((r: PreschoolFormDataRow) => ({
-              ...r,
-              assignment_id: r.assignment_id ?? null,
-              decision: r.decision ?? null,
-            })),
-          );
+          setPreschoolRows(merged);
           setEvalMode(data.eval_mode === "FREQUENCY" ? "FREQUENCY" : "LEVEL");
           setIsLastPeriod(!!data.is_last_period);
         }
       })
       .catch((e) => {
+        if (cancelled) return;
+        gradeDraft.hold();
         setError(e instanceof Error ? e.message : "Erreur");
         setRows([]);
         setPreschoolRows([]);
       })
-      .finally(() => setFormLoading(false));
-  }, [academicYearId, classId, roomId, subjectId, periodId, selectedClass?.is_preschool]);
+      .finally(() => {
+        if (!cancelled) setFormLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    academicYearId,
+    classId,
+    roomId,
+    subjectId,
+    periodId,
+    selectedClass?.is_preschool,
+    draftUserId,
+    gradeDraft.hold,
+    gradeDraft.capture,
+  ]);
 
   async function handleSaveGrades(e: React.FormEvent) {
     e.preventDefault();
     if (!canEditGrades || !academicYearId || !classId || !roomId || !subjectId || !periodId) return;
     const isPreschool = selectedClass?.is_preschool ?? false;
     if (!isPreschool && (defaultCoefficient == null || defaultCoefficient <= 0)) return;
+    const scope: GradeDraftScope | null = draftUserId
+      ? { userId: draftUserId, academicYearId, classId, subjectId, periodId }
+      : null;
     setSaving(true);
     setError("");
+    gradeDraft.pause();
     try {
       const url = isPreschool ? `${API_BASE}/grades/preschool/save` : `${API_BASE}/grades/save`;
       const body = isPreschool
@@ -525,11 +576,14 @@ export function DashboardGradesPage() {
       const res = await fetchWithAuth(url, { method: "POST", body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur enregistrement");
+      gradeDraft.forget(scope);
+      gradeDraft.acceptCurrent();
       if (isTeacherRole(currentUserRole)) setCanEditGrades(false);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
+      gradeDraft.resume();
       setSaving(false);
     }
   }
@@ -718,6 +772,12 @@ export function DashboardGradesPage() {
                   </p>
                 )}
               </div>
+              {gradeDraft.pending && !formLoading ? (
+                <p className="text-sm font-medium text-teal-800">
+                  Saisie conservée sur cet appareil pendant 24 h, même si vous quittez ou redémarrez.
+                  Enregistrer l'envoie en base.
+                </p>
+              ) : null}
 
               {isPreschool ? (
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">

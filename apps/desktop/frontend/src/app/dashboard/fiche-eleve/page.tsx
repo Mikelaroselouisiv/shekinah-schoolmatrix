@@ -99,7 +99,7 @@ const DECISION_LABELS: Record<string, string> = {
   EXPELLED: "Exclu",
 };
 
-type LinkedStudent = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
+type LinkedStudent = { id: string; order_number: string | null; management_code?: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 
@@ -149,9 +149,21 @@ export default function FicheElevePage() {
   const searchParams = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
   const { roleName, school } = useSchoolProfile() ?? { roleName: "", school: null };
+  const roleKey = (roleName || "").toUpperCase();
+  const canShowNisu = !(
+    roleKey.includes("DISCIPLINE") ||
+    roleKey.includes("SURVEILLANT") ||
+    roleKey.includes("ECONOME") ||
+    roleKey.includes("COMPTABLE") ||
+    roleKey === "PARENT" ||
+    roleKey.includes("PHOTO") ||
+    roleKey.includes("PROFESSEUR") ||
+    roleKey.includes("ENSEIGNANT") ||
+    roleKey.includes("TEACHER")
+  );
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [students, setStudents] = useState<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
+  const [students, setStudents] = useState<{ id: string; order_number: string | null; management_code?: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
   const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
   const [restrictToLinkedStudents, setRestrictToLinkedStudents] = useState(false);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -240,7 +252,7 @@ export default function FicheElevePage() {
           setLinkedStudents(list);
           if (isParentOnly) {
             setRestrictToLinkedStudents(true);
-            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, management_code: s.management_code ?? null, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
             const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
             const sel = list.find((x) => x.id === toSelect) ?? list[0];
             setSelectedStudentId(toSelect);
@@ -435,20 +447,22 @@ export default function FicheElevePage() {
               .filter((s) => !withoutNisuFilter || !s.order_number)
               .map((s) => (
               <option key={s.id} value={s.id}>
-                {s.order_number ? `${s.order_number} — ` : "Sans NISU — "}{s.first_name} {s.last_name}
+                {s.management_code ? `${s.management_code} — ` : ""}{s.first_name} {s.last_name}
                 {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
               </option>
             ))}
           </select>
-          <label className="mt-1.5 flex items-center gap-2 text-xs font-medium text-slate-600">
-            <input
-              type="checkbox"
-              checked={withoutNisuFilter}
-              onChange={(e) => setWithoutNisuFilter(e.target.checked)}
-              className="rounded border-slate-300"
-            />
-            Sans NISU
-          </label>
+          {canShowNisu ? (
+            <label className="mt-1.5 flex items-center gap-2 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={withoutNisuFilter}
+                onChange={(e) => setWithoutNisuFilter(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Sans NISU
+            </label>
+          ) : null}
         </div>
       </div>
 
@@ -474,11 +488,13 @@ export default function FicheElevePage() {
                 <h3 className="text-xl font-bold text-slate-900">
                   {student.first_name} {student.last_name}
                 </h3>
-                {student.order_number ? (
-                  <p className="text-slate-600 font-mono text-sm">NISU {student.order_number}</p>
-                ) : (
-                  <p className="text-slate-600 font-mono text-sm">Sans NISU</p>
-                )}
+                {canShowNisu ? (
+                  student.order_number ? (
+                    <p className="text-slate-600 font-mono text-sm">NISU {student.order_number}</p>
+                  ) : (
+                    <p className="text-slate-600 font-mono text-sm">Sans NISU</p>
+                  )
+                ) : null}
                 {student.management_code ? (
                   <p className="text-slate-600 font-mono text-sm">Code {student.management_code}</p>
                 ) : null}

@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { toYYYYMMDD } from '../../lib/format';
+import { useLatestRequest } from '../../lib/latestRequest';
 import {
   createHomework,
   listStudentsInTeacherRoom,
@@ -244,6 +245,7 @@ function HomeworkPanel({
   teacherId: number | null;
 }) {
   const { theme } = useSchool();
+  const latestRoster = useLatestRequest();
   const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
   const activeClass = classes.find((c) => c.id === activeId);
   const [mode, setMode] = useState<'list' | 'compose' | 'detail'>('list');
@@ -352,25 +354,25 @@ function HomeworkPanel({
       setRoster([]);
       return;
     }
-    let cancelled = false;
-    void listStudentsInTeacherRoom(activeId, teacherId)
+    const still = latestRoster();
+    const requestedClass = activeId;
+    void listStudentsInTeacherRoom(requestedClass, teacherId)
       .then((students) => {
-        if (cancelled) return;
+        if (!still()) return;
         setRoster(
-          students.map((student) => ({
-            student_id: student.id,
-            first_name: student.first_name,
-            last_name: student.last_name,
-          })),
+          students
+            .filter((student) => !student.class_id || student.class_id === requestedClass)
+            .map((student) => ({
+              student_id: student.id,
+              first_name: student.first_name,
+              last_name: student.last_name,
+            })),
         );
       })
       .catch(() => {
-        if (!cancelled) setRoster([]);
+        if (still()) setRoster([]);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [preschool, activeId, teacherId]);
+  }, [preschool, activeId, teacherId, latestRoster]);
 
   function resetForm() {
     setKind('DEVOIR');

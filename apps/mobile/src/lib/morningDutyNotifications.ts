@@ -3,9 +3,8 @@
  * Même mécanisme que les anniversaires : au login ou au retour au premier plan.
  */
 
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
+import { ensureNotificationChannel, presentNotificationNow } from './localNotifications';
 import { isParentRole, isTeacherRole } from './permissions';
 import {
   getCurrentContext,
@@ -21,25 +20,6 @@ import {
 
 const CHANNEL_ID = 'morning-opening';
 const STORAGE_PREFIX = 'morning_duty_notif_v1:';
-
-async function ensurePermissionAndChannel(): Promise<boolean> {
-  const current = await Notifications.getPermissionsAsync();
-  let status = current.status;
-  if (status !== 'granted') {
-    const asked = await Notifications.requestPermissionsAsync();
-    status = asked.status;
-  }
-  if (status !== 'granted') return false;
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: 'Début de journée',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 180, 100, 180],
-    });
-  }
-  return true;
-}
 
 async function alreadySent(key: string): Promise<boolean> {
   try {
@@ -84,7 +64,7 @@ export async function syncMorningDutyNotifications(
     const dayKey = todayKey();
     const storageKey = `${dayKey}:${userId}:${tomorrow}`;
     if (await alreadySent(storageKey)) return;
-    const allowed = await ensurePermissionAndChannel();
+    const allowed = await ensureNotificationChannel(CHANNEL_ID, 'Début de journée');
     if (!allowed) return;
 
     const lines = mine.map((d) => {
@@ -105,15 +85,7 @@ export async function syncMorningDutyNotifications(
         ? `Demain, ${unique[0]}.`
         : `Demain : ${unique.join(' ; ')}.`;
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Début de journée demain',
-        body,
-        sound: true,
-        ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-      },
-      trigger: null,
-    });
+    await presentNotificationNow(CHANNEL_ID, 'Début de journée demain', body);
     await markSent(storageKey);
   } catch {
     // ignore

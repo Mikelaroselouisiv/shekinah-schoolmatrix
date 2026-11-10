@@ -309,12 +309,27 @@ export function canSeeStudentDossierComplet(
   );
 }
 
-/** NISU : direction, pédagogie, secrétariat — pas parent, prof, économe. */
+/** NISU : direction, pédagogie, secrétariat. Les listes de discipline et d'économat montrent le numéro de dossier. */
 export function canSeeStudentNisu(
   roleName: string,
   rolePermissions?: string[],
 ): boolean {
-  return canSeeStudentDossierComplet(roleName, rolePermissions);
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  if (
+    isTeacherRole(role) ||
+    role === "PARENT" ||
+    role === "ECONOME" ||
+    role === "COMPTABLE" ||
+    role === "DISCIPLINE" ||
+    role === "SURVEILLANT_GENERAL" ||
+    role === "PHOTOGRAPHER"
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  if (ROLES_PEDAGOGIQUE.includes(role) || ROLES_SECRETAIRE.includes(role)) return true;
+  return false;
 }
 
 /**

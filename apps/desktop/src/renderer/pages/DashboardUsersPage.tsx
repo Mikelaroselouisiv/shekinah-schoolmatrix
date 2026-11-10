@@ -28,7 +28,7 @@ type Role = {
   education_levels?: string[];
 };
 
-type StudentOption = { id: string; order_number: string | null; first_name: string; last_name: string; class_name: string };
+type StudentOption = { id: string; management_code: string | null; first_name: string; last_name: string; class_name: string };
 
 export function DashboardUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -157,9 +157,9 @@ export function DashboardUsersPage() {
         `${API_BASE}/formation-classe/students?academic_year_id=${studentFilterYear}&class_id=${studentFilterClass}`
       );
       const data = await res.json();
-      const list = (data.students ?? []).map((s: { id: string; order_number: string | null; first_name: string; last_name: string }) => ({
+      const list = (data.students ?? []).map((s: { id: string; management_code?: string | null; first_name: string; last_name: string }) => ({
         id: s.id,
-        order_number: s.order_number ?? null,
+        management_code: s.management_code ?? null,
         first_name: s.first_name,
         last_name: s.last_name,
         class_name: classes.find((c) => c.id === studentFilterClass)?.name ?? "—",
@@ -687,7 +687,7 @@ export function DashboardUsersPage() {
                     <label key={s.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-slate-50 rounded px-2">
                       <input type="checkbox" checked={linked_student_ids.includes(s.id)} onChange={() => toggleLinkedStudent(s.id)} className="rounded border-slate-300 text-[var(--school-accent-1)]" />
                       <span className="text-sm">
-                        {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                        {s.management_code ? `${s.management_code} — ` : ""}{s.first_name} {s.last_name}
                         <span className="text-slate-500 ml-1">({s.class_name})</span>
                       </span>
                     </label>

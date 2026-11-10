@@ -206,7 +206,7 @@ export function ProfileScreen({ navigation }: Props) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.childName}>{studentDisplayName(s)}</Text>
                     <Text style={styles.childMeta}>
-                      {s.class_name || s.order_number || '—'}
+                      {s.class_name || s.management_code || '—'}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />

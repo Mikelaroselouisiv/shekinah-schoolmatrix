@@ -4,43 +4,14 @@
  * (login ou retour au premier plan), une fois par jour.
  */
 
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
+import { ensureNotificationChannel, presentNotificationNow } from './localNotifications';
 import { isTeacherRole } from './permissions';
 import { getUpcomingBirthdays, type UpcomingBirthday } from '../services/api';
 
 const CHANNEL_ID = 'birthdays';
 const STORAGE_PREFIX = 'birthday_notif_v1:';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-async function ensurePermissionAndChannel(): Promise<boolean> {
-  const current = await Notifications.getPermissionsAsync();
-  let status = current.status;
-  if (status !== 'granted') {
-    const asked = await Notifications.requestPermissionsAsync();
-    status = asked.status;
-  }
-  if (status !== 'granted') return false;
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: 'Anniversaires',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 180, 100, 180],
-    });
-  }
-  return true;
-}
 
 function studentLabel(s: UpcomingBirthday): string {
   const name = `${s.first_name} ${s.last_name}`.trim();
@@ -93,18 +64,10 @@ async function present(when: 'today' | 'tomorrow', list: UpcomingBirthday[], day
   if (!list.length) return;
   const storageKey = `${dayKey}:${when}`;
   if (await alreadySent(storageKey)) return;
-  const allowed = await ensurePermissionAndChannel();
+  const allowed = await ensureNotificationChannel(CHANNEL_ID, 'Anniversaires');
   if (!allowed) return;
   const { title, body } = buildBody(when, list);
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      sound: true,
-      ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-    },
-    trigger: null,
-  });
+  await presentNotificationNow(CHANNEL_ID, title, body);
   await markSent(storageKey);
 }
 

@@ -11,7 +11,7 @@ const ROLES_SERVICES_ET_EXONERATIONS = ROLES_FULL; // DIRECTEUR_GENERAL, SCHOOL_
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string };
-type Student = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
+type Student = { id: string; order_number: string | null; management_code?: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
 type FeeService = { id: string; name: string; code: string | null; nature?: string };
 type ClassFee = {
   id: string;
@@ -527,7 +527,7 @@ export default function EconomatPage() {
                 <option value="">Sélectionner</option>
                 {students.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                    {s.management_code ? `${s.management_code} — ` : ""}{s.first_name} {s.last_name}
                   </option>
                 ))}
               </select>
@@ -1040,7 +1040,7 @@ function ExemptionStudentSelect({
         <option value="">Choisir un élève</option>
         {students.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+            {s.management_code ? `${s.management_code} — ` : ""}{s.first_name} {s.last_name}
           </option>
         ))}
       </select>

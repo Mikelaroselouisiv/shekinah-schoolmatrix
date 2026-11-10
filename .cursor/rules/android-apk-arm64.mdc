@@ -1,0 +1,18 @@
+---
+description: APK Android Shekinah — arm64 seulement, sauf demande explicite
+alwaysApply: true
+---
+
+# APK Android : arm64 par défaut
+
+Quand on demande un APK (build, mise à jour en ligne, copie sur le Bureau) :
+
+- Compiler uniquement `arm64-v8a`.
+- Ne pas inclure `armeabi-v7a`, `x86` ni `x86_64`.
+- Ajouter d’autres architectures seulement si la demande le dit explicitement (émulateur, 32 bits, APK universel, « toutes les architectures »).
+
+Réglage, dans chaque profil Android de `apps/mobile/eas.json` :
+
+`ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a`
+
+Monter `android.versionCode` pour que la mise à jour in-app s’affiche.

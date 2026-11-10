@@ -19,6 +19,7 @@ import { PhotographyScreen } from '../screens/work/PhotographyScreen';
 import { ScheduleScreen } from '../screens/work/ScheduleScreen';
 import { AcademicStatsScreen } from '../screens/work/AcademicStatsScreen';
 import { FormationClasseScreen } from '../screens/work/FormationClasseScreen';
+import { ClassRosterScreen } from '../screens/work/ClassRosterScreen';
 import { StudentsScreen } from '../screens/students/StudentsScreen';
 import { StudentFicheScreen } from '../screens/students/StudentFicheScreen';
 import { EnrollmentScreen } from '../screens/students/EnrollmentScreen';
@@ -104,6 +105,11 @@ function WorkStack() {
         name="FormationClasse"
         component={FormationClasseScreen}
         options={{ title: 'Formation de classe' }}
+      />
+      <WorkStackNav.Screen
+        name="ClassRoster"
+        component={ClassRosterScreen}
+        options={{ title: 'Listes des classes' }}
       />
     </WorkStackNav.Navigator>
   );

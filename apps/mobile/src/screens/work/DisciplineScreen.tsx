@@ -1,27 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
+  DateField,
+  EmptyState,
   ErrorBanner,
-  ListRow,
   LoadingBlock,
   Screen,
+  SearchBar,
   SegmentedControl,
-  DateField,
-  Title,
+  TextField,
 } from '../../components/ui';
-import { studentDisplayName, toYYYYMMDD } from '../../lib/format';
+import { studentDisplayName, toYYYYMMDD, yyyymmddToJJMMAAAA } from '../../lib/format';
+import { listBottomPadding } from '../../lib/layout';
 import { colors } from '../../theme/tokens';
 import {
   createDeduction,
@@ -31,6 +25,7 @@ import {
   deleteLateness,
   deleteMeasure,
   getClasses,
+  getRooms,
   getStudents,
   listDeductions,
   listLatenesses,
@@ -39,15 +34,14 @@ import {
   type DeductionItem,
   type LatenessItem,
   type MeasureItem,
+  type RoomItem,
   type StudentListItem,
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
-import { listBottomPadding } from '../../lib/layout';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Discipline'>;
 type TabId = 'retards' | 'points' | 'mesures';
-type PickerKind = 'class' | 'student' | 'measureType' | null;
 
 const MEASURE_TYPES = [
   { id: 'SOUS_SURVEILLANCE', label: 'Sous-surveillance' },
@@ -56,17 +50,35 @@ const MEASURE_TYPES = [
   { id: 'RENVOYE_DEFINITIVEMENT', label: 'Renvoyé définitivement' },
 ];
 
+function byName(a: { name: string }, b: { name: string }) {
+  return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
+}
+
+function byStudent(a: StudentListItem, b: StudentListItem) {
+  return (
+    (a.last_name || '').localeCompare(b.last_name || '', 'fr', { sensitivity: 'base' }) ||
+    (a.first_name || '').localeCompare(b.first_name || '', 'fr', { sensitivity: 'base' })
+  );
+}
+
+function studentMeta(student: StudentListItem): string {
+  return [student.management_code, student.room_name || student.class_name].filter(Boolean).join(' · ');
+}
+
 export function DisciplineScreen({ route }: Props) {
   const allowed = useCanAccess('discipline');
   const [tab, setTab] = useState<TabId>(route.params?.tab ?? 'retards');
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [students, setStudents] = useState<StudentListItem[]>([]);
   const [boot, setBoot] = useState(true);
+  const [studentsLoading, setStudentsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [picker, setPicker] = useState<PickerKind>(null);
+  const [query, setQuery] = useState('');
 
   const [classId, setClassId] = useState('');
+  const [roomId, setRoomId] = useState('');
   const [studentId, setStudentId] = useState('');
   const [date, setDate] = useState(toYYYYMMDD());
   const [arrival, setArrival] = useState('08:00');
@@ -85,8 +97,12 @@ export function DisciplineScreen({ route }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const list = await getClasses();
-        if (!cancelled) setClasses(list);
+        const [classList, roomList] = await Promise.all([getClasses(), getRooms()]);
+        if (cancelled) return;
+        const sorted = [...classList].sort(byName);
+        setClasses(sorted);
+        setRooms(roomList.filter((room) => room.active !== false).sort(byName));
+        if (sorted.length === 1) setClassId(sorted[0].id);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Erreur classes');
       } finally {
@@ -98,24 +114,43 @@ export function DisciplineScreen({ route }: Props) {
     };
   }, []);
 
+  const classRooms = useMemo(
+    () => rooms.filter((room) => room.class_id === classId).sort(byName),
+    [rooms, classId],
+  );
+
   useEffect(() => {
     setStudentId('');
+    setQuery('');
     if (!classId) {
       setStudents([]);
       return;
     }
     let cancelled = false;
-    getStudents({ class_id: classId })
+    setStudentsLoading(true);
+    getStudents(roomId ? { room_id: roomId } : { class_id: classId })
       .then((list) => {
-        if (!cancelled) setStudents(list);
+        if (cancelled) return;
+        setStudents(
+          list
+            .filter(
+              (student) =>
+                student.active !== false &&
+                (!student.class_id || student.class_id === classId),
+            )
+            .sort(byStudent),
+        );
       })
       .catch(() => {
         if (!cancelled) setStudents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStudentsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [classId]);
+  }, [classId, roomId]);
 
   const refreshLists = useCallback(async () => {
     try {
@@ -123,11 +158,11 @@ export function DisciplineScreen({ route }: Props) {
         setLatenesses(await listLatenesses({ class_id: classId || undefined, date: date || undefined }));
       } else if (tab === 'points') {
         setDeductions(await listDeductions(studentId || undefined));
-      } else if (tab === 'mesures') {
+      } else {
         setMeasures(await listMeasures(studentId || undefined));
       }
     } catch {
-      /* ignore list errors */
+      /* la liste déjà affichée reste en place */
     }
   }, [tab, classId, date, studentId]);
 
@@ -139,22 +174,33 @@ export function DisciplineScreen({ route }: Props) {
     void refreshLists();
   }, [refreshLists]);
 
-  const pickerItems = useMemo(() => {
-    if (picker === 'class') return classes.map((c) => ({ id: c.id, label: c.name }));
-    if (picker === 'student')
-      return students.map((s) => ({
-        id: s.id,
-        label: [s.order_number, studentDisplayName(s)].filter(Boolean).join(' — '),
-      }));
-    if (picker === 'measureType') return MEASURE_TYPES.map((m) => ({ id: m.id, label: m.label }));
-    return [];
-  }, [picker, classes, students]);
+  const selectedClass = classes.find((item) => item.id === classId);
+  const selectedStudent = students.find((item) => item.id === studentId);
+  const visibleStudents = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((student) => {
+      const blob = [studentDisplayName(student), student.last_name, student.first_name, student.management_code, student.room_name, student.class_name]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return blob.includes(q);
+    });
+  }, [students, query]);
 
-  function onPick(id: string) {
-    if (picker === 'class') setClassId(id);
-    if (picker === 'student') setStudentId(id);
-    if (picker === 'measureType') setMeasureType(id);
-    setPicker(null);
+  function pickClass(id: string) {
+    setClassId(id);
+    setRoomId('');
+    setStudentId('');
+    setError('');
+    setSuccess('');
+  }
+
+  function pickRoom(id: string) {
+    setRoomId(id);
+    setStudentId('');
+    setError('');
+    setSuccess('');
   }
 
   async function saveLateness() {
@@ -168,7 +214,7 @@ export function DisciplineScreen({ route }: Props) {
     try {
       await createLateness({
         student_id: studentId,
-        class_id: classId,
+        class_id: selectedStudent?.class_id || classId,
         date,
         arrival_time: arrival,
       });
@@ -256,10 +302,7 @@ export function DisciplineScreen({ route }: Props) {
     ]);
   }
 
-  if (!allowed) {
-    return <AccessDenied />;
-  }
-
+  if (!allowed) return <AccessDenied />;
   if (boot) {
     return (
       <Screen>
@@ -268,231 +311,408 @@ export function DisciplineScreen({ route }: Props) {
     );
   }
 
-  const classLabel = classes.find((c) => c.id === classId)?.name || 'Classe';
-  const studentLabel = students.find((s) => s.id === studentId)
-    ? studentDisplayName(students.find((s) => s.id === studentId)!)
-    : 'Élève';
-  const measureLabel = MEASURE_TYPES.find((m) => m.id === measureType)?.label || measureType;
+  const recordCount =
+    tab === 'retards' ? latenesses.length : tab === 'points' ? deductions.length : measures.length;
 
   return (
-    <Screen style={{ paddingHorizontal: 0 }}>
+    <Screen>
       <FormScrollView contentContainerStyle={styles.content}>
-        <Title>Discipline</Title>
-
-        <View style={{ marginTop: 12 }}>
-          <SegmentedControl
-            options={[
-              { id: 'retards', label: 'Retards' },
-              { id: 'points', label: 'Points' },
-              { id: 'mesures', label: 'Mesures' },
-            ]}
-            value={tab}
-            onChange={(id) => {
-              setTab(id as TabId);
-              setError('');
-              setSuccess('');
-            }}
-          />
-        </View>
+        <SegmentedControl
+          options={[
+            { id: 'retards', label: 'Retards' },
+            { id: 'points', label: 'Points' },
+            { id: 'mesures', label: 'Mesures' },
+          ]}
+          value={tab}
+          onChange={(id) => {
+            setTab(id as TabId);
+            setError('');
+            setSuccess('');
+          }}
+        />
 
         <ErrorBanner message={error} />
-        {success ? (
-          <View style={styles.ok}>
-            <Text style={styles.okText}>{success}</Text>
-          </View>
-        ) : null}
+        {success ? <Text style={styles.saved}>{success}</Text> : null}
 
-        {tab === 'retards' ? (
-          <View style={styles.card}>
-            <Select label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-            <Select label="Élève" value={studentLabel} onPress={() => setPicker('student')} disabled={!classId} />
-            <DateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} />
-            <Field label="Heure d’arrivée" value={arrival} onChange={setArrival} />
-            <Button title={saving ? '…' : 'Enregistrer le retard'} onPress={() => void saveLateness()} disabled={saving} />
-            {latenesses.map((l) => (
-              <ListRow
-                key={l.id}
-                title={l.student_name || 'Élève'}
-                subtitle={`${String(l.date || '').slice(0, 10)} · ${l.arrival_time || ''}`}
-                onPress={() => confirmDelete('lateness', l.id)}
-              />
-            ))}
+        <View style={styles.panel}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>Classes</Text>
+            <Text style={styles.panelCount}>{classes.length}</Text>
           </View>
-        ) : null}
+          {classes.length === 0 ? (
+            <EmptyState title="Aucune classe" />
+          ) : (
+            classes.map((item) => {
+              const count = rooms.filter((room) => room.class_id === item.id).length;
+              const meta = [
+                count ? `${count} salle${count > 1 ? 's' : ''}` : 'Aucune salle',
+                item.student_count != null ? `${item.student_count} élèves` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <Choice
+                  key={item.id}
+                  title={item.name}
+                  meta={meta}
+                  selected={item.id === classId}
+                  onPress={() => pickClass(item.id)}
+                />
+              );
+            })
+          )}
+        </View>
 
-        {tab === 'points' ? (
-          <View style={styles.card}>
-            <Select label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-            <Select label="Élève" value={studentLabel} onPress={() => setPicker('student')} disabled={!classId} />
-            <View style={styles.row}>
-              <Pressable
-                style={[styles.chip, action === 'RETIRER' && styles.chipOn]}
-                onPress={() => setAction('RETIRER')}
-              >
-                <Text style={[styles.chipText, action === 'RETIRER' && styles.chipTextOn]}>Retirer</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.chip, action === 'AJOUTER' && styles.chipOn]}
-                onPress={() => setAction('AJOUTER')}
-              >
-                <Text style={[styles.chipText, action === 'AJOUTER' && styles.chipTextOn]}>Ajouter</Text>
-              </Pressable>
+        {selectedClass ? (
+          <View style={styles.panel}>
+            <View style={styles.panelHead}>
+              <Text style={styles.panelTitle}>Salles · {selectedClass.name}</Text>
+              <Text style={styles.panelCount}>{classRooms.length}</Text>
             </View>
-            <Field label="Points (1–100)" value={points} onChange={setPoints} keyboardType="number-pad" />
-            <Field label="Motif" value={reason} onChange={setReason} />
-            <Button title={saving ? '…' : 'Enregistrer'} onPress={() => void saveDeduction()} disabled={saving} />
-            {deductions.map((d) => (
-              <ListRow
-                key={d.id}
-                title={`${d.student_name || 'Élève'} · ${d.points_deducted ?? 0} pts`}
-                subtitle={d.reason || 'Sans motif'}
-                onPress={() => confirmDelete('deduction', d.id)}
+            <Choice
+              title="Toute la classe"
+              meta="Tous les élèves, toutes les salles"
+              selected={roomId === ''}
+              onPress={() => pickRoom('')}
+            />
+            {classRooms.map((room) => (
+              <Choice
+                key={room.id}
+                title={room.name}
+                meta={
+                  room.student_count != null
+                    ? `${room.student_count} élève${room.student_count > 1 ? 's' : ''}`
+                    : undefined
+                }
+                selected={room.id === roomId}
+                onPress={() => pickRoom(room.id)}
               />
             ))}
           </View>
         ) : null}
 
-        {tab === 'mesures' ? (
-          <View style={styles.card}>
-            <Select label="Classe" value={classLabel} onPress={() => setPicker('class')} />
-            <Select label="Élève" value={studentLabel} onPress={() => setPicker('student')} disabled={!classId} />
-            <Select label="Type" value={measureLabel} onPress={() => setPicker('measureType')} />
-            {measureType === 'RENVOYE_TEMPORAIREMENT' ? (
-              <Field label="Durée (jours)" value={durationDays} onChange={setDurationDays} keyboardType="number-pad" />
-            ) : null}
-            <Field label="Motif" value={reason} onChange={setReason} />
-            <Button title={saving ? '…' : 'Enregistrer la mesure'} onPress={() => void saveMeasure()} disabled={saving} />
-            {measures.map((m) => (
-              <ListRow
-                key={m.id}
-                title={m.student_name || 'Élève'}
-                subtitle={`${MEASURE_TYPES.find((t) => t.id === m.measure_type)?.label || m.measure_type}${m.reason ? ` · ${m.reason}` : ''}`}
-                onPress={() => confirmDelete('measure', m.id)}
+        {selectedClass ? (
+          <View style={styles.panel}>
+            <View style={styles.panelHead}>
+              <Text style={styles.panelTitle}>
+                Élèves
+                {roomId ? ` · ${classRooms.find((room) => room.id === roomId)?.name || 'Salle'}` : ''}
+              </Text>
+              <Text style={styles.panelCount}>{visibleStudents.length}</Text>
+            </View>
+            <SearchBar
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Nom, prénom ou numéro"
+            />
+            {studentsLoading ? (
+              <ActivityIndicator color={colors.ink} style={{ marginVertical: 12 }} />
+            ) : visibleStudents.length === 0 ? (
+              <EmptyState
+                title={query ? 'Aucun élève pour cette recherche' : 'Aucun élève'}
+                subtitle={roomId ? 'Cette salle est vide.' : 'Cette classe n’a pas d’élève actif.'}
               />
-            ))}
+            ) : (
+              visibleStudents.map((student) => {
+                const on = student.id === studentId;
+                const initial = (student.last_name || student.first_name || '?').slice(0, 1).toUpperCase();
+                return (
+                  <Pressable
+                    key={student.id}
+                    onPress={() => setStudentId(student.id)}
+                    style={[styles.student, on && styles.studentOn]}
+                  >
+                    <View style={[styles.initial, on && styles.initialOn]}>
+                      <Text style={[styles.initialText, on && styles.initialTextOn]}>{initial}</Text>
+                    </View>
+                    <View style={styles.choiceCopy}>
+                      <Text style={[styles.choiceTitle, on && styles.choiceTitleOn]}>
+                        {student.last_name} {student.first_name}
+                      </Text>
+                      {studentMeta(student) ? (
+                        <Text style={[styles.choiceMeta, on && styles.choiceMetaOn]}>{studentMeta(student)}</Text>
+                      ) : null}
+                    </View>
+                    {on ? <Ionicons name="checkmark" size={18} color={colors.surface} /> : null}
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        ) : (
+          <Text style={styles.hint}>Choisissez une classe pour voir ses salles et tous ses élèves.</Text>
+        )}
+
+        {selectedStudent ? (
+          <View style={styles.panel}>
+            <Text style={styles.panelTitle}>
+              {tab === 'retards' ? 'Enregistrer le retard' : tab === 'points' ? 'Enregistrer les points' : 'Enregistrer la mesure'}
+            </Text>
+            <Text style={styles.choiceMeta}>
+              {selectedStudent.last_name} {selectedStudent.first_name}
+              {studentMeta(selectedStudent) ? ` · ${studentMeta(selectedStudent)}` : ''}
+            </Text>
+
+            {tab === 'retards' ? (
+              <>
+                <DateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} />
+                <TextField label="Heure d’arrivée" value={arrival} onChangeText={setArrival} placeholder="08:00" />
+                <Button
+                  title={saving ? 'Enregistrement…' : 'Enregistrer le retard'}
+                  onPress={() => void saveLateness()}
+                  disabled={saving}
+                />
+              </>
+            ) : null}
+
+            {tab === 'points' ? (
+              <>
+                <View style={styles.pair}>
+                  <Choice fill title="Retirer" selected={action === 'RETIRER'} onPress={() => setAction('RETIRER')} />
+                  <Choice fill title="Ajouter" selected={action === 'AJOUTER'} onPress={() => setAction('AJOUTER')} />
+                </View>
+                <TextField
+                  label="Points (1–100)"
+                  value={points}
+                  onChangeText={setPoints}
+                  keyboardType="number-pad"
+                />
+                <TextField label="Motif" value={reason} onChangeText={setReason} />
+                <Button
+                  title={saving ? 'Enregistrement…' : 'Enregistrer'}
+                  onPress={() => void saveDeduction()}
+                  disabled={saving}
+                />
+              </>
+            ) : null}
+
+            {tab === 'mesures' ? (
+              <>
+                {MEASURE_TYPES.map((item) => (
+                  <Choice
+                    key={item.id}
+                    title={item.label}
+                    selected={measureType === item.id}
+                    onPress={() => setMeasureType(item.id)}
+                  />
+                ))}
+                {measureType === 'RENVOYE_TEMPORAIREMENT' ? (
+                  <TextField
+                    label="Durée (jours)"
+                    value={durationDays}
+                    onChangeText={setDurationDays}
+                    keyboardType="number-pad"
+                  />
+                ) : null}
+                <TextField label="Motif" value={reason} onChangeText={setReason} />
+                <Button
+                  title={saving ? 'Enregistrement…' : 'Enregistrer la mesure'}
+                  onPress={() => void saveMeasure()}
+                  disabled={saving}
+                />
+              </>
+            ) : null}
+          </View>
+        ) : null}
+
+        {selectedClass ? (
+          <View style={styles.panel}>
+            <View style={styles.panelHead}>
+              <Text style={styles.panelTitle}>
+                {tab === 'retards' ? 'Retards du jour' : tab === 'points' ? 'Points' : 'Mesures'}
+              </Text>
+              <Text style={styles.panelCount}>{recordCount}</Text>
+            </View>
+            {tab === 'retards' && latenesses.length === 0 ? (
+              <Text style={styles.choiceMeta}>Aucun retard pour cette classe le {yyyymmddToJJMMAAAA(date)}.</Text>
+            ) : null}
+            {tab === 'points' && deductions.length === 0 ? (
+              <Text style={styles.choiceMeta}>
+                {studentId ? 'Aucun point pour cet élève.' : 'Choisissez un élève pour voir ses points.'}
+              </Text>
+            ) : null}
+            {tab === 'mesures' && measures.length === 0 ? (
+              <Text style={styles.choiceMeta}>
+                {studentId ? 'Aucune mesure pour cet élève.' : 'Choisissez un élève pour voir ses mesures.'}
+              </Text>
+            ) : null}
+            {tab === 'retards'
+              ? latenesses.map((item) => (
+                  <RecordRow
+                    key={item.id}
+                    title={item.student_name || 'Élève'}
+                    meta={`${yyyymmddToJJMMAAAA(String(item.date || '').slice(0, 10))} · ${item.arrival_time || ''}`}
+                    onDelete={() => confirmDelete('lateness', item.id)}
+                  />
+                ))
+              : null}
+            {tab === 'points'
+              ? deductions.map((item) => (
+                  <RecordRow
+                    key={item.id}
+                    title={`${item.student_name || 'Élève'} · ${item.points_deducted ?? 0} pts`}
+                    meta={item.reason || 'Sans motif'}
+                    onDelete={() => confirmDelete('deduction', item.id)}
+                  />
+                ))
+              : null}
+            {tab === 'mesures'
+              ? measures.map((item) => (
+                  <RecordRow
+                    key={item.id}
+                    title={item.student_name || 'Élève'}
+                    meta={`${MEASURE_TYPES.find((type) => type.id === item.measure_type)?.label || item.measure_type || 'Mesure'}${item.reason ? ` · ${item.reason}` : ''}`}
+                    onDelete={() => confirmDelete('measure', item.id)}
+                  />
+                ))
+              : null}
           </View>
         ) : null}
       </FormScrollView>
-
-      <Modal visible={!!picker} animationType="slide" transparent>
-        <Pressable style={styles.backdrop} onPress={() => setPicker(null)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Sélection</Text>
-            <FlatList
-              data={pickerItems}
-              keyExtractor={(i) => i.id}
-              renderItem={({ item }) => (
-                <Pressable style={styles.sheetRow} onPress={() => onPick(item.id)}>
-                  <Text style={styles.sheetRowText}>{item.label}</Text>
-                </Pressable>
-              )}
-            />
-            <Button title="Fermer" variant="ghost" onPress={() => setPicker(null)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
     </Screen>
   );
 }
 
-function Select({
-  label,
-  value,
+function Choice({
+  title,
+  meta,
+  selected,
+  fill,
   onPress,
-  disabled,
 }: {
-  label: string;
-  value: string;
+  title: string;
+  meta?: string;
+  selected?: boolean;
+  fill?: boolean;
   onPress: () => void;
-  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={[styles.select, disabled && { opacity: 0.45 }]}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+    <Pressable onPress={onPress} style={[styles.choice, fill && styles.choiceFill, selected && styles.choiceOn]}>
+      <View style={styles.choiceCopy}>
+        <Text style={[styles.choiceTitle, fill && styles.choiceTitleFill, selected && styles.choiceTitleOn]}>{title}</Text>
+        {meta ? <Text style={[styles.choiceMeta, selected && styles.choiceMetaOn]}>{meta}</Text> : null}
+      </View>
+      {selected ? <Ionicons name="checkmark" size={18} color={colors.surface} /> : null}
     </Pressable>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  keyboardType,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  keyboardType?: 'default' | 'number-pad';
-}) {
+function RecordRow({ title, meta, onDelete }: { title: string; meta?: string; onDelete: () => void }) {
   return (
-    <View style={{ marginBottom: 10 }}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        keyboardType={keyboardType}
-        style={styles.input}
-        placeholderTextColor={colors.textMuted}
-      />
+    <View style={styles.record}>
+      <View style={styles.choiceCopy}>
+        <Text style={styles.choiceTitle}>{title}</Text>
+        {meta ? <Text style={styles.choiceMeta}>{meta}</Text> : null}
+      </View>
+      <Pressable onPress={onDelete} hitSlop={8} accessibilityLabel="Supprimer">
+        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingBottom: listBottomPadding(16) },
-  card: {
-    marginTop: 8,
+  content: {
+    paddingBottom: listBottomPadding(24),
+    gap: 14,
+  },
+  panel: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 14,
+    gap: 8,
   },
-  ok: { backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10, marginBottom: 8 },
-  okText: { color: '#15803D' },
-  select: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
+  panelHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 2,
+  },
+  panelTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  panelCount: {
+    minWidth: 28,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
     backgroundColor: colors.bg,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
-  label: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  value: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2 },
-  input: {
+  hint: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.inkSoft,
+  },
+  saved: {
+    color: '#3F6212',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  choice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  choiceOn: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  choiceFill: { flex: 1, justifyContent: 'center' },
+  choiceTitleFill: { textAlign: 'center' },
+  choiceCopy: { flex: 1, gap: 2 },
+  choiceTitle: { fontSize: 15, fontWeight: '600', color: colors.ink },
+  choiceTitleOn: { color: colors.surface },
+  choiceMeta: { fontSize: 13, lineHeight: 18, color: colors.inkSoft },
+  choiceMetaOn: { color: 'rgba(255,255,255,0.78)' },
+  student: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginTop: 4,
-    fontSize: 16,
-    color: colors.text,
-    backgroundColor: colors.bg,
   },
-  row: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  chip: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingVertical: 10,
+  studentOn: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  initial: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
-  },
-  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipText: { fontWeight: '700', color: colors.text },
-  chipTextOn: { color: colors.surface },
-  backdrop: { flex: 1, backgroundColor: 'rgba(28,25,23,0.45)', justifyContent: 'flex-end' },
-  sheet: {
-    maxHeight: '70%',
+    justifyContent: 'center',
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 20,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10, color: colors.text },
-  sheetRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  sheetRowText: { fontSize: 16, color: colors.text },
+  initialOn: { backgroundColor: 'rgba(255,255,255,0.16)' },
+  initialText: { fontWeight: '700', fontSize: 14, color: colors.ink },
+  initialTextOn: { color: colors.surface },
+  pair: { flexDirection: 'row', gap: 8 },
+  record: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
 });

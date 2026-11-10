@@ -22,6 +22,7 @@ import {
   Title,
 } from '../../components/ui';
 import { studentDisplayName } from '../../lib/format';
+import { useLatestRequest } from '../../lib/latestRequest';
 import { promptPickImage } from '../../lib/pickImage';
 import { colors } from '../../theme/tokens';
 import { useAuth } from '../../context/AuthContext';
@@ -73,6 +74,7 @@ function placeLine(student: { class_name?: string | null; room_name?: string | n
 export function PhotographyScreen({}: Props) {
   const { roleName, user } = useAuth();
   const teacher = isTeacherRole(roleName);
+  const latest = useLatestRequest();
   const teacherId = user?.id ?? user?.userId ?? null;
   const allowed = useCanAccess('photography') || teacher;
   const { theme } = useSchool();
@@ -102,6 +104,7 @@ export function PhotographyScreen({}: Props) {
   const roomLabel = rooms.find((r) => r.id === roomId)?.name || 'Toutes';
 
   const loadStudents = useCallback(async () => {
+    const still = latest();
     setLoadingList(true);
     setError('');
     try {
@@ -116,6 +119,7 @@ export function PhotographyScreen({}: Props) {
         );
         const byId = new Map<string, StudentListItem>();
         for (const student of groups.flat()) byId.set(student.id, student);
+        if (!still()) return;
         setStudents(
           [...byId.values()].sort(
             (a, b) =>
@@ -125,18 +129,25 @@ export function PhotographyScreen({}: Props) {
         );
         return;
       }
+      const requestedClass = classId;
       const list = await getStudents({
-        class_id: classId || undefined,
+        class_id: requestedClass || undefined,
         room_id: roomId || undefined,
       });
-      setStudents(list);
+      if (!still()) return;
+      setStudents(
+        requestedClass
+          ? list.filter((student) => !student.class_id || student.class_id === requestedClass)
+          : list,
+      );
     } catch (err) {
+      if (!still()) return;
       setError(err instanceof Error ? err.message : 'Chargement impossible');
       setStudents([]);
     } finally {
-      setLoadingList(false);
+      if (still()) setLoadingList(false);
     }
-  }, [teacher, teacherId, classId, roomId]);
+  }, [teacher, teacherId, classId, roomId, latest]);
 
   useEffect(() => {
     let cancelled = false;

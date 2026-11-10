@@ -53,6 +53,8 @@ import {
   YEAR_END_DECISIONS,
 } from '../../lib/preschoolScale';
 import { periodScopeFromLevel } from '../../lib/educationLevels';
+import { useLatestRequest } from '../../lib/latestRequest';
+import { useGradeEntryDraft, type GradeDraftScope } from '../../lib/gradeDraft';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Grades'>;
 
@@ -85,10 +87,11 @@ function initialOf(name: string) {
 
 export function GradesScreen({}: Props) {
   const allowed = useCanAccess('grades');
-  const { roleName } = useAuth();
+  const { roleName, user } = useAuth();
   const { context, theme } = useSchool();
   const insets = useSafeAreaInsets();
   const isTeacher = isTeacherRole(roleName);
+  const latestForm = useLatestRequest();
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -117,6 +120,24 @@ export function GradesScreen({}: Props) {
 
   const selectedClass = classes.find((c) => c.id === classId) || null;
   const isPreschool = !!selectedClass?.is_preschool;
+  const draftUserId = String(user?.id ?? user?.userId ?? '');
+  const draftScope: GradeDraftScope | null =
+    draftUserId && yearId && classId && subjectId && periodId
+      ? {
+          userId: draftUserId,
+          academicYearId: yearId,
+          classId,
+          subjectId,
+          periodId,
+        }
+      : null;
+  const gradeDraft = useGradeEntryDraft({
+    scope: draftScope,
+    canEdit,
+    isPreschool,
+    rows,
+    preschoolRows,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -214,11 +235,22 @@ export function GradesScreen({}: Props) {
   }, [classId, isTeacher]);
 
   const loadForm = useCallback(async () => {
+    gradeDraft.hold();
     if (!yearId || !classId || !subjectId || !periodId) {
       setRows([]);
       setPreschoolRows([]);
       return;
     }
+    const still = latestForm();
+    const scope: GradeDraftScope | null = draftUserId
+      ? {
+          userId: draftUserId,
+          academicYearId: yearId,
+          classId,
+          subjectId,
+          periodId,
+        }
+      : null;
     setFormLoading(true);
     setError('');
     setSuccess('');
@@ -230,32 +262,45 @@ export function GradesScreen({}: Props) {
         period_id: periodId,
         preschool: isPreschool,
       });
-      setCanEdit(data.can_edit);
+      if (!still()) return;
+      const editable = data.can_edit !== false;
+      setCanEdit(editable);
       setTeacherName(data.teacher?.name || null);
       setDefaultCoef(data.default_coefficient ?? null);
       setEvalMode(data.eval_mode === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL');
       setIsLastPeriod(!!data.is_last_period);
       if (isPreschool) {
-        setPreschoolRows(data.rows as PreschoolGradeRow[]);
+        const merged = await gradeDraft.capture(
+          scope,
+          data.rows as PreschoolGradeRow[],
+          'preschool',
+          editable,
+          still,
+        );
+        if (!still()) return;
+        setPreschoolRows(merged);
         setRows([]);
       } else {
-        setRows(
-          (data.rows as GradeFormRow[]).map((r) => ({
-            ...r,
-            coefficient: r.coefficient ?? data.default_coefficient ?? 1,
-            grade_value: r.grade_value ?? null,
-          })),
-        );
+        const serverRows = (data.rows as GradeFormRow[]).map((r) => ({
+          ...r,
+          coefficient: r.coefficient ?? data.default_coefficient ?? 1,
+          grade_value: r.grade_value ?? null,
+        }));
+        const merged = await gradeDraft.capture(scope, serverRows, 'standard', editable, still);
+        if (!still()) return;
+        setRows(merged);
         setPreschoolRows([]);
       }
     } catch (err) {
+      if (!still()) return;
+      gradeDraft.hold();
       setError(err instanceof Error ? err.message : 'Erreur formulaire notes');
       setRows([]);
       setPreschoolRows([]);
     } finally {
-      setFormLoading(false);
+      if (still()) setFormLoading(false);
     }
-  }, [yearId, classId, subjectId, periodId, isPreschool]);
+  }, [yearId, classId, subjectId, periodId, isPreschool, latestForm, draftUserId, gradeDraft.hold, gradeDraft.capture]);
 
   useEffect(() => {
     void loadForm();
@@ -263,9 +308,19 @@ export function GradesScreen({}: Props) {
 
   async function handleSave() {
     if (!canEdit || !yearId || !classId || !subjectId || !periodId) return;
+    const scope: GradeDraftScope | null = draftUserId
+      ? {
+          userId: draftUserId,
+          academicYearId: yearId,
+          classId,
+          subjectId,
+          periodId,
+        }
+      : null;
     setSaving(true);
     setError('');
     setSuccess('');
+    gradeDraft.pause();
     try {
       if (isPreschool) {
         await saveGrades({
@@ -305,11 +360,14 @@ export function GradesScreen({}: Props) {
           })),
         });
       }
-      setSuccess('Notes enregistrées.');
+      await gradeDraft.forget(scope);
+      gradeDraft.acceptCurrent();
       await loadForm();
+      setSuccess('Notes enregistrées.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Échec enregistrement');
     } finally {
+      gradeDraft.resume();
       setSaving(false);
     }
   }
@@ -478,6 +536,16 @@ export function GradesScreen({}: Props) {
           <View style={styles.lockBanner}>
             <Ionicons name="lock-closed" size={14} color="#C2410C" />
             <Text style={styles.lockText}>Déjà enregistrées. Seule la direction peut modifier.</Text>
+          </View>
+        ) : null}
+
+        {gradeDraft.pending && !formLoading ? (
+          <View style={styles.draftBanner}>
+            <Ionicons name="time-outline" size={14} color="#0F766E" />
+            <Text style={styles.draftText}>
+              Conservée sur ce téléphone pendant 24 h, même après un appel ou un redémarrage.
+              Enregistrer l'envoie en base.
+            </Text>
           </View>
         ) : null}
 
@@ -848,6 +916,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   lockText: { flex: 1, color: '#C2410C', fontSize: 13, fontWeight: '600' },
+  draftBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDFA',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  draftText: { flex: 1, color: '#0F766E', fontSize: 13, fontWeight: '600' },
   successBanner: {
     flexDirection: 'row',
     alignItems: 'center',

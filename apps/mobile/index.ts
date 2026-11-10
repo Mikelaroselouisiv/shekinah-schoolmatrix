@@ -1,3 +1,4 @@
+import './src/lib/readableText';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

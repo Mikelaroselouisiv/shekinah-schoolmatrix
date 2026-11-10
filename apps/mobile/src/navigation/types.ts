@@ -47,6 +47,7 @@ export type WorkStackParamList = {
   Schedule: undefined;
   AcademicStats: undefined;
   FormationClasse: undefined;
+  ClassRoster: undefined;
 };
 
 export type FinanceFocus = 'paiements' | 'depenses' | 'moniteur';
