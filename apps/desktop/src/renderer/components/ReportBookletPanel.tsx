@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
-import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import { periodScopeFromLevel } from "@/lib/educationLevels";
-import { preschoolFrequencyLabel, preschoolLevelLabel, YEAR_END_DECISIONS } from "@/lib/preschoolScale";
-import { getSectionsPdfBlob, type PdfSection } from "@/lib/pdfExport";
+import {
+  PRESCHOOL_FREQUENCIES,
+  PRESCHOOL_LEVELS,
+  preschoolFrequencyLabel,
+  preschoolLevelLabel,
+  YEAR_END_DECISIONS,
+} from "@/lib/preschoolScale";
+import {
+  buildBulletinSheetsPdf,
+  composePreschoolSheets,
+  composeSchoolSheets,
+  type PreschoolResults,
+  type SchoolResults,
+} from "@/lib/bulletinSheetPdf";
 import { getImageUrl, useSchoolProfileOptional } from "@/context/SchoolProfileContext";
 
 type ClassItem = { id: string; name: string; is_preschool?: boolean; level?: string | null };
@@ -23,20 +34,23 @@ type StudentItem = {
 };
 type DocKind = "bulletin" | "carnet";
 
-type SchoolSubjectPeriod = {
-  period_id: string;
-  coefficient?: number;
-  grade_value?: number | null;
-  has_grade?: boolean;
-};
-type SchoolResults = {
-  subjects?: { subject_id: string; subject_name: string; periods?: SchoolSubjectPeriod[] }[];
-};
-type PreschoolResults = {
-  cells?: Record<string, { level?: string; frequency?: string; observation?: string }>;
-};
-
 const DECISION_LABELS = Object.fromEntries(YEAR_END_DECISIONS.map((d) => [d.value, d.label]));
+
+function decisionLabel(value?: string | null): string {
+  if (!value) return "";
+  return DECISION_LABELS[value] ?? value;
+}
+
+function preschoolMark(cell?: { level?: string; frequency?: string; observation?: string }): string {
+  if (!cell) return "";
+  const levelLabel = cell.level ? preschoolLevelLabel(cell.level) : "";
+  const freqLabel = cell.frequency ? preschoolFrequencyLabel(cell.frequency) : "";
+  const level = PRESCHOOL_LEVELS.find((x) => x.label === levelLabel)?.abbr ?? "";
+  const freq = PRESCHOOL_FREQUENCIES.find((x) => x.label === freqLabel)?.abbr ?? "";
+  const bits = [level, freq].filter(Boolean);
+  if (bits.length) return bits.join(" ");
+  return cell.observation?.trim() || "";
+}
 
 function slugify(value: string): string {
   return value
@@ -45,115 +59,6 @@ function slugify(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
-}
-
-function preschoolCell(cell?: { level?: string; frequency?: string; observation?: string }): string {
-  if (!cell) return "—";
-  const parts = [
-    cell.level ? preschoolLevelLabel(cell.level) : "",
-    cell.frequency ? preschoolFrequencyLabel(cell.frequency) : "",
-    cell.observation?.trim() || "",
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "—";
-}
-
-function schoolNote(grade?: SchoolSubjectPeriod): string {
-  if (!grade?.has_grade || grade.grade_value == null) return "—";
-  return formatPointsOnBareme(Number(grade.grade_value), Number(grade.coefficient));
-}
-
-function schoolAverage(grades: SchoolSubjectPeriod[], periodIds: string[]): string {
-  const scored = grades.filter((g) => periodIds.includes(g.period_id) && g.has_grade && g.grade_value != null);
-  const points = scored.reduce((s, g) => s + Number(g.grade_value || 0), 0);
-  const coef = scored.reduce((s, g) => s + Number(g.coefficient || 0), 0);
-  const ten = pointsToTen(points, coef);
-  return ten == null ? "—" : ten.toFixed(2);
-}
-
-function identityLines(student: StudentItem, className: string, yearName: string, extra: string[]): string[] {
-  const room = student.room_name ? `Salle : ${student.room_name}` : "";
-  return [
-    `${student.last_name} ${student.first_name}`,
-    [`Classe : ${className}`, room, yearName ? `Année : ${yearName}` : ""].filter(Boolean).join("   ·   "),
-    ...extra,
-  ];
-}
-
-function schoolSection(
-  student: StudentItem,
-  className: string,
-  yearName: string,
-  results: SchoolResults,
-  periods: PeriodItem[],
-  subjectIds: string[],
-  subjectNames: Map<string, string>,
-  kind: DocKind,
-  startNewPage: boolean,
-): PdfSection {
-  const byId = new Map((results.subjects ?? []).map((s) => [s.subject_id, s]));
-  const periodIds = periods.map((p) => p.id);
-  const columns = [
-    { header: "Matière", key: "matiere" },
-    ...periods.map((p, i) => ({ header: p.name, key: `p${i}` })),
-    ...(kind === "carnet" ? [{ header: "Moy. /10", key: "moy" }] : []),
-  ];
-  const rows = subjectIds.map((id) => {
-    const subj = byId.get(id);
-    const grades = subj?.periods ?? [];
-    const row: Record<string, string> = { matiere: subjectNames.get(id) ?? subj?.subject_name ?? "—" };
-    periods.forEach((p, i) => {
-      row[`p${i}`] = schoolNote(grades.find((g) => g.period_id === p.id));
-    });
-    if (kind === "carnet") row.moy = schoolAverage(grades, periodIds);
-    return row;
-  });
-  const extra =
-    kind === "carnet"
-      ? [
-          ...(student.average != null ? [`Moyenne générale /10 : ${Number(student.average).toFixed(2)}`] : []),
-          ...(student.decision ? [`Décision : ${DECISION_LABELS[student.decision] ?? student.decision}`] : []),
-        ]
-      : [];
-  return {
-    breakBefore: startNewPage,
-    title: kind === "bulletin" ? `Bulletin — ${periods[0]?.name ?? ""}` : undefined,
-    lines: identityLines(student, className, yearName, extra),
-    table: rows.length ? { columns, rows } : undefined,
-  };
-}
-
-function preschoolSection(
-  student: StudentItem,
-  className: string,
-  yearName: string,
-  results: PreschoolResults,
-  periods: PeriodItem[],
-  subjectIds: string[],
-  subjectNames: Map<string, string>,
-  kind: DocKind,
-  startNewPage: boolean,
-): PdfSection {
-  const columns = [
-    { header: "Matière", key: "matiere" },
-    ...periods.map((p, i) => ({ header: p.name, key: `p${i}` })),
-  ];
-  const rows = subjectIds.map((id) => {
-    const row: Record<string, string> = { matiere: subjectNames.get(id) ?? "—" };
-    periods.forEach((p, i) => {
-      row[`p${i}`] = preschoolCell(results.cells?.[`${id}:${p.id}`]);
-    });
-    return row;
-  });
-  const extra =
-    kind === "carnet" && student.decision
-      ? [`Décision : ${DECISION_LABELS[student.decision] ?? student.decision}`]
-      : [];
-  return {
-    breakBefore: startNewPage,
-    title: kind === "bulletin" ? `Bulletin — ${periods[0]?.name ?? ""}` : undefined,
-    lines: identityLines(student, className, yearName, extra),
-    table: rows.length ? { columns, rows } : undefined,
-  };
 }
 
 export function ReportBookletPanel({ classes }: { classes: ClassItem[] }) {
@@ -309,44 +214,66 @@ export function ReportBookletPanel({ classes }: { classes: ClassItem[] }) {
   async function buildPdf(): Promise<Blob> {
     if (!ready || !selectedClass) throw new Error("Choix incomplet");
     setError("");
-    const names = new Map(subjects.map((s) => [s.id, s.name]));
     const yearName = years.find((y) => y.id === yearId)?.name ?? "";
     const roomName = classRooms.find((r) => r.id === roomId)?.name;
-    const picked = visibleStudents.filter((s) => studentIds.includes(s.id));
-    const sections: PdfSection[] = [];
+    const cohort = (roomId ? visibleStudents : students).map((student) =>
+      roomName && !student.room_name ? { ...student, room_name: roomName } : student,
+    );
+    const picked = new Set(studentIds);
+    const subjectList = subjects.filter((s) => subjectIds.includes(s.id)).map((s) => ({ id: s.id, name: s.name }));
     const preschool = !!selectedClass.is_preschool;
-    for (let i = 0; i < picked.length; i++) {
-      const student = picked[i];
-      const url = preschool
-        ? `${API_BASE}/grades/preschool/student-results?student_id=${student.id}&academic_year_id=${yearId}`
-        : `${API_BASE}/grades/student-exam-results?student_id=${student.id}&academic_year_id=${yearId}`;
-      const res = await fetchWithAuth(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
-      const withRoom = roomName && !student.room_name ? { ...student, room_name: roomName } : student;
-      sections.push(
-        preschool
-          ? preschoolSection(withRoom, selectedClass.name, yearName, data, shownPeriods, subjectIds, names, kind, i > 0)
-          : schoolSection(withRoom, selectedClass.name, yearName, data, shownPeriods, subjectIds, names, kind, i > 0),
-      );
-    }
-    return getSectionsPdfBlob(sections, undefined, {
-      orientation: kind === "carnet" ? "landscape" : "portrait",
-      format: "letter",
-      headerEachPage: kind === "bulletin",
-      tableFontSize: kind === "carnet" ? 8 : 9,
-      tableCellPadding: kind === "carnet" ? 1.5 : 2,
-      school:
-        kind === "bulletin" && school
-          ? {
-              name: school.name,
-              email: school.email,
-              phone: school.phone,
-              address: school.address,
-              logo_url: getImageUrl(school.logo_url) ?? school.logo_url,
-            }
-          : undefined,
+    const results = new Map<string, SchoolResults & PreschoolResults>();
+    const queue = [...cohort];
+    const workers = Array.from({ length: Math.min(6, queue.length) }, async () => {
+      while (queue.length) {
+        const student = queue.shift();
+        if (!student) return;
+        const url = preschool
+          ? `${API_BASE}/grades/preschool/student-results?student_id=${student.id}&academic_year_id=${yearId}`
+          : `${API_BASE}/grades/student-exam-results?student_id=${student.id}&academic_year_id=${yearId}`;
+        const res = await fetchWithAuth(url);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+        results.set(student.id, data);
+      }
     });
+    await Promise.all(workers);
+    const subtitle = [
+      preschool ? "Préscolaire" : "",
+      kind === "bulletin" ? shownPeriods[0]?.name ?? "" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const schoolInfo = school
+      ? {
+          name: school.name,
+          email: school.email,
+          phone: school.phone,
+          address: school.address,
+          logo_url: getImageUrl(school.logo_url) ?? school.logo_url,
+        }
+      : null;
+    const pages = preschool
+      ? composePreschoolSheets({
+          className: selectedClass.name,
+          students: cohort,
+          pickedIds: [...picked],
+          periods: shownPeriods,
+          subjects: subjectList,
+          results,
+          mark: preschoolMark,
+          decisionLabel,
+        }).map((sheet) => ({ type: "preschool" as const, sheet }))
+      : composeSchoolSheets({
+          className: selectedClass.name,
+          students: cohort,
+          pickedIds: [...picked],
+          periods: shownPeriods,
+          subjects: subjectList,
+          results,
+          decisionLabel,
+        }).map((sheet) => ({ type: "school" as const, sheet }));
+    return buildBulletinSheetsPdf({ school: schoolInfo, yearName, subtitle, pages });
   }
 
   const filenamePlace = slugify(classRooms.find((r) => r.id === roomId)?.name || selectedClass?.name || "classe");

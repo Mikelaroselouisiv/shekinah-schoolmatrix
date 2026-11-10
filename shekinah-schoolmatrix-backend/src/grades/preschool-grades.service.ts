@@ -102,14 +102,18 @@ export class PreschoolGradesService {
     subject_id: string;
     period_id: string;
     teacher_id?: number;
+    room_id?: string;
   }): Promise<any> {
-    const students = params.teacher_id
+    let students = params.teacher_id
       ? await this.teachersService.findActiveStudentsInTeacherRooms(params.teacher_id, params.class_id)
       : await this.studentRepo.find({
           where: { class: { id: params.class_id }, active: true },
-          relations: ['class'],
+          relations: ['room'],
           order: { last_name: 'ASC', first_name: 'ASC' },
         });
+    if (params.room_id) {
+      students = students.filter((s) => (s.room?.id ?? (s as { room_id?: string }).room_id) === params.room_id);
+    }
     await this.ensureAssignments(params.academic_year_id, params.class_id, students);
     const assignments = await this.assignmentRepo.find({
       where: { academic_year: { id: params.academic_year_id } },
@@ -166,16 +170,18 @@ export class PreschoolGradesService {
     class_id: string;
     subject_id: string;
     period_id: string;
+    student_ids?: string[];
   }): Promise<boolean> {
-    const count = await this.preschoolGradeRepo.count({
-      where: {
-        academic_year: { id: params.academic_year_id },
-        class: { id: params.class_id },
-        subject: { id: params.subject_id },
-        period: { id: params.period_id },
-      },
-    });
-    return count > 0;
+    const qb = this.preschoolGradeRepo
+      .createQueryBuilder('g')
+      .where('g.academic_year_id = :ay', { ay: params.academic_year_id })
+      .andWhere('g.class_id = :c', { c: params.class_id })
+      .andWhere('g.subject_id = :s', { s: params.subject_id })
+      .andWhere('g.period_id = :p', { p: params.period_id });
+    if (params.student_ids?.length) {
+      qb.andWhere('g.student_id IN (:...ids)', { ids: params.student_ids });
+    }
+    return (await qb.getCount()) > 0;
   }
 
   async savePreschoolGrades(params: {

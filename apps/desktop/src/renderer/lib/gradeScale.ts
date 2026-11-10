@@ -1,6 +1,3 @@
-export const DEFAULT_BAREME = 100;
-export const BAREME_PRESETS = [100, 200, 300, 400, 500] as const;
-
 export function pointsToTen(obtained: number | null | undefined, bareme: number | null | undefined): number | null {
   if (obtained == null || Number.isNaN(Number(obtained))) return null;
   const b = Number(bareme);

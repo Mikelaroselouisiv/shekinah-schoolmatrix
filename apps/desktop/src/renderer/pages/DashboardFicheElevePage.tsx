@@ -2061,7 +2061,6 @@ export function DashboardFicheElevePage() {
             <div className="p-4 overflow-auto max-h-[70vh]">
               {examResults && examResults.subjects?.length > 0 ? (
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-500 mb-2">Ex. 180/200 = 9,00/10 · barème 100, 200, 300, 400 ou 500.</p>
                   <table className="w-full text-sm border-collapse min-w-[600px]">
                     <thead>
                       <tr>

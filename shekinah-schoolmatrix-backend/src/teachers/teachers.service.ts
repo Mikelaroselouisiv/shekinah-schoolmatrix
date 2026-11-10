@@ -939,6 +939,7 @@ export class TeachersService {
     if (!roomIds.length) return [];
     return this.studentRepo
       .createQueryBuilder('s')
+      .leftJoinAndSelect('s.room', 'room')
       .where('s.class_id = :classId', { classId })
       .andWhere('s.active = true')
       .andWhere('s.room_id IN (:...roomIds)', { roomIds })

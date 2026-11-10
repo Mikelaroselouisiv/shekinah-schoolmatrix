@@ -65,6 +65,7 @@ export class GradesController {
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period_id') periodId?: string,
+    @Query('room_id') roomId?: string,
   ) {
     const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
     const data = await this.gradesService.getGradesFormData({
@@ -72,6 +73,7 @@ export class GradesController {
       class_id: classId!,
       subject_id: subjectId!,
       period_id: periodId!,
+      room_id: roomId || undefined,
       teacher_id: isTeacherRoleName(req.user?.role) ? uid : undefined,
     });
     const role = req.user?.role;
@@ -98,6 +100,7 @@ export class GradesController {
         class_id: body.class_id,
         subject_id: body.subject_id,
         period_id: body.period_id,
+        student_ids: body.grades.map((g) => g.student_id).filter(Boolean),
       });
       if (hasExisting) {
         throw new ForbiddenException(
@@ -127,6 +130,7 @@ export class GradesController {
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
     @Query('period_id') periodId?: string,
+    @Query('room_id') roomId?: string,
   ) {
     const uid = req.user?.userId ?? req.user?.sub ?? req.user?.id;
     const data = await this.preschoolGradesService.getPreschoolFormData({
@@ -134,6 +138,7 @@ export class GradesController {
       class_id: classId!,
       subject_id: subjectId!,
       period_id: periodId!,
+      room_id: roomId || undefined,
       teacher_id: isTeacherRoleName(req.user?.role) ? uid : undefined,
     });
     const role = req.user?.role;
@@ -161,6 +166,7 @@ export class GradesController {
         class_id: body.class_id,
         subject_id: body.subject_id,
         period_id: body.period_id,
+        student_ids: body.grades.map((g) => g.student_id).filter(Boolean),
       });
       if (hasExisting) {
         throw new ForbiddenException(

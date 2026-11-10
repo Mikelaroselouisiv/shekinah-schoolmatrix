@@ -212,7 +212,7 @@ export class FormationClasseService {
   }
 
   /**
-   * Logique Haïti : points avec coefficients (100, 200, 300, 400, 500…).
+   * Points obtenus / coefficient de la matière, ramenés sur 10.
    * Par période : moyenne période = (points obtenus / points possibles) * 10.
    * Moyenne générale = moyenne des moyennes des périodes (sur 10).
    */
