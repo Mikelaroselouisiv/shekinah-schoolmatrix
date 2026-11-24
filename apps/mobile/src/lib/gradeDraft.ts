@@ -27,6 +27,7 @@ type PreschoolLike = {
   student_id: string;
   level?: string | null;
   frequency?: string | null;
+  appreciation?: string | null;
   observation?: string | null;
   decision?: string | null;
 };
@@ -42,7 +43,7 @@ export type PreschoolGradeCell = {
   student_id: string;
   level: string | null;
   frequency: string | null;
-  observation: string;
+  appreciation: string;
   decision: string | null;
 };
 
@@ -83,7 +84,7 @@ export function preschoolCells(rows: PreschoolLike[]): PreschoolGradeCell[] {
     student_id: row.student_id,
     level: row.level || null,
     frequency: row.frequency || null,
-    observation: row.observation ?? '',
+    appreciation: row.appreciation ?? row.observation ?? '',
     decision: row.decision || null,
   }));
 }
@@ -123,7 +124,7 @@ export function applyPreschoolDraft<T extends PreschoolLike>(rows: T[], cells: P
       ...row,
       level: cell.level,
       frequency: cell.frequency,
-      observation: cell.observation,
+      appreciation: cell.appreciation ?? (cell as { observation?: string }).observation ?? '',
       decision: cell.decision,
     };
   });

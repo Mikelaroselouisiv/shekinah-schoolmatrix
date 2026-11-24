@@ -513,7 +513,7 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet, showDecisi
   const headH = 7;
   const footH = 5.4;
   const barH = 3.2;
-  const maxBody = pageH - 8 - top - headH - barH - 4 * footH;
+  const maxBody = pageH - 8 - top - headH - barH - 3 * footH;
   const rowH = Math.min(6, Math.max(3.6, maxBody / Math.max(sheet.subjects.length, 1)));
   const blanks = sheet.subjects.length >= 24 ? 0 : Math.max(0, Math.floor((maxBody - sheet.subjects.length * rowH) / rowH));
   const bodyRows = sheet.subjects.length + blanks;
@@ -571,9 +571,8 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet, showDecisi
     }
     y += footH;
   };
-  footer("Points", "", sheet.pointTotals.map((n) => fmtPoints(n)));
-  footer("TOTAL", fmtPoints(sheet.coefficientTotal), sheet.averages.map((n) => fmtAvg(n)), true);
-  footer("Moyenne", "/10", sheet.periodLabels.map(() => ""));
+  footer("TOTAL", fmtPoints(sheet.coefficientTotal), sheet.pointTotals.map((n) => fmtPoints(n)), true);
+  footer("Moyenne", "/10", sheet.averages.map((n) => fmtAvg(n)));
   footer(
     "Place",
     sheet.effectif ? String(sheet.effectif) : "",

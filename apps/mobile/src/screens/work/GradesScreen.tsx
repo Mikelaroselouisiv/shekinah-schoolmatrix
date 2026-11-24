@@ -538,7 +538,7 @@ export function GradesScreen({}: Props) {
         {!canEdit && ready ? (
           <View style={styles.lockBanner}>
             <Ionicons name="lock-closed" size={14} color="#C2410C" />
-            <Text style={styles.lockText}>Déjà enregistrées. Seule la direction peut modifier.</Text>
+            <Text style={styles.lockText}>Notes déjà enregistrées.</Text>
           </View>
         ) : null}
 
@@ -854,9 +854,10 @@ function PreschoolRow({
       <Text style={styles.fieldLabel}>Appréciation générale</Text>
       <TextInput
         editable={editable}
+        multiline
         value={row.appreciation || ''}
         onChangeText={(appreciation) => onChange({ ...row, appreciation })}
-        style={styles.detailInput}
+        style={styles.appreciationInput}
       />
       {showDecision ? (
         <>
@@ -1016,6 +1017,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     backgroundColor: colors.bg,
+  },
+  appreciationInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 96,
+    fontSize: 15,
+    color: colors.text,
+    backgroundColor: colors.bg,
+    textAlignVertical: 'top',
   },
   sticky: {
     position: 'absolute',

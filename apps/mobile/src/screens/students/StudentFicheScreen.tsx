@@ -64,6 +64,147 @@ function scheduleDayRank(day?: number): number {
 type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentFiche'>;
 type DetailTab = 'carnet' | 'travaux' | 'infos' | 'famille';
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function fmtNum(n: number | null): string {
+  if (n == null || Number.isNaN(n)) return '';
+  const r = round2(n);
+  return Number.isInteger(r) ? String(r) : String(r);
+}
+
+function fmtAvg(n: number | null): string {
+  if (n == null || Number.isNaN(n)) return '';
+  return round2(n).toFixed(2);
+}
+
+type CarnetGrid = {
+  periods: { id: string; name: string }[];
+  rows: { id: string; name: string; coefficient: number | null; points: (number | null)[] }[];
+  coefficientTotal: number | null;
+  pointTotals: (number | null)[];
+  averages: (number | null)[];
+};
+
+function buildCarnetGrid(grades: ExamResults): CarnetGrid {
+  const fromApi = [...(grades.periods ?? [])].sort((a, b) => a.order_index - b.order_index);
+  const periods = fromApi.length
+    ? fromApi.map((p) => ({ id: p.id, name: p.name }))
+    : [];
+  if (!periods.length) {
+    const seen = new Map<string, { id: string; name: string; order: number }>();
+    for (const subject of grades.subjects ?? []) {
+      for (const period of subject.periods) {
+        if (!seen.has(period.period_id)) {
+          seen.set(period.period_id, {
+            id: period.period_id,
+            name: period.period_name,
+            order: period.order_index,
+          });
+        }
+      }
+    }
+    periods.push(
+      ...[...seen.values()]
+        .sort((a, b) => a.order - b.order)
+        .map((p) => ({ id: p.id, name: p.name })),
+    );
+  }
+  const rows = (grades.subjects ?? []).map((subject) => {
+    let coefficient: number | null = null;
+    const points = periods.map((period) => {
+      const grade = subject.periods.find((g) => g.period_id === period.id);
+      const coef = Number(grade?.coefficient);
+      if (coefficient == null && coef > 0) coefficient = coef;
+      if (!grade?.has_grade || grade.grade_value == null) return null;
+      return Number(grade.grade_value);
+    });
+    return { id: subject.subject_id, name: subject.subject_name, coefficient, points };
+  });
+  const counted = rows.filter((row) => row.coefficient != null && row.coefficient > 0);
+  const coefficientTotal = counted.reduce((sum, row) => sum + (row.coefficient ?? 0), 0);
+  const pointTotals = periods.map((_, index) => {
+    const any = counted.some((row) => row.points[index] != null);
+    if (!any) return null;
+    return counted.reduce((sum, row) => sum + (row.points[index] ?? 0), 0);
+  });
+  const averages = pointTotals.map((points) =>
+    points == null || !(coefficientTotal > 0) ? null : (points / coefficientTotal) * 10,
+  );
+  return {
+    periods,
+    rows,
+    coefficientTotal: coefficientTotal > 0 ? coefficientTotal : null,
+    pointTotals,
+    averages,
+  };
+}
+
+function CarnetTable({ grades }: { grades: ExamResults }) {
+  const grid = buildCarnetGrid(grades);
+  const foot = [
+    {
+      label: 'TOTAL',
+      coef: fmtNum(grid.coefficientTotal),
+      cells: grid.pointTotals.map(fmtNum),
+      bold: true,
+    },
+    {
+      label: 'Moyenne',
+      coef: '/10',
+      cells: grid.averages.map(fmtAvg),
+      bold: false,
+    },
+  ];
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View>
+        <View style={styles.carnetRow}>
+          <Text style={[styles.carnetHead, styles.carnetName]}>Matière</Text>
+          <Text style={[styles.carnetHead, styles.carnetNum]}>Coef.</Text>
+          {grid.periods.map((period) => (
+            <Text key={period.id} style={[styles.carnetHead, styles.carnetNum]}>
+              {period.name}
+            </Text>
+          ))}
+        </View>
+        {grid.rows.map((row) => (
+          <View key={row.id} style={styles.carnetRow}>
+            <Text style={[styles.carnetCell, styles.carnetName]} numberOfLines={2}>
+              {row.name}
+            </Text>
+            <Text style={[styles.carnetCell, styles.carnetNum]}>{fmtNum(row.coefficient)}</Text>
+            {row.points.map((point, index) => (
+              <Text key={`${row.id}-${index}`} style={[styles.carnetCell, styles.carnetNum]}>
+                {fmtNum(point)}
+              </Text>
+            ))}
+          </View>
+        ))}
+        {foot.map((line) => (
+          <View key={line.label} style={styles.carnetRow}>
+            <Text style={[styles.carnetCell, styles.carnetName, line.bold && styles.carnetBold]}>
+              {line.label}
+            </Text>
+            <Text style={[styles.carnetCell, styles.carnetNum, line.bold && styles.carnetBold]}>
+              {line.coef}
+            </Text>
+            {line.cells.map((value, index) => (
+              <Text
+                key={`${line.label}-${index}`}
+                style={[styles.carnetCell, styles.carnetNum, line.bold && styles.carnetBold]}
+              >
+                {value}
+              </Text>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
 export function StudentFicheScreen({ navigation, route }: Props) {
   const { studentId, studentName } = route.params;
   const { context, theme } = useSchool();
@@ -424,20 +565,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
           {detailTab === 'carnet' ? (
             grades?.subjects?.length ? (
-              grades.subjects.map((sub) => (
-                <View key={sub.subject_id} style={styles.detailRow}>
-                  <Text style={styles.detailTitle}>{sub.subject_name}</Text>
-                  <Text style={styles.detailMeta}>
-                    {sub.periods
-                      .map((p) =>
-                        p.has_grade === false
-                          ? `${p.period_name}: —`
-                          : `${p.period_name}: ${p.grade_value}`,
-                      )
-                      .join(' · ')}
-                  </Text>
-                </View>
-              ))
+              <CarnetTable grades={grades} />
             ) : (
               <Text style={styles.emptyLine}>—</Text>
             )
@@ -711,6 +839,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
   },
+  carnetRow: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  carnetHead: {
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  carnetCell: {
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    fontSize: 13,
+    color: colors.text,
+  },
+  carnetName: { width: 132 },
+  carnetNum: { width: 72, textAlign: 'right' },
+  carnetBold: { fontWeight: '700' },
   info: { marginBottom: 10 },
   infoLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   infoValue: { fontSize: 15, color: colors.text, marginTop: 2 },
