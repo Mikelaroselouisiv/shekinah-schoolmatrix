@@ -6,6 +6,7 @@ import {
   DEFAULT_ROLE_EDUCATION_LEVELS,
   PERMS_PEDAGOGIQUE,
   PERMS_SECRETAIRE,
+  PERMS_SECRETAIRE_GENERAL,
   PERMS_SURVEILLANT,
   TEACHER_ROLE_NAMES,
   isTeacherRoleName,
@@ -121,8 +122,9 @@ const DEFAULT_ROLES: {
   },
   {
     name: 'SECRETAIRE_GENERAL',
-    description: 'Secrétaire général(e) — dossiers élèves, classes (toute l’école)',
-    permissions: PERMS_SECRETAIRE,
+    description:
+      'Secrétaire général(e) — organisation de l’école, hors statistiques et finances',
+    permissions: PERMS_SECRETAIRE_GENERAL,
   },
   {
     name: 'SECRETAIRE_FORMATION_SUPERIEURE',
@@ -178,7 +180,18 @@ const LEGACY_ROLE_DESCRIPTIONS = new Set([
   'Responsable discipline (présence, retards, pointage)',
   'Surveillant / Surveillante général(e) — discipline',
   'Alias Surveillant général (rétrocompatibilité)',
+  'Secrétaire général(e) — dossiers élèves, classes (toute l’école)',
 ]);
+
+function withMissingPermissions(
+  current: string[] | null | undefined,
+  required: readonly string[],
+): string[] | null {
+  const have = current ?? [];
+  const missing = required.filter((p) => !have.includes(p));
+  if (missing.length === 0) return null;
+  return [...have, ...missing];
+}
 
 @Injectable()
 export class RolesService {
@@ -249,6 +262,20 @@ export class RolesService {
       ) {
         exists.permissions = [...PERMS_SURVEILLANT];
         changed = true;
+      }
+      if (r.name === 'SECRETAIRE_GENERAL') {
+        const next = withMissingPermissions(exists.permissions, PERMS_SECRETAIRE_GENERAL);
+        if (next) {
+          exists.permissions = next;
+          changed = true;
+        }
+      }
+      if (r.permissions === PERMS_PEDAGOGIQUE) {
+        const next = withMissingPermissions(exists.permissions, ['subjects', 'teachers']);
+        if (next) {
+          exists.permissions = next;
+          changed = true;
+        }
       }
       if (changed) await this.rolesRepo.save(exists);
     }

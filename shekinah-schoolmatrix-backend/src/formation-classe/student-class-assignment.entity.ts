@@ -16,6 +16,7 @@ export const DECISION_ADMIS = 'ADMIS';
 export const DECISION_ADMIS_AILLEURS = 'ADMIS_AILLEURS';
 export const DECISION_REDOUBLER = 'REDOUBLER';
 export const DECISION_AJOURNE = 'AJOURNE';
+export const DECISION_CAS_SPECIAL = 'CAS_SPECIAL';
 export const DECISION_RENVOYE = 'RENVOYE';
 export const DECISION_RENVOYE_DEFINITIVEMENT = 'RENVOYE_DEFINITIVEMENT';
 export const DECISION_EXPELLED = 'EXPELLED';
@@ -38,9 +39,13 @@ export class StudentClassAssignment {
   @JoinColumn({ name: 'class_id' })
   class: Class;
 
-  /** ADMIS, REDOUBLER, RENVOYE, EXPELLED - null si pas encore décidé */
+  /** ADMIS, REDOUBLER, CAS_SPECIAL, EXPELLED — null si pas encore décidé */
   @Column({ type: 'varchar', length: 30, nullable: true })
   decision: string | null;
+
+  /** Décision posée à la main pour un cas spécial : le calcul ne l'écrase pas. */
+  @Column({ type: 'boolean', default: false })
+  decision_manual: boolean;
 
   /** Moyenne calculée (optionnel, pour référence) */
   @Column({ type: 'decimal', precision: 6, scale: 2, nullable: true })

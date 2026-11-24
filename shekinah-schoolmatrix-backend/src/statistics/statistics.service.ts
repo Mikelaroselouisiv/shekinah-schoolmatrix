@@ -329,6 +329,7 @@ export class StatisticsService {
       if (!cid) continue;
       thresholdsByClass[cid] = {
         min_average_admis: Number(t.min_average_admis),
+        min_average_cas_special: Number(t.min_average_cas_special),
         min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
         min_average_redoubler: Number(t.min_average_redoubler),
         min_average_ajourne: Number(t.min_average_ajourne),

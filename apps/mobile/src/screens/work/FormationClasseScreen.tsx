@@ -38,7 +38,6 @@ import {
 import type { WorkStackParamList } from '../../navigation/types';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
-import { listBottomPadding } from '../../lib/layout';
 
 type Props =
   | NativeStackScreenProps<WorkStackParamList, 'FormationClasse'>
@@ -54,9 +53,11 @@ const DECISION_OPTIONS = [
   { id: 'RENVOYE_DEFINITIVEMENT', label: 'Renvoyé définitivement' },
 ];
 
-const DECISION_LABEL: Record<string, string> = Object.fromEntries(
-  DECISION_OPTIONS.map((d) => [d.id, d.label]),
-);
+const DECISION_LABEL: Record<string, string> = {
+  ...Object.fromEntries(DECISION_OPTIONS.map((d) => [d.id, d.label])),
+  CAS_SPECIAL: 'Cas spécial',
+  EXPELLED: 'Expulsé',
+};
 
 export function FormationClasseScreen({}: Props) {
   const allowed = useCanAccess('formation-classe');
@@ -338,7 +339,7 @@ export function FormationClasseScreen({}: Props) {
                   <Text style={styles.editLink}>Changer de classe</Text>
                 </Pressable>
               ) : null}
-              {item.assignment_id ? (
+              {isPreschool && item.assignment_id ? (
                 <Pressable
                   onPress={() => {
                     setDecisionTarget(item);
@@ -443,7 +444,7 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
-  list: { paddingHorizontal: 20, paddingBottom: listBottomPadding(24) },
+  list: { paddingHorizontal: 20, paddingBottom: 48 },
   card: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,

@@ -33,6 +33,7 @@ export type SchoolResults = {
 
 export type PreschoolResults = {
   cells?: Record<string, { level?: string; frequency?: string; observation?: string }>;
+  appreciations?: { period_id: string; text?: string | null }[];
 };
 
 type Identity = {
@@ -61,6 +62,7 @@ export type PreschoolSheet = {
   identity: Identity;
   periodLabels: string[];
   subjects: { name: string; marks: string[] }[];
+  appreciations: { label: string; text: string }[];
 };
 
 type Page =
@@ -259,7 +261,9 @@ export function composePreschoolSheets(args: {
   return args.students
     .filter((student) => picked.has(student.id))
     .map((student) => {
-      const cells = args.results.get(student.id)?.cells ?? {};
+      const found = args.results.get(student.id);
+      const cells = found?.cells ?? {};
+      const byPeriod = new Map((found?.appreciations ?? []).map((item) => [item.period_id, item.text?.trim() || ""]));
       return {
         identity: {
           lastName: student.last_name,
@@ -273,6 +277,12 @@ export function composePreschoolSheets(args: {
           name: subject.name,
           marks: args.periods.map((period) => args.mark(cells[`${subject.id}:${period.id}`])),
         })),
+        appreciations: args.periods
+          .map((period, index) => ({
+            label: args.periods.length > 1 ? labels[index] : "",
+            text: byPeriod.get(period.id) || "",
+          }))
+          .filter((item) => item.text),
       };
     })
     .sort((a, b) => a.identity.lastName.localeCompare(b.identity.lastName, "fr") || a.identity.firstName.localeCompare(b.identity.firstName, "fr"));
@@ -389,7 +399,7 @@ function paintCell(
   w: number,
   h: number,
   text: string,
-  opts?: { bold?: boolean; align?: "left" | "center"; size?: number; fill?: [number, number, number] },
+  opts?: { bold?: boolean; align?: "left" | "center" | "right"; size?: number; fill?: [number, number, number] },
 ) {
   if (opts?.fill) {
     doc.setFillColor(...opts.fill);
@@ -402,9 +412,10 @@ function paintCell(
   doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
   doc.setFontSize(opts?.size ?? 8);
   doc.setTextColor(20, 20, 20);
-  const shown = fit(doc, text, w - 1.6);
+  const shown = fit(doc, text, w - 2.2);
   const baseline = y + h / 2 + 1.15;
   if (opts?.align === "center") doc.text(shown, x + w / 2, baseline, { align: "center" });
+  else if (opts?.align === "right") doc.text(shown, x + w - 1.2, baseline, { align: "right" });
   else doc.text(shown, x + 1.1, baseline);
 }
 
@@ -415,7 +426,8 @@ function drawIdentity(
   w: number,
   h: number,
   identity: Identity,
-  stats: { classe?: string; generale?: string; place?: string } | null,
+  stats: { generale?: string; place?: string } | null,
+  showDecision: boolean,
 ) {
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.2);
@@ -446,9 +458,6 @@ function drawIdentity(
   }
   if (stats) {
     ty += 2;
-    label("Moyenne de la classe");
-    value(stats.classe || "", 10);
-    ty += 1.2;
     label("Moyenne générale");
     value(stats.generale || "", 10);
     if (stats.place) {
@@ -457,20 +466,26 @@ function drawIdentity(
       doc.text(fit(doc, stats.place, w - 4), x + 2, ty);
       ty += 4;
     }
-    ty += 1.2;
-    label("Décision de fin d'année");
-    value(identity.decision);
-  } else {
-    ty += 2;
-    label("Décision de fin d'année");
-    value(identity.decision);
   }
+  if (showDecision) {
+    ty += 1.4;
+    label("Décision de fin d'année");
+    if (identity.decision.trim()) {
+      value(identity.decision);
+    } else {
+      doc.setDrawColor(35, 35, 35);
+      doc.setLineWidth(0.25);
+      doc.line(x + 2, ty + 0.6, x + w - 2.5, ty + 0.6);
+      ty += 5;
+    }
+  }
+  const signY = Math.min(y + h - 7, Math.max(ty + 8, y + h - 16));
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
-  doc.text("Signature de la Direction", x + 2, y + h - 7);
+  doc.text("Signature de la Direction", x + 2, signY);
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.25);
-  doc.line(x + 2, y + h - 3.2, x + w - 2.5, y + h - 3.2);
+  doc.line(x + 2, signY + 3.6, x + w - 2.5, signY + 3.6);
 }
 
 function columnWidths(tableW: number, periodCount: number, withCoef: boolean): { disc: number; coef: number; period: number } {
@@ -487,7 +502,7 @@ function columnWidths(tableW: number, periodCount: number, withCoef: boolean): {
   return { disc, coef, period };
 }
 
-function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet) {
+function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet, showDecision: boolean) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 8;
@@ -502,7 +517,7 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet) {
   const rowH = Math.min(6, Math.max(3.6, maxBody / Math.max(sheet.subjects.length, 1)));
   const blanks = sheet.subjects.length >= 24 ? 0 : Math.max(0, Math.floor((maxBody - sheet.subjects.length * rowH) / rowH));
   const bodyRows = sheet.subjects.length + blanks;
-  const tableH = headH + bodyRows * rowH + barH + 4 * footH;
+  const footerTop = top + headH + bodyRows * rowH;
   const headFill: [number, number, number] = [232, 232, 232];
   const band: [number, number, number] = [30, 70, 130];
 
@@ -522,10 +537,10 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet) {
     let cx = margin;
     paintCell(doc, cx, y, widths.disc, rowH, name, { size: rowH < 4.4 ? 6.5 : 7.5 });
     cx += widths.disc;
-    paintCell(doc, cx, y, widths.coef, rowH, coef, { align: "center", size: 7.5 });
+    paintCell(doc, cx, y, widths.coef, rowH, coef, { align: "right", size: 7.5 });
     cx += widths.coef;
     for (let i = 0; i < n; i++) {
-      paintCell(doc, cx, y, widths.period, rowH, points[i] ?? "", { align: "center", size: 7.5 });
+      paintCell(doc, cx, y, widths.period, rowH, points[i] ?? "", { align: "right", size: 7.5 });
       cx += widths.period;
     }
     y += rowH;
@@ -548,10 +563,10 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet) {
     let cx = margin;
     paintCell(doc, cx, y, widths.disc, footH, label, { bold, size: 7.5 });
     cx += widths.disc;
-    paintCell(doc, cx, y, widths.coef, footH, coef, { bold, align: "center", size: 7.5 });
+    paintCell(doc, cx, y, widths.coef, footH, coef, { bold, align: "right", size: 7.5 });
     cx += widths.coef;
     for (let i = 0; i < n; i++) {
-      paintCell(doc, cx, y, widths.period, footH, cells[i] ?? "", { bold, align: "center", size: 7 });
+      paintCell(doc, cx, y, widths.period, footH, cells[i] ?? "", { bold, align: "right", size: 7 });
       cx += widths.period;
     }
     y += footH;
@@ -570,14 +585,13 @@ function drawSchoolSheet(doc: jsPDF, top: number, sheet: SchoolSheet) {
     sheet.placeGenerale != null && sheet.effectif
       ? `Place ${sheet.placeGenerale} / ${sheet.effectif}`
       : "";
-  drawIdentity(doc, margin + tableW, top, rightW, tableH, sheet.identity, {
-    classe: fmtAvg(sheet.moyenneClasse),
+  drawIdentity(doc, margin + tableW, top, rightW, footerTop - top, sheet.identity, {
     generale: fmtAvg(sheet.moyenneGenerale),
     place,
-  });
+  }, showDecision);
 }
 
-function drawPreschoolSheet(doc: jsPDF, top: number, sheet: PreschoolSheet) {
+function drawPreschoolSheet(doc: jsPDF, top: number, sheet: PreschoolSheet, showDecision: boolean) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 8;
@@ -585,7 +599,9 @@ function drawPreschoolSheet(doc: jsPDF, top: number, sheet: PreschoolSheet) {
   const tableW = pageW - margin * 2 - rightW;
   const n = Math.max(sheet.periodLabels.length, 1);
   const widths = columnWidths(tableW, n, false);
-  const maxBody = pageH - 10 - top;
+  const notes = sheet.appreciations.filter((item) => item.text.trim());
+  const noteBlock = 12;
+  const maxBody = pageH - 10 - top - noteBlock;
   const rowH = Math.min(7, Math.max(4.2, (maxBody - 7) / Math.max(sheet.subjects.length, 8)));
   const blanks = sheet.subjects.length >= 20 ? 0 : Math.max(0, Math.floor((maxBody - 7 - sheet.subjects.length * rowH) / rowH));
   const tableH = 7 + (sheet.subjects.length + blanks) * rowH;
@@ -613,13 +629,29 @@ function drawPreschoolSheet(doc: jsPDF, top: number, sheet: PreschoolSheet) {
   for (const subject of sheet.subjects) paintRow(subject.name, subject.marks);
   for (let i = 0; i < blanks; i++) paintRow("", []);
 
-  drawIdentity(doc, margin + tableW, top, rightW, tableH, sheet.identity, null);
+  drawIdentity(doc, margin + tableW, top, rightW, tableH, sheet.identity, null, showDecision);
+  let ny = y + 5;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(20, 20, 20);
+  doc.text("Appréciation générale", margin, ny);
+  ny += 4;
+  if (!notes.length) return;
+  doc.setFont("helvetica", "normal");
+  const width = pageW - margin * 2;
+  for (const note of notes) {
+    const prefix = note.label ? `${note.label} : ` : "";
+    const lines = doc.splitTextToSize(pdfText(`${prefix}${note.text}`), width).slice(0, 3) as string[];
+    doc.text(lines, margin, ny);
+    ny += lines.length * 3.5 + 1.4;
+  }
 }
 
 export async function buildBulletinSheetsPdf(opts: {
   school: BulletinSchool | null;
   yearName: string;
   subtitle?: string;
+  showDecision?: boolean;
   pages: Page[];
 }): Promise<Blob> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
@@ -628,8 +660,8 @@ export async function buildBulletinSheetsPdf(opts: {
   pages.forEach((page, index) => {
     if (index > 0) doc.addPage();
     const top = drawBanner(doc, opts.school, logo, opts.yearName, opts.subtitle || "");
-    if (page.type === "school") drawSchoolSheet(doc, top, page.sheet);
-    else drawPreschoolSheet(doc, top, page.sheet);
+    if (page.type === "school") drawSchoolSheet(doc, top, page.sheet, !!opts.showDecision);
+    else drawPreschoolSheet(doc, top, page.sheet, !!opts.showDecision);
   });
   if (!pages.length) {
     drawBanner(doc, opts.school, logo, opts.yearName, opts.subtitle || "");

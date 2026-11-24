@@ -37,7 +37,8 @@ type DocKind = "bulletin" | "carnet";
 const DECISION_LABELS = Object.fromEntries(YEAR_END_DECISIONS.map((d) => [d.value, d.label]));
 
 function decisionLabel(value?: string | null): string {
-  if (!value) return "";
+  if (!value || value === "CAS_SPECIAL") return "";
+  if (value === "EXPELLED") return "Expulsé";
   return DECISION_LABELS[value] ?? value;
 }
 
@@ -273,7 +274,13 @@ export function ReportBookletPanel({ classes }: { classes: ClassItem[] }) {
           results,
           decisionLabel,
         }).map((sheet) => ({ type: "school" as const, sheet }));
-    return buildBulletinSheetsPdf({ school: schoolInfo, yearName, subtitle, pages });
+    return buildBulletinSheetsPdf({
+      school: schoolInfo,
+      yearName,
+      subtitle,
+      showDecision: kind === "carnet",
+      pages,
+    });
   }
 
   const filenamePlace = slugify(classRooms.find((r) => r.id === roomId)?.name || selectedClass?.name || "classe");

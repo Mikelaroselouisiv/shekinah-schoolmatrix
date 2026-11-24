@@ -333,7 +333,10 @@ export function GradesScreen({}: Props) {
             student_id: r.student_id,
             level: evalMode === 'LEVEL' ? r.level?.trim() || undefined : undefined,
             frequency: evalMode === 'FREQUENCY' ? r.frequency?.trim() || undefined : undefined,
-            observation: r.observation?.trim() || undefined,
+          })),
+          appreciations: preschoolRows.map((r) => ({
+            student_id: r.student_id,
+            text: r.appreciation?.trim() || '',
           })),
           ...(isLastPeriod
             ? {
@@ -848,12 +851,11 @@ function PreschoolRow({
           />
         </>
       )}
+      <Text style={styles.fieldLabel}>Appréciation générale</Text>
       <TextInput
         editable={editable}
-        value={row.observation || ''}
-        onChangeText={(observation) => onChange({ ...row, observation })}
-        placeholder="Observation"
-        placeholderTextColor={colors.textMuted}
+        value={row.appreciation || ''}
+        onChangeText={(appreciation) => onChange({ ...row, appreciation })}
         style={styles.detailInput}
       />
       {showDecision ? (

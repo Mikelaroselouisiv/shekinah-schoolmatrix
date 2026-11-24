@@ -5,9 +5,10 @@
  *
  * Règles :
  * - SUPER_ADMIN, DIRECTEUR_GENERAL, DIRECTEUR_ADMINISTRATIF, ADMINISTRATEUR : accès total.
- * - Directeurs pédagogiques : notes, horaires, classes, élèves, stats — **leur périmètre seulement**
+ * - Directeurs pédagogiques : notes, horaires, classes, matières, professeurs, élèves, stats — leur périmètre seulement
  *   (primaire = 1er+2e AF ; secondaire = 3e AF + secondaire).
- * - Secrétaires : dossiers élèves / classes (général = toute l’école ; FS = formation supérieure).
+ * - Secrétaire général(e) : organisation de l’école, hors statistiques et finances.
+ *   Secrétaire formation supérieure : dossiers et classes de son cycle.
  * - Surveillant général : discipline.
  * - Économe : Économat et Dépenses.
  * - Comptable : Stats financières.
@@ -61,6 +62,9 @@ const ROLES_SECRETAIRE: string[] = [
   "SECRETAIRE_GENERAL",
   "SECRETAIRE_FORMATION_SUPERIEURE",
 ];
+
+/** Secrétaire de l’école : tout sauf statistiques et finances. */
+const ROLES_SECRETAIRE_ECOLE: string[] = ["SECRETAIRE_GENERAL"];
 
 /** Rôles qui voient Horaires et Saisie des notes. */
 const ROLES_HORAIRES_ET_NOTES: string[] = [...ROLES_PEDAGOGIQUE];
@@ -145,15 +149,15 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], permissionKey: "dashboard", block: "configuration" },
   // Bloc Configuration : Classes (salles + profs dans la fiche), Matières (catalogue), Années, Horaires
   { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "classes", block: "configuration" },
-  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
-  { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
-  { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES], permissionKey: "schedule", block: "configuration" },
+  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE_ECOLE], permissionKey: "subjects", block: "configuration" },
+  { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL, ...ROLES_SECRETAIRE_ECOLE], permissionKey: "academic-years", block: "configuration" },
+  { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE_ECOLE], permissionKey: "schedule", block: "configuration" },
   // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "students", block: "management" },
-  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_SECRETAIRE_ECOLE, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
   { href: "/dashboard/tableau-professeur", label: "Tableau de bord professeur", allowedRoles: [...TEACHER_ROLE_NAMES], permissionKey: "teacher-hub", block: "management" },
-  { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
-  { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE], permissionKey: "formation-classe", block: "management" },
+  { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE, ...ROLES_SECRETAIRE_ECOLE], permissionKey: "discipline", block: "management" },
+  { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE_ECOLE], permissionKey: "formation-classe", block: "management" },
   // Bloc Finance opérationnel : Économat + Dépenses (économe)
   { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
   { href: "/dashboard/depenses", label: "Dépenses", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
@@ -177,7 +181,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   {
     href: "/dashboard/photography",
     label: "Photographie",
-    allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY],
+    allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY, ...ROLES_SECRETAIRE_ECOLE],
     permissionKey: "photography",
     block: "fiche",
   },

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ClassSubjectCoefficient } from './class-subject-coefficient.entity';
 import { Grade } from './grade.entity';
 import { PreschoolGrade } from './preschool-grade.entity';
+import { PreschoolAppreciation } from './preschool-appreciation.entity';
 import { Student } from '../students/student.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
@@ -23,6 +24,7 @@ import { TeachersModule } from '../teachers/teachers.module';
       ClassSubjectCoefficient,
       Grade,
       PreschoolGrade,
+      PreschoolAppreciation,
       Student,
       ScheduleSlot,
       AcademicYear,

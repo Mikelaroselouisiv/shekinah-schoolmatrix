@@ -98,9 +98,31 @@ export const PERMS_PEDAGOGIQUE = [
   'formation-classe',
   'students',
   'classes',
+  'subjects',
+  'teachers',
 ];
 
+/** Secrétaire de la formation supérieure : dossiers et classes de son cycle. */
 export const PERMS_SECRETAIRE = ['students', 'fiche-eleve', 'classes'];
+
+/**
+ * Secrétaire général(e) : organisation de l’école.
+ * Fermé : statistiques et transactions financières.
+ */
+export const PERMS_SECRETAIRE_GENERAL = [
+  'classes',
+  'rooms',
+  'teachers',
+  'subjects',
+  'academic-years',
+  'schedule',
+  'students',
+  'grades',
+  'discipline',
+  'formation-classe',
+  'fiche-eleve',
+  'photography',
+];
 
 export const PERMS_SURVEILLANT = ['discipline'];
 
@@ -170,6 +192,7 @@ export function canAccessStudentDossierComplet(name?: string | null): boolean {
 export const ROLES_GRADES = [
   ...ROLES_FULL_SCHOOL,
   ...ROLES_PEDAGOGIQUE,
+  ROLE_NAMES.SECRETAIRE_GENERAL,
   ROLE_NAMES.STAFF,
   ...TEACHER_ROLE_NAMES,
 ];

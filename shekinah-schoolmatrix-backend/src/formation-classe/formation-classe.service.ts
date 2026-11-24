@@ -22,7 +22,7 @@ import {
   DECISION_ADMIS,
   DECISION_ADMIS_AILLEURS,
   DECISION_REDOUBLER,
-  DECISION_AJOURNE,
+  DECISION_CAS_SPECIAL,
   DECISION_RENVOYE_DEFINITIVEMENT,
   DECISION_EXPELLED,
 } from './student-class-assignment.entity';
@@ -160,10 +160,11 @@ export class FormationClasseService {
       t = this.thresholdRepo.create({
         class: { id: classId },
         academic_year: { id: academicYearId },
-        min_average_admis: '10',
-        min_average_admis_ailleurs: '8',
-        min_average_redoubler: '6',
-        min_average_ajourne: '4',
+        min_average_admis: '5',
+        min_average_cas_special: '4',
+        min_average_admis_ailleurs: '4',
+        min_average_redoubler: '3',
+        min_average_ajourne: '0',
       });
       t = await this.thresholdRepo.save(t);
     }
@@ -175,16 +176,25 @@ export class FormationClasseService {
     academicYearId: string,
     thresholds: {
       min_average_admis: number;
-      min_average_admis_ailleurs: number;
+      min_average_cas_special: number;
       min_average_redoubler: number;
-      min_average_ajourne: number;
     },
   ): Promise<ClassDecisionThreshold> {
+    const admis = Number(thresholds.min_average_admis);
+    const cas = Number(thresholds.min_average_cas_special);
+    const redoubler = Number(thresholds.min_average_redoubler);
+    if ([admis, cas, redoubler].some((n) => !Number.isFinite(n) || n < 0 || n > 10)) {
+      throw new BadRequestException('Seuils invalides.');
+    }
+    if (!(admis >= cas && cas >= redoubler)) {
+      throw new BadRequestException('Seuils invalides.');
+    }
     const t = await this.getOrCreateThreshold(classId, academicYearId);
-    t.min_average_admis = String(thresholds.min_average_admis);
-    t.min_average_admis_ailleurs = String(thresholds.min_average_admis_ailleurs);
-    t.min_average_redoubler = String(thresholds.min_average_redoubler);
-    t.min_average_ajourne = String(thresholds.min_average_ajourne);
+    t.min_average_admis = String(admis);
+    t.min_average_cas_special = String(cas);
+    t.min_average_admis_ailleurs = String(cas);
+    t.min_average_redoubler = String(redoubler);
+    t.min_average_ajourne = '0';
     return this.thresholdRepo.save(t);
   }
 
@@ -205,6 +215,7 @@ export class FormationClasseService {
       academic_year_id: t.academic_year?.id,
       academic_year_name: t.academic_year?.name,
       min_average_admis: Number(t.min_average_admis),
+      min_average_cas_special: Number(t.min_average_cas_special),
       min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
       min_average_redoubler: Number(t.min_average_redoubler),
       min_average_ajourne: Number(t.min_average_ajourne),
@@ -280,9 +291,8 @@ export class FormationClasseService {
 
     const threshold = await this.getOrCreateThreshold(classId, academicYearId);
     const minAdmis = Number(threshold.min_average_admis);
-    const minAdmisAilleurs = Number(threshold.min_average_admis_ailleurs);
+    const minCas = Number(threshold.min_average_cas_special);
     const minRedoubler = Number(threshold.min_average_redoubler);
-    const minAjourne = Number(threshold.min_average_ajourne);
 
     const assignments = await this.assignmentRepo.find({
       where: { academic_year: { id: academicYearId }, class: { id: classId } },
@@ -291,13 +301,13 @@ export class FormationClasseService {
 
     let updated = 0;
     for (const a of assignments) {
+      if (a.decision_manual) continue;
       const sid = a.student?.id;
       if (!sid) continue;
 
       const expelled = await this.hasExpelledMeasure(sid);
       if (expelled) {
         a.decision = DECISION_EXPELLED;
-        a.average = a.average;
         await this.assignmentRepo.save(a);
         updated++;
         continue;
@@ -305,24 +315,24 @@ export class FormationClasseService {
 
       const avg = await this.computeStudentAverage(sid, academicYearId, classId);
       a.average = avg != null ? String(avg) : null;
-
-      if (avg == null) {
-        a.decision = null;
-      } else if (avg >= minAdmis) {
-        a.decision = DECISION_ADMIS;
-      } else if (avg >= minAdmisAilleurs) {
-        a.decision = DECISION_ADMIS_AILLEURS;
-      } else if (avg >= minRedoubler) {
-        a.decision = DECISION_REDOUBLER;
-      } else if (avg >= minAjourne) {
-        a.decision = DECISION_AJOURNE;
-      } else {
-        a.decision = DECISION_RENVOYE_DEFINITIVEMENT;
-      }
+      a.decision = this.decisionFromAverage(avg, minAdmis, minCas, minRedoubler);
       await this.assignmentRepo.save(a);
       updated++;
     }
     return { updated };
+  }
+
+  private decisionFromAverage(
+    avg: number | null,
+    minAdmis: number,
+    minCas: number,
+    minRedoubler: number,
+  ): string {
+    if (avg == null) return DECISION_CAS_SPECIAL;
+    if (avg >= minAdmis) return DECISION_ADMIS;
+    if (avg >= minCas) return DECISION_CAS_SPECIAL;
+    if (avg >= minRedoubler) return DECISION_REDOUBLER;
+    return DECISION_EXPELLED;
   }
 
   async setDecision(assignmentId: string, decision: string): Promise<StudentClassAssignment> {
@@ -409,6 +419,9 @@ export class FormationClasseService {
       if (!sid) continue;
       if (student.active === false || student.archived_at) continue;
 
+      if (a.decision === DECISION_CAS_SPECIAL) continue;
+      if (!a.decision && !isPreschoolClass(a.class?.description, a.class?.level)) continue;
+
       if (a.decision && expelled.has(a.decision)) {
         await this.markStudentAlumni(sid, 'REMOVED');
         skipped++;
@@ -476,6 +489,7 @@ export class FormationClasseService {
     promoted: number;
     skipped: number;
     graduated: number;
+    special_cases: number;
   }> {
     const currentYear = await this.academicYearRepo.findOne({
       where: { id: currentYearId },
@@ -625,6 +639,7 @@ export class FormationClasseService {
           class: { id: classId },
           academic_year: { id: nextYear.id },
           min_average_admis: t.min_average_admis,
+          min_average_cas_special: t.min_average_cas_special,
           min_average_admis_ailleurs: t.min_average_admis_ailleurs,
           min_average_redoubler: t.min_average_redoubler,
           min_average_ajourne: t.min_average_ajourne,
@@ -633,6 +648,7 @@ export class FormationClasseService {
     }
 
     const formation = await this.runFormationForNextYear(currentYearId, nextYear.id);
+    const specialCases = await this.countSpecialCases(currentYearId);
 
     const nextPeriods = await this.periodRepo.find({
       where: { academic_year: { id: nextYear.id } },
@@ -661,6 +677,7 @@ export class FormationClasseService {
       promoted: formation.promoted,
       skipped: formation.skipped,
       graduated: formation.graduated,
+      special_cases: specialCases,
     };
   }
 
@@ -802,6 +819,128 @@ export class FormationClasseService {
       average: null,
     });
     return this.assignmentRepo.save(a);
+  }
+
+  async countSpecialCases(academicYearId: string): Promise<number> {
+    return (await this.listSpecialCases(academicYearId)).length;
+  }
+
+  async listSpecialCases(academicYearId: string): Promise<
+    {
+      id: string;
+      student_id: string;
+      first_name: string;
+      last_name: string;
+      class_id: string;
+      class_name: string;
+      average: number | null;
+    }[]
+  > {
+    const rows = await this.assignmentRepo.find({
+      where: { academic_year: { id: academicYearId }, decision: DECISION_CAS_SPECIAL },
+      relations: ['student', 'class'],
+    });
+    return rows
+      .filter((a) => {
+        const student = a.student;
+        if (!student || student.active === false || student.archived_at) return false;
+        if (isPreschoolClass(a.class?.description, a.class?.level)) return false;
+        return true;
+      })
+      .map((a) => ({
+        id: a.id,
+        student_id: a.student.id,
+        first_name: a.student.first_name,
+        last_name: a.student.last_name,
+        class_id: a.class?.id ?? '',
+        class_name: a.class?.name ?? '',
+        average: a.average != null ? Number(a.average) : null,
+      }))
+      .sort((a, b) => {
+        const byClass = a.class_name.localeCompare(b.class_name, 'fr');
+        if (byClass !== 0) return byClass;
+        const byLast = a.last_name.localeCompare(b.last_name, 'fr');
+        if (byLast !== 0) return byLast;
+        return a.first_name.localeCompare(b.first_name, 'fr');
+      });
+  }
+
+  async resolveSpecialCase(
+    assignmentId: string,
+    decision: string,
+  ): Promise<{ decision: string; placement: 'next_class' | 'same_class' | 'alumni' | 'pending' }> {
+    const allowed = [DECISION_ADMIS, DECISION_REDOUBLER, DECISION_EXPELLED];
+    if (!allowed.includes(decision)) throw new BadRequestException('Décision invalide.');
+    const a = await this.assignmentRepo.findOne({
+      where: { id: assignmentId },
+      relations: ['student', 'student.room', 'class', 'academic_year'],
+    });
+    if (!a) throw new NotFoundException('Assignment not found');
+    if (a.decision !== DECISION_CAS_SPECIAL) {
+      throw new BadRequestException('Cet élève n’est pas un cas spécial.');
+    }
+    const studentId = a.student?.id;
+    if (!studentId) throw new NotFoundException('Élève introuvable');
+
+    a.decision = decision;
+    a.decision_manual = true;
+    await this.assignmentRepo.save(a);
+
+    if (decision === DECISION_EXPELLED) {
+      await this.markStudentAlumni(studentId, 'REMOVED');
+      return { decision, placement: 'alumni' };
+    }
+
+    const yearName = a.academic_year?.name ?? '';
+    const nextYear = yearName
+      ? await this.academicYearRepo.findOne({ where: { name: nextAcademicYearName(yearName) } })
+      : null;
+    if (!nextYear) return { decision, placement: 'pending' };
+
+    const classes = await this.classRepo.find({ order: { name: 'ASC' } });
+    const rooms = await this.roomRepo.find({ relations: ['class'] });
+    let nextClass = a.class;
+    if (decision === DECISION_ADMIS) {
+      const found = this.findNextLevelClass(a.class, classes);
+      if (!found && this.isGraduationClass(a.class, classes)) {
+        await this.markStudentAlumni(studentId, 'GRADUATED');
+        return { decision, placement: 'alumni' };
+      }
+      nextClass = found ?? a.class;
+    }
+    const nextClassId = nextClass?.id;
+    if (!nextClassId) return { decision, placement: 'pending' };
+
+    const existingNext = await this.assignmentRepo.findOne({
+      where: { student: { id: studentId }, academic_year: { id: nextYear.id } },
+    });
+    if (existingNext) {
+      existingNext.class = { id: nextClassId } as Class;
+      await this.assignmentRepo.save(existingNext);
+    } else {
+      await this.assignmentRepo.save(
+        this.assignmentRepo.create({
+          student: { id: studentId },
+          academic_year: { id: nextYear.id },
+          class: { id: nextClassId },
+          decision: null,
+          average: null,
+          decision_manual: false,
+        }),
+      );
+    }
+
+    const nextRoomId = this.matchRoomInClass(a.student?.room?.name, nextClassId, rooms);
+    const st = await this.studentRepo.findOne({ where: { id: studentId } });
+    if (st) {
+      st.class = { id: nextClassId } as Class;
+      st.room = nextRoomId ? ({ id: nextRoomId } as Room) : null;
+      await this.studentRepo.save(st);
+    }
+    return {
+      decision,
+      placement: decision === DECISION_ADMIS ? 'next_class' : 'same_class',
+    };
   }
 
   async removeStudentFromClass(assignmentId: string): Promise<void> {

@@ -63,17 +63,15 @@ export class FormationClasseController {
       class_id: string;
       academic_year_id: string;
       min_average_admis: number;
-      min_average_admis_ailleurs: number;
+      min_average_cas_special: number;
       min_average_redoubler: number;
-      min_average_ajourne: number;
     },
   ) {
     await this.levelScope.assertClassAccess(req.user, body.class_id);
     const t = await this.formationClasseService.saveThreshold(body.class_id, body.academic_year_id, {
       min_average_admis: body.min_average_admis,
-      min_average_admis_ailleurs: body.min_average_admis_ailleurs,
+      min_average_cas_special: body.min_average_cas_special,
       min_average_redoubler: body.min_average_redoubler,
-      min_average_ajourne: body.min_average_ajourne,
     });
     return {
       ok: true,
@@ -82,9 +80,8 @@ export class FormationClasseController {
         class_id: t.class?.id,
         academic_year_id: t.academic_year?.id,
         min_average_admis: Number(t.min_average_admis),
-        min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
+        min_average_cas_special: Number(t.min_average_cas_special),
         min_average_redoubler: Number(t.min_average_redoubler),
-        min_average_ajourne: Number(t.min_average_ajourne),
       },
     };
   }
@@ -142,6 +139,32 @@ export class FormationClasseController {
         body.current_year_id,
         body.next_year_id,
       );
+    return { ok: true, ...result };
+  }
+
+  @Get('special-cases')
+  async listSpecialCases(
+    @Req() req: { user?: RequestActor },
+    @Query('academic_year_id') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academic_year_id requis');
+    const students = await this.levelScope.filterByClassId(
+      req.user,
+      await this.formationClasseService.listSpecialCases(academicYearId),
+      (row) => row.class_id,
+    );
+    return { ok: true, students };
+  }
+
+  @Post('special-cases/:id/resolve')
+  async resolveSpecialCase(
+    @Param('id') assignmentId: string,
+    @Body() body: { decision: string },
+  ) {
+    const result = await this.formationClasseService.resolveSpecialCase(
+      assignmentId,
+      body?.decision,
+    );
     return { ok: true, ...result };
   }
 

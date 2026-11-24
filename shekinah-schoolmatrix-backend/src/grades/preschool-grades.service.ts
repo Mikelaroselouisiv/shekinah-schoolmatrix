@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PreschoolGrade } from './preschool-grade.entity';
+import { PreschoolAppreciation } from './preschool-appreciation.entity';
 import { Student } from '../students/student.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { Period } from '../period/period.entity';
@@ -22,6 +23,8 @@ export class PreschoolGradesService {
   constructor(
     @InjectRepository(PreschoolGrade)
     private readonly preschoolGradeRepo: Repository<PreschoolGrade>,
+    @InjectRepository(PreschoolAppreciation)
+    private readonly appreciationRepo: Repository<PreschoolAppreciation>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
     @InjectRepository(ScheduleSlot)
@@ -145,6 +148,18 @@ export class PreschoolGradesService {
         };
       }
     }
+    const appreciations = await this.appreciationRepo.find({
+      where: {
+        academic_year: { id: params.academic_year_id },
+        period: { id: params.period_id },
+      },
+      relations: ['student'],
+    });
+    const appreciationByStudent = new Map<string, string>();
+    for (const item of appreciations) {
+      const sid = item.student?.id;
+      if (sid && item.text?.trim()) appreciationByStudent.set(sid, item.text.trim());
+    }
     const teacher = await this.getTeacherForClassSubject(params.class_id, params.subject_id);
     const evalMode = await this.getEvalMode(params.subject_id);
     const isLastPeriod = await this.isLastPeriod(params.academic_year_id, params.period_id);
@@ -156,7 +171,7 @@ export class PreschoolGradesService {
         student_name: `${s.first_name} ${s.last_name}`,
         level: ex?.level ?? null,
         frequency: ex?.frequency ?? null,
-        observation: ex?.observation ?? '',
+        appreciation: appreciationByStudent.get(s.id) ?? '',
         grade_id: ex?.id ?? null,
         assignment_id: assignment?.id ?? null,
         decision: assignment?.decision ?? null,
@@ -190,6 +205,7 @@ export class PreschoolGradesService {
     subject_id: string;
     period_id: string;
     grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
+    appreciations?: { student_id: string; text?: string | null }[];
     decisions?: { assignment_id: string; decision?: string | null }[];
   }): Promise<{ ok: boolean }> {
     const evalMode = await this.getEvalMode(params.subject_id);
@@ -210,14 +226,16 @@ export class PreschoolGradesService {
         evalMode === PRESCHOOL_EVAL_FREQUENCY
           ? normalizePreschoolFrequency(g.frequency) ?? undefined
           : undefined;
-      const observation = g.observation?.trim() || undefined;
       if (existing) {
+        if (!level && !frequency) {
+          await this.preschoolGradeRepo.remove(existing);
+          continue;
+        }
         existing.level = level ?? null;
         existing.frequency = frequency ?? null;
-        existing.observation = observation ?? null;
         await this.preschoolGradeRepo.save(existing);
       } else {
-        if (!level && !frequency && !observation) continue;
+        if (!level && !frequency) continue;
         const ng = this.preschoolGradeRepo.create({
           student: { id: g.student_id },
           academic_year: { id: params.academic_year_id },
@@ -226,9 +244,41 @@ export class PreschoolGradesService {
           period: { id: params.period_id },
           level,
           frequency,
-          observation,
         });
         await this.preschoolGradeRepo.save(ng);
+      }
+    }
+
+    if (params.appreciations?.length) {
+      for (const item of params.appreciations) {
+        if (!item.student_id) continue;
+        const text = item.text?.trim() || '';
+        const existing = await this.appreciationRepo.findOne({
+          where: {
+            student: { id: item.student_id },
+            academic_year: { id: params.academic_year_id },
+            period: { id: params.period_id },
+          },
+        });
+        if (!text) {
+          if (existing) await this.appreciationRepo.remove(existing);
+          continue;
+        }
+        if (existing) {
+          existing.text = text;
+          existing.class = { id: params.class_id } as PreschoolAppreciation['class'];
+          await this.appreciationRepo.save(existing);
+        } else {
+          await this.appreciationRepo.save(
+            this.appreciationRepo.create({
+              student: { id: item.student_id },
+              academic_year: { id: params.academic_year_id },
+              class: { id: params.class_id },
+              period: { id: params.period_id },
+              text,
+            }),
+          );
+        }
       }
     }
 
@@ -280,6 +330,13 @@ export class PreschoolGradesService {
         };
       }
     }
+    const notes = await this.appreciationRepo.find({
+      where: { student: { id: studentId }, academic_year: { id: academicYearId } },
+      relations: ['period'],
+    });
+    const appreciations = notes
+      .filter((item) => item.period?.id && item.text?.trim())
+      .map((item) => ({ period_id: item.period.id, text: item.text!.trim() }));
     const periods = Array.from(periodSet.values()).sort((a, b) => a.order_index - b.order_index);
     const subjects = Array.from(subjectSet.values()).sort((a, b) => a.name.localeCompare(b.name));
     const ayName = grades[0]?.academic_year ? grades[0].academic_year.name : null;
@@ -289,6 +346,7 @@ export class PreschoolGradesService {
       periods,
       subjects,
       cells,
+      appreciations,
     };
   }
 }

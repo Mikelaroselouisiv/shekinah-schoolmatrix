@@ -79,6 +79,16 @@ type StudentInClass = {
 };
 
 const UNASSIGNED_ROOM_ID = "__sans_salle__";
+
+type SpecialCaseStudent = {
+  id: string;
+  student_id: string;
+  first_name: string;
+  last_name: string;
+  class_id: string;
+  class_name: string;
+  average: number | null;
+};
 const PDF_BTN =
   "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium";
 
@@ -134,6 +144,8 @@ function schoolCode(s: StudentInClass): string {
 
 function decisionLabel(value: string | null): string {
   if (!value) return "—";
+  if (value === "CAS_SPECIAL") return "Cas spécial";
+  if (value === "EXPELLED" || value === "RENVOYE" || value === "RENVOYE_DEFINITIVEMENT") return "Expulsé";
   return DECISION_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
 
@@ -142,6 +154,7 @@ function decisionBadgeClass(decision: string): string {
   if (decision === "ADMIS_AILLEURS") return "bg-emerald-100 text-emerald-800";
   if (decision === "REDOUBLER") return "bg-amber-100 text-amber-800";
   if (decision === "AJOURNE") return "bg-orange-100 text-orange-800";
+  if (decision === "CAS_SPECIAL") return "bg-violet-100 text-violet-800";
   if (decision === "RENVOYE_DEFINITIVEMENT" || decision === "RENVOYE" || decision === "EXPELLED") {
     return "bg-red-100 text-red-800";
   }
@@ -197,6 +210,9 @@ export function DashboardFormationClassePage() {
   const [launchAck, setLaunchAck] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [launchResult, setLaunchResult] = useState<string>("");
+  const [specialCases, setSpecialCases] = useState<SpecialCaseStudent[]>([]);
+  const [specialOpen, setSpecialOpen] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const selectedYear = academicYears.find((y) => y.id === selectedYearId);
   const isPreschoolClass = openClass?.is_preschool ?? false;
@@ -334,6 +350,7 @@ export function DashboardFormationClassePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       await loadClassStudents(openClass.id, selectedYearId);
+      await loadSpecialCases(selectedYearId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -482,6 +499,47 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  async function loadSpecialCases(yearId: string) {
+    if (!yearId) {
+      setSpecialCases([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(
+        `${API_BASE}/formation-classe/special-cases?academic_year_id=${encodeURIComponent(yearId)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setSpecialCases(data.students ?? []);
+    } catch {
+      setSpecialCases([]);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "nouvelle-annee" && selectedYearId) void loadSpecialCases(selectedYearId);
+    else setSpecialCases([]);
+  }, [tab, selectedYearId]);
+
+  async function handleResolveSpecial(row: SpecialCaseStudent, decision: "ADMIS" | "REDOUBLER" | "EXPELLED") {
+    setResolvingId(row.id);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/formation-classe/special-cases/${row.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ decision }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setSpecialCases((prev) => prev.filter((item) => item.id !== row.id));
+      if (selectedYearId) await loadClassesAndRooms();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setResolvingId(null);
+    }
+  }
+
   async function handleLaunchNextYear() {
     if (!selectedYearId || !launchAck) return;
     setLaunching(true);
@@ -494,15 +552,16 @@ export function DashboardFormationClassePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       const next = data.next_year as { id: string; name: string } | undefined;
+      const specials = Number(data.special_cases ?? 0);
       setLaunchResult(
-        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.graduated ?? 0} anciens élèves (fin de cycle), ${data.skipped ?? 0} exclus archivés, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
+        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.graduated ?? 0} anciens élèves (fin de cycle), ${data.skipped ?? 0} exclus archivés, ${specials} cas spéciaux, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
       );
       setShowLaunchConfirm(false);
       setLaunchAck(false);
       setOpenClass(null);
       setOpenRoomId(null);
-      await Promise.all([loadAcademicYears(), loadClassesAndRooms(), refetchSchool()]);
-      if (next?.id) setSelectedYearId(next.id);
+      await Promise.all([loadAcademicYears(), loadClassesAndRooms(), refetchSchool(), loadSpecialCases(selectedYearId)]);
+      if (specials === 0 && next?.id) setSelectedYearId(next.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -784,6 +843,15 @@ export function DashboardFormationClassePage() {
             Lancer l’année suivante
           </button>
         )}
+        {tab === "nouvelle-annee" && specialCases.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSpecialOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border-2 border-violet-800 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-950 shadow-sm hover:bg-violet-100"
+          >
+            Cas spéciaux ({specialCases.length})
+          </button>
+        )}
       </div>
 
       {!selectedYearId ? (
@@ -1025,17 +1093,8 @@ export function DashboardFormationClassePage() {
           >
             <h3 className="text-lg font-semibold text-amber-950">Lancer l’année suivante</h3>
             <p className="mt-2 text-sm text-slate-700">
-              À partir de <strong>{selectedYear?.name}</strong>, l’école passera à{" "}
-              <strong>{selectedYear ? nextYearPreview(selectedYear.name) : "l’année suivante"}</strong>.
+              {selectedYear?.name} → {selectedYear ? nextYearPreview(selectedYear.name) : ""}
             </p>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
-              <li>Les décisions sont recalculées selon les moyennes (sauf préscolaire).</li>
-              <li>L’année, les périodes et les horaires (mêmes professeurs) sont recopiés.</li>
-              <li>Les élèves admis passent à la classe suivante ; les autres redoublent.</li>
-              <li>Les élèves en dernière classe de secondaire (ou supérieur) admis deviennent anciens élèves — leur dossier reste consultable.</li>
-              <li>Les élèves renvoyés sont archivés (dossier conservé), pas inscrits l’année suivante.</li>
-              <li>Vous pourrez ensuite faire de petites corrections à la main.</li>
-            </ul>
             <label className="mt-4 flex items-start gap-2 text-sm text-slate-800">
               <input
                 type="checkbox"
@@ -1043,10 +1102,7 @@ export function DashboardFormationClassePage() {
                 onChange={(e) => setLaunchAck(e.target.checked)}
                 className="mt-0.5"
               />
-              <span>
-                Je confirme que les moyennes et décisions sont à jour, et que je veux lancer
-                l’année suivante.
-              </span>
+              <span>Je confirme</span>
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
@@ -1087,6 +1143,81 @@ export function DashboardFormationClassePage() {
           onClose={() => setListPdf(null)}
         />
       ) : null}
+      {specialOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setSpecialOpen(false)}
+        >
+          <div
+            className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-[var(--app-border)] bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--app-border)] px-5 py-4">
+              <h3 className="text-lg font-semibold text-slate-900">Cas spéciaux</h3>
+              <button type="button" onClick={() => setSpecialOpen(false)} className="app-btn-secondary text-sm py-1.5">
+                Fermer
+              </button>
+            </div>
+            <div className="overflow-auto">
+              {specialCases.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-slate-500">Aucun cas spécial</p>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Classe</th>
+                      <th className="px-4 py-2 font-medium">Élève</th>
+                      <th className="px-4 py-2 font-medium">Moyenne</th>
+                      <th className="px-4 py-2 font-medium">Décision</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {specialCases.map((row) => (
+                      <tr key={row.id} className="border-t border-[var(--app-border)]">
+                        <td className="px-4 py-3 text-slate-700">{row.class_name}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          {row.last_name} {row.first_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">
+                          {row.average != null ? row.average.toFixed(2) : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={resolvingId === row.id}
+                              onClick={() => void handleResolveSpecial(row, "ADMIS")}
+                              className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                            >
+                              Classe supérieure
+                            </button>
+                            <button
+                              type="button"
+                              disabled={resolvingId === row.id}
+                              onClick={() => void handleResolveSpecial(row, "REDOUBLER")}
+                              className="rounded-lg bg-amber-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                            >
+                              Redoubler
+                            </button>
+                            <button
+                              type="button"
+                              disabled={resolvingId === row.id}
+                              onClick={() => void handleResolveSpecial(row, "EXPELLED")}
+                              className="rounded-lg bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                            >
+                              Expulser
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

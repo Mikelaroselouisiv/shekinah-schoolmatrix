@@ -37,7 +37,7 @@ type PreschoolFormDataRow = {
   student_name: string;
   level: string | null;
   frequency: string | null;
-  observation: string;
+  appreciation: string;
   grade_id: string | null;
   assignment_id: string | null;
   decision: string | null;
@@ -60,9 +60,8 @@ type ThresholdItem = {
   class_id: string;
   class_name: string;
   min_average_admis: number;
-  min_average_admis_ailleurs: number;
+  min_average_cas_special: number;
   min_average_redoubler: number;
-  min_average_ajourne: number;
 };
 
 const FIELD = "class-input w-full";
@@ -109,10 +108,9 @@ export function DashboardGradesPage() {
   const [thresholdFilterClass, setThresholdFilterClass] = useState("");
   const [thresholdForm, setThresholdForm] = useState({
     class_id: "",
-    min_average_admis: "10",
-    min_average_admis_ailleurs: "8",
-    min_average_redoubler: "6",
-    min_average_ajourne: "4",
+    min_average_admis: "5",
+    min_average_cas_special: "4",
+    min_average_redoubler: "3",
   });
   const [thresholdSaving, setThresholdSaving] = useState(false);
   const [thresholdLoading, setThresholdLoading] = useState(false);
@@ -276,9 +274,8 @@ export function DashboardGradesPage() {
     setThresholdForm({
       class_id: t.class_id,
       min_average_admis: String(t.min_average_admis),
-      min_average_admis_ailleurs: String(t.min_average_admis_ailleurs),
+      min_average_cas_special: String(t.min_average_cas_special),
       min_average_redoubler: String(t.min_average_redoubler),
-      min_average_ajourne: String(t.min_average_ajourne),
     });
   }
 
@@ -286,10 +283,13 @@ export function DashboardGradesPage() {
     e.preventDefault();
     if (!thresholdAcademicYearId || !thresholdForm.class_id) return;
     const admis = parseFloat(thresholdForm.min_average_admis);
-    const admisAilleurs = parseFloat(thresholdForm.min_average_admis_ailleurs);
+    const casSpecial = parseFloat(thresholdForm.min_average_cas_special);
     const redoubler = parseFloat(thresholdForm.min_average_redoubler);
-    const ajourne = parseFloat(thresholdForm.min_average_ajourne);
-    if ([admis, admisAilleurs, redoubler, ajourne].some((n) => isNaN(n))) return;
+    if ([admis, casSpecial, redoubler].some((n) => isNaN(n))) return;
+    if (!(admis >= casSpecial && casSpecial >= redoubler)) {
+      setError("Seuils invalides.");
+      return;
+    }
     setThresholdSaving(true);
     setError("");
     try {
@@ -299,9 +299,8 @@ export function DashboardGradesPage() {
           academic_year_id: thresholdAcademicYearId,
           class_id: thresholdForm.class_id,
           min_average_admis: admis,
-          min_average_admis_ailleurs: admisAilleurs,
+          min_average_cas_special: casSpecial,
           min_average_redoubler: redoubler,
-          min_average_ajourne: ajourne,
         }),
       });
       const data = await res.json();
@@ -402,6 +401,19 @@ export function DashboardGradesPage() {
     }
   }
 
+  async function handleDeleteCoefficient(id: string) {
+    if (!window.confirm("Supprimer ce coefficient ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/grades/coefficients/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      loadCoefficients();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   useEffect(() => {
     setSelectedClass(
       classes.find((c) => c.id === classId) ??
@@ -491,6 +503,7 @@ export function DashboardGradesPage() {
           setDefaultCoefficient(null);
           const serverRows = (data.rows ?? []).map((r: PreschoolFormDataRow) => ({
             ...r,
+            appreciation: r.appreciation ?? "",
             assignment_id: r.assignment_id ?? null,
             decision: r.decision ?? null,
           }));
@@ -550,7 +563,10 @@ export function DashboardGradesPage() {
               student_id: r.student_id,
               level: evalMode === "LEVEL" ? r.level?.trim() || undefined : undefined,
               frequency: evalMode === "FREQUENCY" ? r.frequency?.trim() || undefined : undefined,
-              observation: r.observation?.trim() || undefined,
+            })),
+            appreciations: preschoolRows.map((r) => ({
+              student_id: r.student_id,
+              text: r.appreciation?.trim() || "",
             })),
             ...(isLastPeriod
               ? {
@@ -584,6 +600,52 @@ export function DashboardGradesPage() {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
       gradeDraft.resume();
+      setSaving(false);
+    }
+  }
+
+  async function handleClearNotes() {
+    if (!canEditGrades || !academicYearId || !classId || !roomId || !subjectId || !periodId) return;
+    if (!window.confirm("Supprimer les notes de cette salle ?")) return;
+    const isPreschool = selectedClass?.is_preschool ?? false;
+    setSaving(true);
+    setError("");
+    try {
+      const url = isPreschool ? `${API_BASE}/grades/preschool/save` : `${API_BASE}/grades/save`;
+      const body = isPreschool
+        ? {
+            academic_year_id: academicYearId,
+            class_id: classId,
+            subject_id: subjectId,
+            period_id: periodId,
+            grades: preschoolRows.map((r) => ({ student_id: r.student_id })),
+            appreciations: preschoolRows.map((r) => ({
+              student_id: r.student_id,
+              text: r.appreciation?.trim() || "",
+            })),
+          }
+        : {
+            academic_year_id: academicYearId,
+            class_id: classId,
+            subject_id: subjectId,
+            period_id: periodId,
+            grades: rows.map((r) => ({
+              student_id: r.student_id,
+              coefficient: defaultCoefficient,
+              grade_value: null,
+            })),
+          };
+      const res = await fetchWithAuth(url, { method: "POST", body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      if (isPreschool) {
+        setPreschoolRows((prev) => prev.map((row) => ({ ...row, level: null, frequency: null, grade_id: null })));
+      } else {
+        setRows((prev) => prev.map((row) => ({ ...row, grade_value: null, grade_id: null })));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
       setSaving(false);
     }
   }
@@ -763,9 +825,19 @@ export function DashboardGradesPage() {
                   ) : null}
                 </div>
                 {canEditGrades ? (
-                  <button type="submit" disabled={saving || (!isPreschool && bareme == null)} className="app-btn-primary disabled:opacity-60">
-                    {saving ? "Enregistrement..." : isPreschool && isLastPeriod ? "Enregistrer" : "Enregistrer les notes"}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="submit" disabled={saving || (!isPreschool && bareme == null)} className="app-btn-primary disabled:opacity-60">
+                      {saving ? "Enregistrement..." : isPreschool && isLastPeriod ? "Enregistrer" : "Enregistrer les notes"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleClearNotes()}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Supprimer les notes
+                    </button>
+                  </div>
                 ) : (
                   <p className="text-sm font-medium text-amber-700">
                     Notes déjà enregistrées. Seuls les responsables peuvent les modifier.
@@ -790,7 +862,7 @@ export function DashboardGradesPage() {
                         ) : (
                           <th className="px-4 py-3 font-medium text-slate-900 w-44">Fréquence</th>
                         )}
-                        <th className="px-4 py-3 font-medium text-slate-900">Observation</th>
+                        <th className="px-4 py-3 font-medium text-slate-900">Appréciation générale</th>
                         {isLastPeriod ? (
                           <th className="px-4 py-3 font-medium text-slate-900 w-48">Décision</th>
                         ) : null}
@@ -841,8 +913,8 @@ export function DashboardGradesPage() {
                             <td className="px-4 py-2">
                               <input
                                 type="text"
-                                value={r.observation}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, observation: e.target.value } : row))}
+                                value={r.appreciation ?? ""}
+                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, appreciation: e.target.value } : row))}
                                 className={FIELD}
                                 disabled={!canEditGrades}
                               />
@@ -966,12 +1038,12 @@ export function DashboardGradesPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis (min. moyenne /10)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis (min. /10)</label>
                   <input
                     type="number"
-                    step="0.5"
+                    step="0.01"
                     min="0"
                     max="10"
                     value={thresholdForm.min_average_admis}
@@ -980,14 +1052,14 @@ export function DashboardGradesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis ailleurs (min. /10)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Cas spécial (min. /10)</label>
                   <input
                     type="number"
-                    step="0.5"
+                    step="0.01"
                     min="0"
                     max="10"
-                    value={thresholdForm.min_average_admis_ailleurs}
-                    onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_admis_ailleurs: e.target.value }))}
+                    value={thresholdForm.min_average_cas_special}
+                    onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_cas_special: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
                   />
                 </div>
@@ -995,23 +1067,11 @@ export function DashboardGradesPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Redoubler (min. /10)</label>
                   <input
                     type="number"
-                    step="0.5"
+                    step="0.01"
                     min="0"
                     max="10"
                     value={thresholdForm.min_average_redoubler}
                     onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_redoubler: e.target.value }))}
-                    className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Ajourné (min. /10)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="10"
-                    value={thresholdForm.min_average_ajourne}
-                    onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_ajourne: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
                   />
                 </div>
@@ -1032,17 +1092,15 @@ export function DashboardGradesPage() {
                         { header: "Année", key: "academic_year_name" },
                         { header: "Classe", key: "class_name" },
                         { header: "Admis (min.)", key: "min_average_admis" },
-                        { header: "Admis ailleurs (min.)", key: "min_average_admis_ailleurs" },
+                        { header: "Cas spécial (min.)", key: "min_average_cas_special" },
                         { header: "Redoubler (min.)", key: "min_average_redoubler" },
-                        { header: "Ajourné (min.)", key: "min_average_ajourne" },
                       ],
                       rows: thresholds.map((t) => ({
                         academic_year_name: t.academic_year_name,
                         class_name: t.class_name,
                         min_average_admis: t.min_average_admis,
-                        min_average_admis_ailleurs: t.min_average_admis_ailleurs,
+                        min_average_cas_special: t.min_average_cas_special,
                         min_average_redoubler: t.min_average_redoubler,
-                        min_average_ajourne: t.min_average_ajourne,
                       })),
                     }}
                     filename="seuils-decision-fin-annee.pdf"
@@ -1074,10 +1132,9 @@ export function DashboardGradesPage() {
                       <tr>
                         <th className="px-4 py-2 font-medium text-slate-900">Année</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
-                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Admis</th>
-                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Admis ailleurs</th>
-                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Redoubler</th>
-                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Ajourné</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-24">Admis</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-28">Cas spécial</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-24">Redoubler</th>
                         <th className="px-4 py-2 font-medium text-slate-900 w-24">Actions</th>
                       </tr>
                     </thead>
@@ -1087,9 +1144,8 @@ export function DashboardGradesPage() {
                           <td className="px-4 py-2 text-slate-700">{t.academic_year_name}</td>
                           <td className="px-4 py-2 text-slate-700">{t.class_name}</td>
                           <td className="px-4 py-2 font-medium text-slate-900">{t.min_average_admis}</td>
-                          <td className="px-4 py-2 font-medium text-slate-900">{t.min_average_admis_ailleurs}</td>
+                          <td className="px-4 py-2 font-medium text-slate-900">{t.min_average_cas_special}</td>
                           <td className="px-4 py-2 font-medium text-slate-900">{t.min_average_redoubler}</td>
-                          <td className="px-4 py-2 font-medium text-slate-900">{t.min_average_ajourne}</td>
                           <td className="px-4 py-2">
                             <button
                               type="button"
@@ -1242,6 +1298,13 @@ export function DashboardGradesPage() {
                               className="text-[var(--school-accent-1)] hover:underline text-xs"
                             >
                               Modifier
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteCoefficient(c.id)}
+                              className="ml-3 text-xs text-red-700 hover:underline"
+                            >
+                              Supprimer
                             </button>
                           </td>
                         </tr>

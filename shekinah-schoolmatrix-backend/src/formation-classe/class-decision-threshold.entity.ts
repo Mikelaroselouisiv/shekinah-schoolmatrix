@@ -26,20 +26,24 @@ export class ClassDecisionThreshold {
   @JoinColumn({ name: 'academic_year_id' })
   academic_year: AcademicYear;
 
-  /** Moyenne minimale pour ADMIS (ex: 10) */
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: '10' })
+  /** Moyenne minimale /10 pour ADMIS. */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '5' })
   min_average_admis: string;
 
-  /** Moyenne minimale pour ADMIS_AILLEURS (ex: 8) */
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: '8' })
+  /** Moyenne minimale /10 du cas spécial, sous le seuil d'admission. */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '4' })
+  min_average_cas_special: string;
+
+  /** Ancien seuil, conservé pour les lignes déjà enregistrées. */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '4' })
   min_average_admis_ailleurs: string;
 
-  /** Moyenne minimale pour REDOUBLER (ex: 6) */
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: '6' })
+  /** Moyenne minimale /10 pour REDOUBLER. En dessous : expulsé. */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '3' })
   min_average_redoubler: string;
 
-  /** Moyenne minimale pour AJOURNE (ex: 4). En dessous = RENVOYE_DEFINITIVEMENT */
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: '4' })
+  /** Ancien seuil, conservé pour les lignes déjà enregistrées. */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '0' })
   min_average_ajourne: string;
 
   @CreateDateColumn()

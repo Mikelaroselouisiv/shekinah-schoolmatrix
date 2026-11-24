@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Query, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -54,6 +54,13 @@ export class GradesController {
   }) {
     const c = await this.gradesService.setCoefficient(body);
     return { ok: true, coefficient: c };
+  }
+
+  @DenyParents()
+  @Delete('coefficients/:id')
+  async deleteCoefficient(@Param('id') id: string) {
+    await this.gradesService.deleteCoefficient(id);
+    return { ok: true };
   }
 
   /** Grille de saisie : contient les notes de toute la classe. */
@@ -157,6 +164,7 @@ export class GradesController {
       subject_id: string;
       period_id: string;
       grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
+      appreciations?: { student_id: string; text?: string | null }[];
       decisions?: { assignment_id: string; decision?: string | null }[];
     },
   ) {

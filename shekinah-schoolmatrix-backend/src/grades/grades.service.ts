@@ -105,6 +105,12 @@ export class GradesService {
     return this.coefRepo.save(c);
   }
 
+  async deleteCoefficient(id: string): Promise<void> {
+    const existing = await this.coefRepo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('Coefficient introuvable.');
+    await this.coefRepo.remove(existing);
+  }
+
   async getGradesFormData(params: {
     academic_year_id: string;
     class_id: string;
@@ -207,7 +213,11 @@ export class GradesService {
       });
       const student = await this.studentRepo.findOne({ where: { id: g.student_id }, relations: ['class'] });
       if (!student) throw new BadRequestException(`Élève ${g.student_id} introuvable.`);
-      const grade_value = g.grade_value == null ? '0' : String(g.grade_value);
+      if (g.grade_value == null || Number.isNaN(Number(g.grade_value))) {
+        if (existing) await this.gradeRepo.remove(existing);
+        continue;
+      }
+      const grade_value = String(g.grade_value);
       if (existing) {
         existing.coefficient = coefficient;
         existing.grade_value = grade_value;

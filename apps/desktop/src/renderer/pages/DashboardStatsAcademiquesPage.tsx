@@ -8,13 +8,14 @@ type Period = { id: string; name: string };
 type Opt = { id: string; name: string; class_id?: string | null };
 type TeacherOpt = { id: number; name: string };
 
-type DecisionKind = "admis" | "admis_ailleurs" | "redoubler" | "ajourne" | "renvoye";
+type DecisionKind = "admis" | "cas_special" | "redoubler" | "expulse";
 type DecisionCounts = Record<DecisionKind, number>;
 type ClassThreshold = {
   min_average_admis: number;
-  min_average_admis_ailleurs: number;
+  min_average_cas_special?: number;
+  min_average_admis_ailleurs?: number;
   min_average_redoubler: number;
-  min_average_ajourne: number;
+  min_average_ajourne?: number;
 };
 
 type AcademicStats = {
@@ -140,14 +141,13 @@ type AcademicStats = {
 
 type TabId = "vue" | "classes" | "matieres" | "professeurs" | "eleves" | "discipline";
 
-const DECISION_ORDER: DecisionKind[] = ["admis", "admis_ailleurs", "redoubler", "ajourne", "renvoye"];
+const DECISION_ORDER: DecisionKind[] = ["admis", "cas_special", "redoubler", "expulse"];
 
 const DECISION_META: Record<DecisionKind, { label: string; color: string; text: string }> = {
   admis: { label: "Admis", color: "#34d399", text: "text-emerald-700" },
-  admis_ailleurs: { label: "Admis ailleurs", color: "#38bdf8", text: "text-sky-700" },
+  cas_special: { label: "Cas spécial", color: "#a78bfa", text: "text-violet-700" },
   redoubler: { label: "Redoubler", color: "#fbbf24", text: "text-amber-700" },
-  ajourne: { label: "Ajourné", color: "#f97316", text: "text-orange-700" },
-  renvoye: { label: "Renvoyé", color: "#f87171", text: "text-red-700" },
+  expulse: { label: "Expulsé", color: "#f87171", text: "text-red-700" },
 };
 
 function fmt(n: number | null | undefined, digits = 2) {
@@ -162,11 +162,11 @@ function fmtInt(n: number | null | undefined) {
 
 function decide(avg: number | null | undefined, t: ClassThreshold | undefined): DecisionKind | null {
   if (avg == null || Number.isNaN(avg) || !t) return null;
+  const cas = t.min_average_cas_special ?? t.min_average_admis_ailleurs ?? t.min_average_redoubler;
   if (avg >= t.min_average_admis) return "admis";
-  if (avg >= t.min_average_admis_ailleurs) return "admis_ailleurs";
+  if (avg >= cas) return "cas_special";
   if (avg >= t.min_average_redoubler) return "redoubler";
-  if (avg >= t.min_average_ajourne) return "ajourne";
-  return "renvoye";
+  return "expulse";
 }
 
 function avgText(n: number | null | undefined, t: ClassThreshold | undefined) {

@@ -21,6 +21,7 @@ export type TeacherProfile = 'homeroom' | 'specialist' | 'mixed' | 'none' | 'sch
 
 export type ClassThreshold = {
   min_average_admis: number;
+  min_average_cas_special: number;
   min_average_admis_ailleurs: number;
   min_average_redoubler: number;
   min_average_ajourne: number;
@@ -28,31 +29,29 @@ export type ClassThreshold = {
 
 /** Même défaut que `class_decision_threshold` / onglet Notes. */
 export const DEFAULT_CLASS_THRESHOLD: ClassThreshold = {
-  min_average_admis: 10,
-  min_average_admis_ailleurs: 8,
-  min_average_redoubler: 6,
-  min_average_ajourne: 4,
+  min_average_admis: 5,
+  min_average_cas_special: 4,
+  min_average_admis_ailleurs: 4,
+  min_average_redoubler: 3,
+  min_average_ajourne: 0,
 };
 
-export type DecisionKind =
-  | 'admis'
-  | 'admis_ailleurs'
-  | 'redoubler'
-  | 'ajourne'
-  | 'renvoye';
+export type DecisionKind = 'admis' | 'cas_special' | 'redoubler' | 'expulse';
 
 export type DecisionCounts = Record<DecisionKind, number>;
 
 export function emptyDecisions(): DecisionCounts {
-  return { admis: 0, admis_ailleurs: 0, redoubler: 0, ajourne: 0, renvoye: 0 };
+  return { admis: 0, cas_special: 0, redoubler: 0, expulse: 0 };
 }
 
 export function decideAverage(avg: number, t: ClassThreshold): DecisionKind {
+  const cas = Number.isFinite(t.min_average_cas_special)
+    ? t.min_average_cas_special
+    : t.min_average_admis_ailleurs;
   if (avg >= t.min_average_admis) return 'admis';
-  if (avg >= t.min_average_admis_ailleurs) return 'admis_ailleurs';
+  if (avg >= cas) return 'cas_special';
   if (avg >= t.min_average_redoubler) return 'redoubler';
-  if (avg >= t.min_average_ajourne) return 'ajourne';
-  return 'renvoye';
+  return 'expulse';
 }
 
 function resolveThreshold(
@@ -72,9 +71,8 @@ function pickReferenceThreshold(
     const t = resolveThreshold(id, map);
     const k = [
       t.min_average_admis,
-      t.min_average_admis_ailleurs,
+      t.min_average_cas_special,
       t.min_average_redoubler,
-      t.min_average_ajourne,
     ].join('|');
     const cur = counts.get(k) ?? { t, n: 0 };
     cur.n += 1;

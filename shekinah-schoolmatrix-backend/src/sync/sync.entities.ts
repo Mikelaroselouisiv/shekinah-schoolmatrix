@@ -13,6 +13,7 @@ import { ClassFee } from '../economat/class-fee.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { Grade } from '../grades/grade.entity';
 import { PreschoolGrade } from '../grades/preschool-grade.entity';
+import { PreschoolAppreciation } from '../grades/preschool-appreciation.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { ExamSchedule } from '../exam-schedule/exam-schedule.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
@@ -76,6 +77,7 @@ export type SyncEntityName =
   | 'PaymentTransaction'
   | 'Grade'
   | 'PreschoolGrade'
+  | 'PreschoolAppreciation'
   | 'ClassSubjectCoefficient'
   | 'ExamSchedule'
   | 'ScheduleSlot'
@@ -161,6 +163,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'ClassDecisionThreshold', target: ClassDecisionThreshold, timeField: 'updated_at' },
   { name: 'Grade', target: Grade, timeField: 'updated_at' },
   { name: 'PreschoolGrade', target: PreschoolGrade, timeField: 'updated_at' },
+  { name: 'PreschoolAppreciation', target: PreschoolAppreciation, timeField: 'updated_at' },
   { name: 'Bank', target: Bank, timeField: 'updated_at' },
   { name: 'BankAccount', target: BankAccount, timeField: 'updated_at' },
   { name: 'Expense', target: Expense, timeField: 'updated_at' },

@@ -105,23 +105,23 @@ type NavItem = {
 };
 
 const DESKTOP_NAV: NavItem[] = [
-  { permissionKey: 'subjects', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'academic-years', allowedRoles: [...ROLES_FULL] },
-  { permissionKey: 'teachers', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'subjects', allowedRoles: [...ROLES_FULL, ...ROLES_STUDENT_EDIT, 'SECRETAIRE_GENERAL'] },
+  { permissionKey: 'classes', allowedRoles: [...ROLES_FULL, ...ROLES_STUDENT_EDIT, 'SECRETAIRE_GENERAL'] },
+  { permissionKey: 'rooms', allowedRoles: [...ROLES_FULL, ...ROLES_STUDENT_EDIT, 'SECRETAIRE_GENERAL'] },
+  { permissionKey: 'academic-years', allowedRoles: [...ROLES_FULL, 'SECRETAIRE_GENERAL'] },
+  { permissionKey: 'teachers', allowedRoles: [...ROLES_FULL, ...ROLES_STUDENT_EDIT, 'SECRETAIRE_GENERAL'] },
   {
     permissionKey: 'schedule',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL, 'SECRETAIRE_GENERAL'],
   },
-  { permissionKey: 'students', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'students', allowedRoles: [...ROLES_FULL, 'SECRETAIRE_GENERAL'] },
   {
     permissionKey: 'grades',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, 'SECRETAIRE_GENERAL', ...TEACHER_ROLE_NAMES],
   },
   { permissionKey: 'teacher-hub', allowedRoles: [...TEACHER_ROLE_NAMES] },
-  { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE] },
-  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL] },
+  { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE, 'SECRETAIRE_GENERAL'] },
+  { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL, ...ROLES_STUDENT_EDIT, 'SECRETAIRE_GENERAL'] },
   { permissionKey: 'finance', allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME] },
   {
     permissionKey: 'stats-academiques',
@@ -141,7 +141,7 @@ const DESKTOP_NAV: NavItem[] = [
       'PARENT',
     ],
   },
-  { permissionKey: 'photography', allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY] },
+  { permissionKey: 'photography', allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY, 'SECRETAIRE_GENERAL'] },
   { permissionKey: 'school', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'users', allowedRoles: [...ROLES_FULL] },
 ];
@@ -170,14 +170,10 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
     );
   }
   if (permissionKey === 'stats-academiques') {
-    return (
-      rolePermissions.includes('stats-academiques') ||
-      rolePermissions.includes('grades') ||
-      rolePermissions.includes('classes')
-    );
+    return rolePermissions.includes('stats-academiques');
   }
   if (permissionKey === 'teacher-hub') {
-    return rolePermissions.includes('teacher-hub') || rolePermissions.includes('grades');
+    return rolePermissions.includes('teacher-hub');
   }
   return rolePermissions.includes(permissionKey);
 }
@@ -189,6 +185,7 @@ export function canAccessPermission(
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
   if (isTeacherRole(roleName) && permissionKey === 'teacher-hub') return true;
+  if (isTeacherRole(roleName) && permissionKey === 'stats-academiques') return true;
   if (
     isTeacherRole(roleName) &&
     (permissionKey === 'fiche-eleve' || permissionKey === 'students')

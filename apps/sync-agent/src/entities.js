@@ -41,6 +41,7 @@ export const ENTITY_ORDER = [
   'ClassDecisionThreshold',
   'Grade',
   'PreschoolGrade',
+  'PreschoolAppreciation',
   'Bank',
   'BankAccount',
   'Expense',
